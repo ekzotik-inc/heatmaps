@@ -720,12 +720,50 @@ function exportRecs() {
 
 /* ── PERSISTENCE ─────────────────────────────────────────────────────── */
 const STORE_KEY = 'hm_state_v1';
+
+// ── Server sync config ───────────────────────────────────────────────────
+// Set SERVER_URL to your VPS API root, e.g. 'https://api.example.com'
+// Set SERVER_KEY to the API_KEY you configured in server/.env
+// Leave SERVER_URL empty to skip server sync and use localStorage only.
+const SERVER_URL = window._HM_SERVER_URL || '';
+const SERVER_KEY = window._HM_SERVER_KEY || '';
+
 let stateReady = false, _saveTimer = null;
 
-function doSave() {
+async function pushToServer(snapshot) {
+  if (!SERVER_URL) return;
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(buildStateSnapshot()));
+    const res = await fetch(SERVER_URL + '/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': SERVER_KEY },
+      body: JSON.stringify(snapshot),
+    });
+    if (!res.ok) console.warn('Server sync error:', res.status, await res.text());
+  } catch (e) {
+    console.warn('Server unreachable, saved locally only:', e.message);
+  }
+}
+
+async function fetchFromServer() {
+  if (!SERVER_URL) return null;
+  try {
+    const res = await fetch(SERVER_URL + '/state');
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || data.empty || data._app !== 'hm-br') return null;
+    return data;
+  } catch (e) {
+    console.warn('Could not load from server, using local state:', e.message);
+    return null;
+  }
+}
+
+function doSave() {
+  const snapshot = buildStateSnapshot();
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(snapshot));
   } catch (e) { /* quota exceeded or private mode */ }
+  pushToServer(snapshot);
 }
 
 function saveState() {
@@ -915,7 +953,8 @@ let pendingUpload = null;
 })();
 
 /* ── INIT ────────────────────────────────────────────────────────────── */
-(function init() {
+(async function init() {
+  // Load local state first so UI is immediately responsive
   loadState();
   buildCityUI(); buildHeatUI(); buildPtUI(); rebuildUpTarget(); syncControls();
   renderHeat(); renderPoints(); renderRecs(); renderDistricts(); renderIncome();
@@ -927,5 +966,15 @@ let pendingUpload = null;
     map.fitBounds(
       L.latLngBounds(DS.combined.recs.map(s => [s.lat, s.lon]).concat(own.map(o => [o.lat, o.lon]))).pad(.05)
     );
+  }
+
+  // Then try to hydrate from server (shared state wins over local)
+  const serverState = await fetchFromServer();
+  if (serverState) {
+    applySnapshot(serverState);
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(serverState)); } catch (e) {}
+    buildCityUI(); buildHeatUI(); buildPtUI(); rebuildUpTarget(); syncControls();
+    renderHeat(); renderPoints(); renderRecs(); renderDistricts(); renderIncome();
+    toast('Настройки загружены с сервера', 'ok');
   }
 })();
