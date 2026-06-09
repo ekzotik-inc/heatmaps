@@ -194,6 +194,7 @@ input[type=range].green{width:100%}input[type=range].green::-webkit-slider-thumb
       <div class="ctrl"><div class="row"><label>Сколько зон показать</label><span class="val" id="v-top">12</span></div><input type="range" class="green" id="s-top" min="5" max="30" step="1" value="12"/></div>
       <div class="rec-list" id="rec-list"></div>
       <button class="rec-toggle" id="rec-toggle" style="display:none"></button>
+      <button class="btn" id="rec-export" style="margin-top:8px">⬇ Экспорт рекомендаций (Excel)</button>
 
       <div class="sec">Наши точки · IQOS</div>
       <div id="pt-list"></div>
@@ -377,12 +378,14 @@ function renderPoints(){
 }
 
 const SUPPRESS=1100;
+let lastRecs=[],lastBasisName="";
 function renderRecs(){
   recLayer.clearLayers();
-  const d=DS[recBasis];
+  const d=DS[recBasis];lastBasisName=d.name;
   const cand=d.recs.filter(s=>(!city||s.fil===city)&&s.nd>covR).sort((a,b)=>b.ld-a.ld||b.vol-a.vol);
   const recs=[],used=new Set();
   for(const s of cand){if(used.has(s))continue;recs.push(s);for(const o of cand){if(!used.has(o)&&hav(s.lat,s.lon,o.lat,o.lon)<=SUPPRESS)used.add(o);}if(recs.length>=topN)break;}
+  lastRecs=recs;
   const uncSum=cand.reduce((a,s)=>a+s.vol,0);
   const cityTotal=d.recs.filter(s=>!city||s.fil===city).reduce((a,s)=>a+s.vol,0)||1;
   document.getElementById('rec-count').textContent=recs.length;
@@ -489,7 +492,7 @@ fileInp.onchange=()=>{const f=fileInp.files[0];if(!f)return;const ext=f.name.spl
   const done=recs=>{if(!recs.length){alert('Не найдено строк с lat/lon.');return;}pending=recs;const fn=document.getElementById('fname');fn.style.display='block';fn.textContent='✓ '+f.name+' — '+recs.length+' точек';document.getElementById('btn-update').disabled=false;};
   if(ext==='csv'){Papa.parse(f,{header:true,skipEmptyLines:true,complete:r=>done(toRecs(r.data))});}
   else{const rd=new FileReader();rd.onload=e=>{const wb=XLSX.read(e.target.result,{type:'array'});done(toRecs(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]])));};rd.readAsArrayBuffer(f);}};
-document.getElementById('btn-update').onclick=()=>{if(!pending)return;const tk=document.getElementById('up-target').value;const d=DS[tk];d.recs=enrich(pending);d.stats=statsOf(d.recs);d.visible=true;pending=null;document.getElementById('btn-update').disabled=true;document.getElementById('fname').style.display='none';fileInp.value='';buildHeatUI();renderHeat();renderRecs();};
+document.getElementById('btn-update').onclick=()=>{if(!pending)return;const tk=document.getElementById('up-target').value;const d=DS[tk];d.recs=enrich(pending);d.stats=statsOf(d.recs);d.visible=true;d._userData=true;pending=null;document.getElementById('btn-update').disabled=true;document.getElementById('fname').style.display='none';fileInp.value='';buildHeatUI();renderHeat();renderRecs();};
 
 /* global heat brightness + create layer */
 function rebuildUpTarget(){const sel=document.getElementById('up-target');const cur=sel.value;sel.innerHTML=heatKeys.map(k=>`<option value="${k}">${DS[k].name}</option>`).join('');if(heatKeys.indexOf(cur)>=0)sel.value=cur;}
@@ -517,8 +520,71 @@ document.getElementById('inc-heat-cbx').onclick=e=>{incomeHeatOn=!incomeHeatOn;e
 document.getElementById('inc-core-cbx').onclick=e=>{coresOn=!coresOn;e.target.classList.toggle('on',coresOn);renderIncome();};
 ['high','mid','low'].forEach(t=>{document.getElementById('d-'+t).oninput=e=>{incCol[t]=e.target.value;renderIncome();renderDistricts();};});
 
+
+/* ── EXPORT RECOMMENDATIONS ───────────────────────────────────────────── */
+document.getElementById('rec-export').onclick=()=>{
+  if(!lastRecs.length){alert('Нет рекомендаций для экспорта.');return;}
+  const header=['Ранг','Название зоны','Город','Широта','Долгота','Спрос (ед/км²)','Точек рядом','Объём','До ближайшей ТТ, м'];
+  const rows=[header];
+  lastRecs.forEach((s,i)=>rows.push([i+1,s.name||('Зона '+(i+1)),s.fil||'',+s.lat.toFixed(6),+s.lon.toFixed(6),Math.round(s.ld),s.lc,Math.round(s.vol*100)/100,s.nd]));
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:6},{wch:30},{wch:14},{wch:12},{wch:12},{wch:15},{wch:12},{wch:10},{wch:20}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Рекомендации BR');
+  const dt=new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb,'rekomendacii_BR_'+lastBasisName.toLowerCase()+'_'+dt+'.xlsx');
+};
+
+/* ── PERSISTENCE (localStorage) ───────────────────────────────────────── */
+const STORE_KEY='hm_state_v1';let stateReady=false;
+function doSave(){
+  try{
+    const layers={};
+    heatKeys.forEach(k=>{const d=DS[k];if(!d)return;const o={name:d.name,color:d.color,intensity:d.intensity,visible:d.visible};
+      if(k.indexOf('custom_')===0||d._userData){o.recs=d.recs;o.stats=d.stats;o._userData=true;}
+      layers[k]=o;});
+    const pts={};pointLayers.forEach(p=>pts[p.id]={color:p.color,shape:p.shape,visible:p.visible});
+    const state={heatKeys,layers,pts,incCol:{...incCol},city,covR,topN,recBasis,recShow,heatBoost,districtsOn,incomeHeatOn,coresOn};
+    localStorage.setItem(STORE_KEY,JSON.stringify(state));
+  }catch(e){/* quota or serialization issue — ignore */}
+}
+function saveState(){if(!stateReady)return;clearTimeout(saveState._t);saveState._t=setTimeout(doSave,400);}
+function loadState(){
+  let raw;try{raw=localStorage.getItem(STORE_KEY);}catch(e){return;}
+  if(!raw)return;let st;try{st=JSON.parse(raw);}catch(e){return;}
+  if(Array.isArray(st.heatKeys))heatKeys=st.heatKeys.slice();
+  if(st.layers)for(const k of heatKeys){const sv=st.layers[k];if(!sv)continue;
+    if(!DS[k])DS[k]={key:k};
+    Object.assign(DS[k],{name:sv.name,color:sv.color,intensity:sv.intensity,visible:sv.visible});
+    if(sv.recs){DS[k].recs=sv.recs;DS[k].stats=sv.stats||statsOf(sv.recs);DS[k]._userData=true;}
+    else if(!DS[k].recs){DS[k].recs=[];DS[k].stats={n:0,sum:0,max:0,p50:0,p90:0.01};}}
+  if(st.pts)pointLayers.forEach(p=>{const sv=st.pts[p.id];if(sv){p.color=sv.color;p.shape=sv.shape;p.visible=sv.visible;}});
+  if(st.incCol)Object.assign(incCol,st.incCol);
+  if(typeof st.city==='string')city=st.city;
+  if(typeof st.covR==='number')covR=st.covR;
+  if(typeof st.topN==='number')topN=st.topN;
+  if(typeof st.recBasis==='string'&&DS[st.recBasis])recBasis=st.recBasis;
+  if(typeof st.recShow==='boolean')recShow=st.recShow;
+  if(typeof st.heatBoost==='number')heatBoost=st.heatBoost;
+  if(typeof st.districtsOn==='boolean')districtsOn=st.districtsOn;
+  if(typeof st.incomeHeatOn==='boolean')incomeHeatOn=st.incomeHeatOn;
+  if(typeof st.coresOn==='boolean')coresOn=st.coresOn;
+}
+function syncControls(){
+  const sc=document.getElementById('s-cov');sc.value=covR;document.getElementById('v-cov').textContent=fmtD(covR);
+  const st=document.getElementById('s-top');st.value=topN;document.getElementById('v-top').textContent=topN;
+  const sb=document.getElementById('s-heat-boost');sb.value=heatBoost;document.getElementById('v-heat-boost').textContent=Math.round(heatBoost*100)+'%';
+  document.getElementById('rec-show').classList.toggle('on',recShow);
+  document.querySelectorAll('#rec-basis button').forEach(b=>b.classList.toggle('on',b.dataset.b===recBasis));
+  document.getElementById('dist-cbx').classList.toggle('on',districtsOn);
+  ['high','mid','low'].forEach(t=>{const el=document.getElementById('d-'+t);if(el)el.value=incCol[t];});
+}
+
 /* init */
-buildCityUI();buildHeatUI();buildPtUI();rebuildUpTarget();renderHeat();renderPoints();renderRecs();renderDistricts();renderIncome();
+loadState();
+buildCityUI();buildHeatUI();buildPtUI();rebuildUpTarget();syncControls();renderHeat();renderPoints();renderRecs();renderDistricts();renderIncome();
+stateReady=true;
+/* autosave after any sidebar interaction (delegated, runs after element handlers) */
+['input','change','click'].forEach(ev=>document.getElementById('side').addEventListener(ev,saveState));
 if(incomeHeatOn)document.getElementById('inc-heat-cbx').classList.add('on');
 if(coresOn)document.getElementById('inc-core-cbx').classList.add('on');
 map.fitBounds(L.latLngBounds(DS.combined.recs.map(s=>[s.lat,s.lon]).concat(own.map(o=>[o.lat,o.lon]))).pad(.05));
