@@ -105,6 +105,20 @@
         <p style="font-size:10px;color:var(--dim);line-height:1.5;margin:10px 0 0">Координаты ядер — приближённые центры; классификация по предоставленным данным. Микро-слой относится к Ташкенту.</p>
       </div>
 
+      <div class="sec">Поделиться настройками</div>
+      <div class="share-row">
+        <button class="share-btn export" id="btn-export-state">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Экспорт настроек
+        </button>
+        <button class="share-btn import" id="btn-import-state">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Импорт настроек
+        </button>
+      </div>
+      <input type="file" id="state-file" accept=".json" style="display:none"/>
+      <p class="share-hint">Экспортируй настройки в файл и отправь коллегам — они загрузят и увидят всё то же самое</p>
+
       <div class="sec">Загрузка данных по шаблону</div>
       <a class="lnk" id="dl-tpl">⬇ Скачать шаблон (Excel)</a>
       <div class="up-row">Слой для загрузки:&nbsp;<select id="up-target"><option value="cig">Сигареты</option><option value="sticks">Стики</option></select></div>

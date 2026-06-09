@@ -306,6 +306,31 @@ input[type=range].full { width: 100%; }
 }
 .lnk:hover { text-decoration: underline; }
 
+/* ── SHARE ROW ───────────────────────────────────────────────────────── */
+.share-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;
+}
+.share-btn {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 9px 8px; border-radius: 10px;
+  font-family: "Manrope"; font-weight: 700; font-size: 11.5px;
+  cursor: pointer; transition: .18s cubic-bezier(.2,.8,.3,1); border: 1px solid;
+}
+.share-btn.export {
+  color: #bcd6ef; background: linear-gradient(180deg,#14253a,#0f1e2f);
+  border-color: #2a4a6a;
+}
+.share-btn.export:hover { border-color: var(--acc); color: var(--ink); background: linear-gradient(180deg,#182f48,#13253a); }
+.share-btn.import {
+  color: #7fe3b4; background: linear-gradient(180deg,#112a1f,#0d2018);
+  border-color: #1c3a2e;
+}
+.share-btn.import:hover { border-color: var(--rec); color: #aaf0cc; background: linear-gradient(180deg,#163525,#112a1f); }
+.share-hint {
+  font-size: 10.5px; color: var(--dim); line-height: 1.5;
+  margin: 0 2px 4px; font-style: italic;
+}
+
 /* ── UPLOAD AREA ─────────────────────────────────────────────────────── */
 .up-row {
   display: flex; gap: 8px; align-items: center;

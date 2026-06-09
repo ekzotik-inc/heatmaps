@@ -630,7 +630,77 @@ function statsOf(recs) {
   return { n, sum: Math.round(v.reduce((a, b) => a + b, 0) * 10) / 10, max: v[n - 1] || 0, p50: v[Math.floor(n * 0.5)] || 0, p90: v[Math.floor(n * 0.9)] || 0.01 };
 }
 
-/* ── EXPORT ──────────────────────────────────────────────────────────── */
+/* ── SHARE STATE (export / import JSON) ──────────────────────────────── */
+function buildStateSnapshot() {
+  const layers = {};
+  heatKeys.forEach(k => {
+    const d = DS[k]; if (!d) return;
+    const o = { name: d.name, color: d.color, intensity: d.intensity, visible: d.visible };
+    if (k.startsWith('custom_') || d._userData) { o.recs = d.recs; o.stats = d.stats; o._userData = true; }
+    layers[k] = o;
+  });
+  const pts = {};
+  pointLayers.forEach(p => pts[p.id] = { color: p.color, shape: p.shape, visible: p.visible });
+  return {
+    _v: 1, _app: 'hm-br', _date: new Date().toISOString().slice(0, 10),
+    heatKeys, layers, pts, incCol: { ...incCol },
+    city, covR, topN, recBasis, recShow, heatBoost, districtsOn, incomeHeatOn, coresOn,
+  };
+}
+
+function exportState() {
+  const snap = buildStateSnapshot();
+  const json = JSON.stringify(snap, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = 'heatmap_settings_' + snap._date + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('Настройки сохранены в файл', 'ok');
+}
+
+function importState(file) {
+  const rd = new FileReader();
+  rd.onload = e => {
+    let st;
+    try { st = JSON.parse(e.target.result); } catch (_) { toast('Файл повреждён или неверный формат', 'err'); return; }
+    if (st._app !== 'hm-br') { toast('Это не файл настроек Heat Map', 'err'); return; }
+    // Apply — reuse loadState logic
+    applySnapshot(st);
+    buildCityUI(); buildHeatUI(); buildPtUI(); rebuildUpTarget(); syncControls();
+    renderHeat(); renderPoints(); renderRecs(); renderDistricts(); renderIncome();
+    doSave(); // persist locally too
+    toast('Настройки загружены', 'ok');
+  };
+  rd.readAsText(file);
+}
+
+function applySnapshot(st) {
+  if (Array.isArray(st.heatKeys)) heatKeys = st.heatKeys.slice();
+  if (st.layers) {
+    for (const k of heatKeys) {
+      const sv = st.layers[k]; if (!sv) continue;
+      if (!DS[k]) DS[k] = { key: k };
+      Object.assign(DS[k], { name: sv.name, color: sv.color, intensity: sv.intensity, visible: sv.visible });
+      if (sv.recs) { DS[k].recs = sv.recs; DS[k].stats = sv.stats || statsOf(sv.recs); DS[k]._userData = true; }
+      else if (!DS[k].recs) { DS[k].recs = []; DS[k].stats = { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 }; }
+    }
+  }
+  if (st.pts)              pointLayers.forEach(p => { const sv = st.pts[p.id]; if (sv) Object.assign(p, sv); });
+  if (st.incCol)           Object.assign(incCol, st.incCol);
+  if (typeof st.city       === 'string')  city         = st.city;
+  if (typeof st.covR       === 'number')  covR         = st.covR;
+  if (typeof st.topN       === 'number')  topN         = st.topN;
+  if (typeof st.recBasis   === 'string' && DS[st.recBasis]) recBasis = st.recBasis;
+  if (typeof st.recShow    === 'boolean') recShow      = st.recShow;
+  if (typeof st.heatBoost  === 'number')  heatBoost    = st.heatBoost;
+  if (typeof st.districtsOn  === 'boolean') districtsOn  = st.districtsOn;
+  if (typeof st.incomeHeatOn === 'boolean') incomeHeatOn = st.incomeHeatOn;
+  if (typeof st.coresOn      === 'boolean') coresOn      = st.coresOn;
+}
+
+/* ── EXPORT RECS ─────────────────────────────────────────────────────── */
 function exportRecs() {
   if (!lastRecs.length) { toast('Нет рекомендаций для экспорта', 'err'); return; }
   const header = ['Ранг', 'Название зоны', 'Город', 'Широта', 'Долгота', 'Спрос (ед/км²)', 'Точек рядом', 'Объём', 'До ближайшей ТТ, м'];
@@ -654,19 +724,7 @@ let stateReady = false, _saveTimer = null;
 
 function doSave() {
   try {
-    const layers = {};
-    heatKeys.forEach(k => {
-      const d = DS[k]; if (!d) return;
-      const o = { name: d.name, color: d.color, intensity: d.intensity, visible: d.visible };
-      if (k.startsWith('custom_') || d._userData) { o.recs = d.recs; o.stats = d.stats; o._userData = true; }
-      layers[k] = o;
-    });
-    const pts = {};
-    pointLayers.forEach(p => pts[p.id] = { color: p.color, shape: p.shape, visible: p.visible });
-    localStorage.setItem(STORE_KEY, JSON.stringify({
-      heatKeys, layers, pts, incCol: { ...incCol },
-      city, covR, topN, recBasis, recShow, heatBoost, districtsOn, incomeHeatOn, coresOn,
-    }));
+    localStorage.setItem(STORE_KEY, JSON.stringify(buildStateSnapshot()));
   } catch (e) { /* quota exceeded or private mode */ }
 }
 
@@ -679,28 +737,7 @@ function saveState() {
 function loadState() {
   let st;
   try { const raw = localStorage.getItem(STORE_KEY); if (!raw) return; st = JSON.parse(raw); } catch (e) { return; }
-
-  if (Array.isArray(st.heatKeys)) heatKeys = st.heatKeys.slice();
-  if (st.layers) {
-    for (const k of heatKeys) {
-      const sv = st.layers[k]; if (!sv) continue;
-      if (!DS[k]) DS[k] = { key: k };
-      Object.assign(DS[k], { name: sv.name, color: sv.color, intensity: sv.intensity, visible: sv.visible });
-      if (sv.recs) { DS[k].recs = sv.recs; DS[k].stats = sv.stats || statsOf(sv.recs); DS[k]._userData = true; }
-      else if (!DS[k].recs) { DS[k].recs = []; DS[k].stats = { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 }; }
-    }
-  }
-  if (st.pts) pointLayers.forEach(p => { const sv = st.pts[p.id]; if (sv) Object.assign(p, sv); });
-  if (st.incCol)            Object.assign(incCol, st.incCol);
-  if (typeof st.city       === 'string')  city         = st.city;
-  if (typeof st.covR       === 'number')  covR         = st.covR;
-  if (typeof st.topN       === 'number')  topN         = st.topN;
-  if (typeof st.recBasis   === 'string' && DS[st.recBasis]) recBasis = st.recBasis;
-  if (typeof st.recShow    === 'boolean') recShow      = st.recShow;
-  if (typeof st.heatBoost  === 'number')  heatBoost    = st.heatBoost;
-  if (typeof st.districtsOn  === 'boolean') districtsOn  = st.districtsOn;
-  if (typeof st.incomeHeatOn === 'boolean') incomeHeatOn = st.incomeHeatOn;
-  if (typeof st.coresOn      === 'boolean') coresOn      = st.coresOn;
+  applySnapshot(st);
 }
 
 function syncControls() {
@@ -800,8 +837,19 @@ function wireEvents() {
     $('d-' + t).addEventListener('input', e => { incCol[t] = e.target.value; renderIncome(); renderDistricts(); });
   });
 
-  // Export
+  // Export recs
   $('rec-export').addEventListener('click', exportRecs);
+
+  // Share / import state
+  $('btn-export-state').addEventListener('click', exportState);
+  const stateFileInp = $('state-file');
+  $('btn-import-state').addEventListener('click', () => stateFileInp.click());
+  stateFileInp.addEventListener('change', () => {
+    const f = stateFileInp.files[0];
+    if (!f) return;
+    importState(f);
+    stateFileInp.value = '';
+  });
 
   // Mobile burger
   $('burger').addEventListener('click', () => $('side').classList.toggle('open'));
