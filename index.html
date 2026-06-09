@@ -197,7 +197,7 @@ input[type=range].green{width:100%}input[type=range].green::-webkit-slider-thumb
       </div>
 
       <div class="sec">Загрузка данных по шаблону</div>
-      <a class="lnk" id="dl-tpl">⬇ Скачать шаблон (CSV)</a>
+      <a class="lnk" id="dl-tpl">⬇ Скачать шаблон (Excel)</a>
       <div class="up-row">Слой для загрузки:&nbsp;<select id="up-target"><option value="cig">Сигареты</option><option value="sticks">Стики</option></select></div>
       <div class="filebox" id="filebox">Выберите файл <b>CSV / XLSX</b></div>
       <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none"/>
@@ -427,7 +427,14 @@ document.getElementById('s-cov').oninput=e=>{covR=+e.target.value;document.getEl
 document.getElementById('s-top').oninput=e=>{topN=+e.target.value;document.getElementById('v-top').textContent=topN;renderRecs();};
 
 /* template + upload */
-document.getElementById('dl-tpl').onclick=()=>{const csv="name,lat,lon,value\nПример ТТ,41.311100,69.279700,12.5\n";const b=new Blob(["\ufeff"+csv],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='shablon_dannye.csv';a.click();};
+document.getElementById('dl-tpl').onclick=()=>{
+  // Build a real .xlsx so columns split correctly in any Excel locale
+  const rows=[['name','lat','lon','value'],['Пример ТТ',41.311100,69.279700,12.5],['Пример ТТ 2',41.299000,69.240000,8]];
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:22},{wch:12},{wch:12},{wch:10}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Данные');
+  XLSX.writeFile(wb,'shablon_dannye.xlsx');
+};
 const fileInp=document.getElementById('file');document.getElementById('filebox').onclick=()=>fileInp.click();
 let pending=null;
 function pick(o,keys){for(const k in o){const lk=(''+k).toLowerCase().trim();for(const w of keys)if(lk===w||lk.includes(w))return o[k];}return undefined;}
