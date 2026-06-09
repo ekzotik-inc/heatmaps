@@ -166,6 +166,8 @@ input[type=range].green{width:100%}input[type=range].green::-webkit-slider-thumb
 
       <div class="sec">Тепловые слои <span style="text-transform:none;letter-spacing:0;color:var(--dim);font-family:Manrope">(можно оба)</span></div>
       <div id="heat-list"></div>
+      <div class="ctrl" style="margin-top:6px"><div class="row"><label>Общая яркость тепла</label><span class="val" style="color:#88A9D1" id="v-heat-boost">100%</span></div><input type="range" id="s-heat-boost" min="0.3" max="3" step="0.1" value="1" style="width:100%"/></div>
+      <button id="add-layer-btn" style="width:100%;margin-top:6px;font-family:'Manrope';font-weight:700;font-size:12px;color:#bcd6ef;background:linear-gradient(180deg,#16273a,#11202f);border:1px dashed #35506b;border-radius:10px;padding:10px;cursor:pointer;transition:.18s">+ Создать новый слой</button>
 
       <div class="sec acc">Рекомендации · где открыть ТТ BR</div>
       <div class="rec-basis" id="rec-basis">
@@ -194,9 +196,9 @@ input[type=range].green{width:100%}input[type=range].green::-webkit-slider-thumb
         <div style="font-size:10.5px;color:var(--dim);line-height:1.5;margin-top:10px">Координаты ядер — приближённые центры названных зон; классификация по вашим данным. Цвета уровней применяются к теплу, ядрам и границам. Микро-слой относится к Ташкенту.</div>
       </div>
 
-      <div class="sec">Обновление данных по шаблону</div>
+      <div class="sec">Загрузка данных по шаблону</div>
       <a class="lnk" id="dl-tpl">⬇ Скачать шаблон (CSV)</a>
-      <div class="up-row">Обновить слой:&nbsp;<select id="up-target"><option value="cig">Сигареты</option><option value="sticks">Стики</option></select></div>
+      <div class="up-row">Слой для загрузки:&nbsp;<select id="up-target"><option value="cig">Сигареты</option><option value="sticks">Стики</option></select></div>
       <div class="filebox" id="filebox">Выберите файл <b>CSV / XLSX</b></div>
       <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none"/>
       <div class="fname" id="fname" style="display:none"></div>
@@ -238,6 +240,7 @@ const DS={
   combined:Object.assign({key:'combined',name:'Оба',color:'#6A3D9A',intensity:1,visible:false},DATA.combined)
 };
 let city='',covR=600,topN=12,recShow=true,recBasis='cig';
+let heatKeys=['cig','sticks'],heatBoost=1;
 
 const map=L.map('map',{preferCanvas:true,zoomControl:true,minZoom:5,zoomSnap:.5}).setView([41,67],6);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{attribution:'&copy; OpenStreetMap &copy; CARTO',subdomains:'abcd',maxZoom:20}).addTo(map);
@@ -307,8 +310,8 @@ function renderIncome(){
 }
 
 const pointLayers=[
-  {id:'br',name:'IQOS — BR',color:'#88A9D1',shape:'pin',visible:true,data:own.filter(o=>o.chk==='BR')},
-  {id:'se',name:'IQOS — IP with 2nd SE',color:'#B4C7DB',shape:'diamond',visible:true,data:own.filter(o=>o.chk==='SE')}
+  {id:'br',name:'IQOS — BR',color:'#3FA9F5',shape:'teardrop',visible:true,data:own.filter(o=>o.chk==='BR')},
+  {id:'se',name:'IQOS — IP with 2nd SE',color:'#13B074',shape:'hex',visible:true,data:own.filter(o=>o.chk==='SE')}
 ];
 
 function starPath(h,s){let p='';for(let i=0;i<10;i++){const r=i%2?s*0.16:s*0.36,a=-Math.PI/2+i*Math.PI/5;p+=(i?' L':'M')+(h+r*Math.cos(a)).toFixed(1)+' '+(h+r*Math.sin(a)).toFixed(1);}return p+' Z';}
@@ -322,6 +325,10 @@ function shp(shape,color,s){const h=s/2,sw=Math.max(2,s*0.085),gid='g'+color.rep
     case'star':body=`<path d="${starPath(h,s)}" ${f} ${st}/>`;break;
     case'ring':body=`<circle cx="${h}" cy="${h}" r="${s*.3}" fill="none" stroke="${color}" stroke-width="${s*.17}"/><circle cx="${h}" cy="${h}" r="${s*.38}" fill="none" stroke="#fff" stroke-width="${s*.05}"/>`;break;
     case'pin':body=`<path d="M ${h} ${s*.94} C ${s*.16} ${s*.56},${s*.18} ${s*.14},${h} ${s*.14} C ${s*.82} ${s*.14},${s*.84} ${s*.56},${h} ${s*.94} Z" ${f} ${st}/><circle cx="${h}" cy="${s*.38}" r="${s*.12}" fill="#fff" opacity=".92"/>`;anchor=[h,s*.94];break;
+    case'teardrop':body=`<path d="M ${h} ${s*.95} C ${s*.18} ${s*.6},${s*.2} ${s*.1},${h} ${s*.1} C ${s*.8} ${s*.1},${s*.82} ${s*.6},${h} ${s*.95} Z" ${f} ${st}/><circle cx="${h}" cy="${s*.39}" r="${s*.135}" fill="#fff"/>`;anchor=[h,s*.95];break;
+    case'hex':{const hp=[];for(let i=0;i<6;i++){const a=-Math.PI/2+i*Math.PI/3;hp.push((h+s*.37*Math.cos(a)).toFixed(1)+','+(h+s*.37*Math.sin(a)).toFixed(1));}body=`<polygon points="${hp.join(' ')}" ${f} ${st}/><circle cx="${h}" cy="${h}" r="${s*.13}" fill="#fff" opacity=".92"/>`;break;}
+    case'shield':body=`<path d="M ${h} ${s*.14} L ${s*.79} ${s*.27} L ${s*.79} ${s*.54} C ${s*.79} ${s*.75},${h} ${s*.88},${h} ${s*.88} C ${h} ${s*.88},${s*.21} ${s*.75},${s*.21} ${s*.54} L ${s*.21} ${s*.27} Z" ${f} ${st}/><circle cx="${h}" cy="${s*.46}" r="${s*.1}" fill="#fff" opacity=".9"/>`;anchor=[h,s*.88];break;
+    case'beacon':body=`<circle cx="${h}" cy="${h}" r="${s*.35}" ${f} ${st}/><circle cx="${h}" cy="${h}" r="${s*.145}" fill="#fff"/>`;break;
     default:body=`<circle cx="${h}" cy="${h}" r="${s*.32}" ${f} ${st}/><circle cx="${h*.82}" cy="${h*.78}" r="${s*.08}" fill="#fff" opacity=".5"/>`;
   }
   return{html:`<svg class="pt-pin" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}">${defs}${body}</svg>`,anchor};}
@@ -329,14 +336,14 @@ function shp(shape,color,s){const h=s/2,sw=Math.max(2,s*0.085),gid='g'+color.rep
 /* HEAT — multiple layers, independent color & intensity */
 function renderHeat(){
   let total=0;
-  ['cig','sticks'].forEach(k=>{const d=DS[k];
+  heatKeys.forEach(k=>{const d=DS[k];if(!d)return;
     if(d._leaf){map.removeLayer(d._leaf);d._leaf=null;}
     if(!d.visible)return;
     const recs=d.recs.filter(r=>!city||r.fil===city);
     const scale=Math.max(d.stats.p90,0.01);
     const pts=recs.map(r=>[r.lat,r.lon,Math.min(r.vol/scale,1)]);
     total+=recs.length;
-    d._leaf=L.heatLayer(pts,{radius:28,blur:22,minOpacity:.25,max:1/(d.intensity||1),gradient:heatGrad(d.color)}).addTo(map);
+    d._leaf=L.heatLayer(pts,{radius:28,blur:22,minOpacity:.25,max:1/((d.intensity||1)*heatBoost),gradient:heatGrad(d.color)}).addTo(map);
   });
   document.getElementById('b-count').textContent=total.toLocaleString('ru-RU');
 }
@@ -382,14 +389,16 @@ function openRec(s,rank){const d=DS[recBasis];L.popup({maxWidth:260}).setLatLng(
    <span class="pp-tag" style="background:#10362a;color:#7fe3b4;border:1px solid #1c5a44">РЕКОМЕНДАЦИЯ BR</span>`).openOn(map);}
 
 /* UI builders */
-const SHAPES=[['pin','Булавка'],['circle','Круг'],['square','Квадрат'],['diamond','Ромб'],['triangle','Треугольник'],['star','Звезда'],['ring','Кольцо']];
+const SHAPES=[['teardrop','Капля'],['hex','Гексагон'],['beacon','Маяк'],['shield','Щит'],['pin','Булавка'],['circle','Круг'],['square','Квадрат'],['diamond','Ромб'],['triangle','Треугольник'],['star','Звезда'],['ring','Кольцо']];
 function buildHeatUI(){const el=document.getElementById('heat-list');el.innerHTML='';
-  ['cig','sticks'].forEach(k=>{const d=DS[k];const x=document.createElement('div');x.className='lyr';
-    x.innerHTML=`<div class="lyr-top"><div class="cbx ${d.visible?'on':''}"></div><div class="nm">${d.name}<small>${d.stats.n.toLocaleString('ru-RU')} точек · объём ${Math.round(d.stats.sum).toLocaleString('ru-RU')}</small></div></div>
+  heatKeys.forEach(k=>{const d=DS[k];if(!d)return;const custom=k.indexOf('custom_')===0;const x=document.createElement('div');x.className='lyr';
+    const del=custom?`<div class="lyr-del" title="Удалить слой" style="cursor:pointer;color:var(--dim);font-size:16px;line-height:1;padding:0 2px;transition:.15s">&times;</div>`:'';
+    x.innerHTML=`<div class="lyr-top"><div class="cbx ${d.visible?'on':''}"></div><div class="nm">${d.name}<small>${d.stats.n.toLocaleString('ru-RU')} точек · объём ${Math.round(d.stats.sum).toLocaleString('ru-RU')}</small></div>${del}</div>
       <div class="lyr-ctl"><div class="grp">Цвет <input type="color" value="${d.color}"></div><div class="grp" style="flex:1">Интенс. <input type="range" min="0.4" max="3" step="0.1" value="${d.intensity}" style="flex:1"></div></div>`;
     x.querySelector('.cbx').onclick=e=>{d.visible=!d.visible;e.target.classList.toggle('on',d.visible);renderHeat();};
     x.querySelector('input[type=color]').oninput=e=>{d.color=e.target.value;renderHeat();};
     x.querySelector('input[type=range]').oninput=e=>{d.intensity=+e.target.value;renderHeat();};
+    if(custom){const db=x.querySelector('.lyr-del');db.onmouseenter=()=>db.style.color='#e05454';db.onmouseleave=()=>db.style.color='var(--dim)';db.onclick=()=>{if(d._leaf){map.removeLayer(d._leaf);d._leaf=null;}delete DS[k];heatKeys=heatKeys.filter(x=>x!==k);buildHeatUI();rebuildUpTarget();renderHeat();renderRecs();};}
     el.appendChild(x);});
 }
 function buildPtUI(){const el=document.getElementById('pt-list');el.innerHTML='';
@@ -434,6 +443,21 @@ fileInp.onchange=()=>{const f=fileInp.files[0];if(!f)return;const ext=f.name.spl
   else{const rd=new FileReader();rd.onload=e=>{const wb=XLSX.read(e.target.result,{type:'array'});done(toRecs(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]])));};rd.readAsArrayBuffer(f);}};
 document.getElementById('btn-update').onclick=()=>{if(!pending)return;const tk=document.getElementById('up-target').value;const d=DS[tk];d.recs=enrich(pending);d.stats=statsOf(d.recs);d.visible=true;pending=null;document.getElementById('btn-update').disabled=true;document.getElementById('fname').style.display='none';fileInp.value='';buildHeatUI();renderHeat();renderRecs();};
 
+/* global heat brightness + create layer */
+function rebuildUpTarget(){const sel=document.getElementById('up-target');const cur=sel.value;sel.innerHTML=heatKeys.map(k=>`<option value="${k}">${DS[k].name}</option>`).join('');if(heatKeys.indexOf(cur)>=0)sel.value=cur;}
+document.getElementById('s-heat-boost').oninput=e=>{heatBoost=+e.target.value;document.getElementById('v-heat-boost').textContent=Math.round(heatBoost*100)+'%';renderHeat();};
+document.getElementById('add-layer-btn').onclick=()=>{
+  const name=(prompt('Название нового слоя:','Новый слой')||'').trim();
+  if(!name)return;
+  const key='custom_'+Date.now();
+  const palette=['#9B59B6','#E67E22','#1ABC9C','#E84393','#F1C40F','#16A085'];
+  DS[key]={key,name,color:palette[(heatKeys.length-2)%palette.length],intensity:1,visible:true,recs:[],stats:{n:0,sum:0,max:0,p50:0,p90:0.01}};
+  heatKeys.push(key);
+  buildHeatUI();rebuildUpTarget();renderHeat();
+  document.getElementById('up-target').value=key;
+  const fb=document.getElementById('filebox');fb.style.borderColor='#88A9D1';setTimeout(()=>fb.style.borderColor='',1200);
+};
+
 /* income + districts */
 document.getElementById('dist-cbx').onclick=e=>{districtsOn=!districtsOn;e.target.classList.toggle('on',districtsOn);renderDistricts();};
 document.getElementById('inc-heat-cbx').onclick=e=>{incomeHeatOn=!incomeHeatOn;e.target.classList.toggle('on',incomeHeatOn);renderIncome();};
@@ -441,7 +465,7 @@ document.getElementById('inc-core-cbx').onclick=e=>{coresOn=!coresOn;e.target.cl
 ['high','mid','low'].forEach(t=>{document.getElementById('d-'+t).oninput=e=>{incCol[t]=e.target.value;renderIncome();renderDistricts();};});
 
 /* init */
-buildCityUI();buildHeatUI();buildPtUI();renderHeat();renderPoints();renderRecs();renderDistricts();renderIncome();
+buildCityUI();buildHeatUI();buildPtUI();rebuildUpTarget();renderHeat();renderPoints();renderRecs();renderDistricts();renderIncome();
 if(incomeHeatOn)document.getElementById('inc-heat-cbx').classList.add('on');
 if(coresOn)document.getElementById('inc-core-cbx').classList.add('on');
 map.fitBounds(L.latLngBounds(DS.combined.recs.map(s=>[s.lat,s.lon]).concat(own.map(o=>[o.lat,o.lon]))).pad(.05));
