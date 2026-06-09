@@ -343,10 +343,12 @@ function renderHeat(){
     const scale=Math.max(d.stats.p90,0.01);
     const pts=recs.map(r=>[r.lat,r.lon,Math.min(r.vol/scale,1)]);
     total+=recs.length;
-    d._leaf=L.heatLayer(pts,{radius:28,blur:22,minOpacity:.25,max:1/((d.intensity||1)*heatBoost),gradient:heatGrad(d.color)}).addTo(map);
+    d._leaf=L.heatLayer(pts,{radius:28,blur:22,minOpacity:.25,max:1/(d.intensity||1),gradient:heatGrad(d.color)}).addTo(map);
+    if(d._leaf._canvas)applyHeatBoost(d._leaf._canvas);
   });
   document.getElementById('b-count').textContent=total.toLocaleString('ru-RU');
 }
+function applyHeatBoost(canvas){canvas.style.filter=heatBoost===1?'':'brightness('+heatBoost+') saturate('+Math.max(heatBoost*.8+.2,0)+')';canvas.style.opacity=heatBoost<1?heatBoost:1;}
 
 function renderPoints(){
   pointsGroup.clearLayers();
@@ -445,7 +447,12 @@ document.getElementById('btn-update').onclick=()=>{if(!pending)return;const tk=d
 
 /* global heat brightness + create layer */
 function rebuildUpTarget(){const sel=document.getElementById('up-target');const cur=sel.value;sel.innerHTML=heatKeys.map(k=>`<option value="${k}">${DS[k].name}</option>`).join('');if(heatKeys.indexOf(cur)>=0)sel.value=cur;}
-document.getElementById('s-heat-boost').oninput=e=>{heatBoost=+e.target.value;document.getElementById('v-heat-boost').textContent=Math.round(heatBoost*100)+'%';renderHeat();};
+document.getElementById('s-heat-boost').oninput=e=>{
+  heatBoost=+e.target.value;
+  document.getElementById('v-heat-boost').textContent=Math.round(heatBoost*100)+'%';
+  // Fast path: apply CSS to existing canvases immediately, no full re-render needed
+  heatKeys.forEach(k=>{const d=DS[k];if(d&&d._leaf&&d._leaf._canvas)applyHeatBoost(d._leaf._canvas);});
+};
 document.getElementById('add-layer-btn').onclick=()=>{
   const name=(prompt('Название нового слоя:','Новый слой')||'').trim();
   if(!name)return;
