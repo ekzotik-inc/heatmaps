@@ -7,11 +7,11 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#0c1117;--panel2:#0e151d;--line:#223043;--ink:#e7eef7;--mut:#8aa0b8;--dim:#5f7286;--acc:#88A9D1;--rec:#13B074;--rec-d:#0B7E4E;--shadow:0 12px 34px rgba(0,0,0,.42)}
+:root{--bg:#080f17;--panel2:#0d1520;--line:#1e3248;--ink:#e8eff8;--mut:#8aa0b8;--dim:#5f7286;--acc:#88A9D1;--rec:#13B074;--rec-d:#0B7E4E;--shadow:0 16px 40px rgba(0,0,0,.5);--r:12px}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:"Manrope",system-ui,sans-serif;overflow:hidden}
 #app{display:flex;height:100vh;width:100vw}
-#side{width:346px;flex:0 0 346px;background:linear-gradient(180deg,#131c27,#0c131b);border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:1200;box-shadow:var(--shadow)}
+#side{width:350px;flex:0 0 350px;background:linear-gradient(180deg,#0f1a27 0%,#0a1320 100%);border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:1200;box-shadow:4px 0 32px rgba(0,0,0,.5)}
 .brand{padding:17px 20px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
 .brand .mk{width:30px;height:30px;border-radius:9px;flex:0 0 auto;position:relative;background:radial-gradient(circle at 32% 30%,#9fc0e6,#88A9D1 60%,#6f93c0);box-shadow:0 3px 10px rgba(136,169,209,.4),inset 0 0 0 1.5px rgba(255,255,255,.35)}
 .brand .mk::after{content:"";position:absolute;inset:0;margin:auto;width:9px;height:9px;border-radius:50%;background:#fff}
@@ -25,7 +25,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family
 .cities button:hover{color:var(--ink);border-color:#35506b}
 .cities button.on{background:linear-gradient(180deg,#1a3a48,#15303c);border-color:var(--acc);color:#dcebf8}
 
-.lyr{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:10px 11px;margin-bottom:9px}
+.lyr{background:var(--panel2);border:1px solid var(--line);border-radius:13px;padding:12px 13px;margin-bottom:10px}
 .lyr-top{display:flex;align-items:center;gap:10px}
 .lyr-top .nm{flex:1;font-size:12.5px;font-weight:600}.lyr-top .nm small{display:block;font-weight:500;font-size:10.5px;color:var(--dim);font-family:"IBM Plex Mono";margin-top:2px}
 .lyr-ctl{display:flex;align-items:center;gap:9px;margin-top:9px;flex-wrap:wrap}
@@ -52,7 +52,7 @@ input[type=range].green{width:100%}input[type=range].green::-webkit-slider-thumb
 .ctrl{margin:8px 2px 2px}.ctrl .row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
 .ctrl label{font-size:12px;color:var(--mut)}.ctrl .val{font-family:"IBM Plex Mono";font-size:12.5px;color:#62d3a3;font-weight:600}
 .rec-list{margin-top:6px}
-.rec-item{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:11px;cursor:pointer;border:1px solid var(--line);background:var(--panel2);margin-bottom:7px;transition:.13s}
+.rec-item{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;cursor:pointer;border:1px solid var(--line);background:var(--panel2);margin-bottom:8px;transition:.18s cubic-bezier(.2,.8,.3,1)}
 .rec-item:hover{border-color:var(--rec);background:#102019;transform:translateX(2px)}
 .rec-rank{width:23px;height:23px;border-radius:50%;flex:0 0 auto;background:linear-gradient(180deg,var(--rec),var(--rec-d));color:#06231a;font-family:"Archivo";font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center}
 .rec-main{flex:1;min-width:0}.rec-main b{font-size:12px;font-weight:700;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -87,12 +87,79 @@ input[type=range].green{width:100%}input[type=range].green::-webkit-slider-thumb
 #burger{display:none}
 @media(max-width:780px){#side{position:absolute;left:0;top:0;height:100%;transform:translateX(-100%);transition:.25s}#side.open{transform:none}
 #burger{display:flex;position:absolute;top:14px;left:14px;z-index:1300;width:44px;height:44px;align-items:center;justify-content:center;background:#fff;border:1px solid #dde2e8;border-radius:11px;color:#22425e;font-size:20px;cursor:pointer}}
+
+/* ══ LOGIN SCREEN ══════════════════════════════════════════════════════ */
+#auth-screen{position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#080e16 0%,#0c1520 50%,#091219 100%);display:flex;align-items:center;justify-content:center;padding:20px;}
+#auth-screen::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse 70% 60% at 50% 40%,rgba(136,169,209,.07) 0%,transparent 70%);pointer-events:none}
+#auth-screen.hidden{display:none}
+.auth-card{position:relative;width:100%;max-width:380px;background:linear-gradient(160deg,#111c2a,#0d1520);border:1px solid rgba(136,169,209,.18);border-radius:22px;padding:38px 36px 36px;box-shadow:0 32px 80px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.06)}
+.auth-logo{display:flex;align-items:center;gap:13px;margin-bottom:32px}
+.auth-logo .mk{width:38px;height:38px;border-radius:12px;flex:0 0 auto;background:radial-gradient(circle at 32% 30%,#b8d4f0,#88A9D1 60%,#6f93c0);box-shadow:0 4px 16px rgba(136,169,209,.45),inset 0 0 0 1.5px rgba(255,255,255,.3);position:relative}
+.auth-logo .mk::after{content:"";position:absolute;inset:0;margin:auto;width:11px;height:11px;border-radius:50%;background:#fff}
+.auth-logo-text h2{font-family:"Archivo";font-weight:800;font-size:17px;margin:0;line-height:1.2;color:#e7eef7}
+.auth-logo-text p{font-size:11.5px;color:#6b87a2;margin:3px 0 0;font-family:"IBM Plex Mono"}
+.auth-title{font-family:"Archivo";font-weight:700;font-size:22px;color:#e7eef7;margin:0 0 6px}
+.auth-sub{font-size:13px;color:#6b87a2;margin:0 0 28px;line-height:1.5}
+.auth-field{margin-bottom:16px}
+.auth-field label{display:block;font-size:11.5px;font-weight:600;color:#7a9ab8;letter-spacing:.5px;text-transform:uppercase;font-family:"IBM Plex Mono";margin-bottom:8px}
+.auth-field input{width:100%;background:#0a1422;border:1.5px solid #1f3349;border-radius:11px;padding:13px 16px;font-family:"Manrope";font-size:14px;color:#e7eef7;outline:none;transition:.2s}
+.auth-field input:focus{border-color:#88A9D1;background:#0c1828;box-shadow:0 0 0 3px rgba(136,169,209,.1)}
+.auth-field input.err{border-color:#e05454;box-shadow:0 0 0 3px rgba(224,84,84,.1)}
+.auth-field input::placeholder{color:#3a5060}
+.auth-btn{width:100%;margin-top:8px;padding:14px;font-family:"Archivo";font-weight:800;font-size:14px;letter-spacing:.3px;color:#fff;background:linear-gradient(180deg,#2a7fc1,#1a5fa0);border:none;border-radius:12px;cursor:pointer;transition:.18s;position:relative;overflow:hidden}
+.auth-btn::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.1),transparent);pointer-events:none}
+.auth-btn:hover{filter:brightness(1.1);transform:translateY(-1px);box-shadow:0 8px 24px rgba(26,95,160,.4)}
+.auth-btn:active{transform:translateY(0)}
+.auth-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;filter:none}
+.auth-err{background:rgba(224,84,84,.12);border:1px solid rgba(224,84,84,.25);border-radius:9px;padding:10px 14px;font-size:12.5px;color:#f08080;margin-top:12px;display:none;line-height:1.5}
+.auth-err.show{display:block}
+.auth-footer{margin-top:24px;text-align:center;font-size:11.5px;color:#3a5060;font-family:"IBM Plex Mono"}
+/* ══ IMPROVED SIDEBAR ══════════════════════════════════════════════════ */
+#side{transition:transform .3s cubic-bezier(.2,.8,.3,1)}
+.brand{padding:18px 20px 16px}
+.scroll::-webkit-scrollbar{width:5px}.scroll::-webkit-scrollbar-track{background:transparent}.scroll::-webkit-scrollbar-thumb{background:#1e3248;border-radius:6px}
+.cities button{transition:.18s;font-size:11.5px}
+.cities button:hover{background:#132031;transform:translateY(-1px)}
+.lyr{transition:.18s}.lyr:hover{border-color:#2a4a66}
+.rec-item{transition:.18s cubic-bezier(.2,.8,.3,1)}
+.btn{transition:.18s cubic-bezier(.2,.8,.3,1);letter-spacing:.2px}
+.btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 20px rgba(19,176,116,.3)}
+/* logout btn */
+.logout-btn{position:absolute;bottom:18px;right:14px;z-index:1200;display:flex;align-items:center;gap:6px;font-family:"Manrope";font-size:11.5px;font-weight:600;color:#4a6878;background:#0e1720;border:1px solid #1e3248;border-radius:9px;padding:7px 12px;cursor:pointer;transition:.18s}
+.logout-btn:hover{color:#e7eef7;border-color:#35506b;background:#132031}
+.logout-btn svg{opacity:.7}
 </style>
 </head>
 <body>
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="mk"></div>
+      <div class="auth-logo-text">
+        <h2>Heat Map · BR</h2>
+        <p>Сигареты + Стики</p>
+      </div>
+    </div>
+    <h1 class="auth-title">Добро пожаловать</h1>
+    <p class="auth-sub">Введите данные для доступа к аналитике</p>
+    <form id="auth-form" autocomplete="on">
+      <div class="auth-field">
+        <label>Логин</label>
+        <input type="text" id="auth-user" placeholder="Имя пользователя" autocomplete="username" required/>
+      </div>
+      <div class="auth-field">
+        <label>Пароль</label>
+        <input type="password" id="auth-pass" placeholder="••••••••" autocomplete="current-password" required/>
+      </div>
+      <button type="submit" class="auth-btn" id="auth-submit">Войти</button>
+      <div class="auth-err" id="auth-err">Неверный логин или пароль. Попробуйте ещё раз.</div>
+    </form>
+    <div class="auth-footer">Аналитика торговых точек · 2025</div>
+  </div>
+</div>
 <div id="app">
   <aside id="side">
-    <div class="brand"><div class="mk"></div><h1>Тепловая карта · Сигареты + Стики</h1></div>
+    <div class="brand"><div class="mk"></div><div style="flex:1"><h1>Тепловая карта · BR</h1><div style="font-size:10px;font-family:'IBM Plex Mono';color:var(--dim);margin-top:2px">Сигареты + Стики · Аналитика</div></div></div>
     <div class="scroll">
       <div class="sec">Город</div>
       <div class="cities" id="seg-city"></div>
@@ -137,10 +204,11 @@ input[type=range].green{width:100%}input[type=range].green::-webkit-slider-thumb
 
       <div class="foot">Сигареты и стики — отдельные тепловые слои с собственным цветом и интенсивностью; можно включить оба сразу. Рекомендации по открытию BR считаются по выбранной основе (сигареты / стики / сумма). Маркеры IQOS: BR и 2nd SE различаются цветом и формой.</div>
     </div>
+  <button class="logout-btn" id="logout-btn" title="Выйти"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Выйти</button>
   </aside>
   <div id="burger">☰</div>
   <div id="map"></div>
-  <div class="badge">Точек на карте: <b id="b-count">—</b></div>
+  <div class="badge" style="backdrop-filter:blur(8px);background:rgba(255,255,255,.88)">Точек на карте: <b id="b-count">—</b></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
@@ -378,6 +446,62 @@ if(incomeHeatOn)document.getElementById('inc-heat-cbx').classList.add('on');
 if(coresOn)document.getElementById('inc-core-cbx').classList.add('on');
 map.fitBounds(L.latLngBounds(DS.combined.recs.map(s=>[s.lat,s.lon]).concat(own.map(o=>[o.lat,o.lon]))).pad(.05));
 document.getElementById('burger').onclick=()=>document.getElementById('side').classList.toggle('open');
+
+/* ── AUTH ──────────────────────────────────────────────────────────── */
+(function(){
+  const CREDS=[{u:'br',p:'heatmap2024'},{u:'admin',p:'admin123'}];
+  const SK='hm_auth_ok';
+  const screen=document.getElementById('auth-screen');
+  const form=document.getElementById('auth-form');
+  const errEl=document.getElementById('auth-err');
+  const submitBtn=document.getElementById('auth-submit');
+  const logoutBtn=document.getElementById('logout-btn');
+
+  function unlock(){screen.classList.add('hidden');document.body.style.overflow='';}
+  function lock(){screen.classList.remove('hidden');document.body.style.overflow='hidden';}
+
+  if(sessionStorage.getItem(SK)==='1')unlock();
+  else lock();
+
+  form.addEventListener('submit',function(e){
+    e.preventDefault();
+    const u=document.getElementById('auth-user').value.trim().toLowerCase();
+    const p=document.getElementById('auth-pass').value;
+    const ok=CREDS.some(c=>c.u===u&&c.p===p);
+    if(ok){
+      sessionStorage.setItem(SK,'1');
+      submitBtn.disabled=true;
+      submitBtn.textContent='Загрузка...';
+      setTimeout(unlock,400);
+    } else {
+      errEl.classList.add('show');
+      document.getElementById('auth-user').classList.add('err');
+      document.getElementById('auth-pass').classList.add('err');
+      document.getElementById('auth-pass').value='';
+      document.getElementById('auth-pass').focus();
+      setTimeout(()=>{
+        errEl.classList.remove('show');
+        document.getElementById('auth-user').classList.remove('err');
+        document.getElementById('auth-pass').classList.remove('err');
+      },3000);
+    }
+  });
+
+  ['auth-user','auth-pass'].forEach(id=>{
+    document.getElementById(id).addEventListener('input',function(){
+      this.classList.remove('err');errEl.classList.remove('show');
+    });
+  });
+
+  logoutBtn.addEventListener('click',function(){
+    sessionStorage.removeItem(SK);
+    document.getElementById('auth-user').value='';
+    document.getElementById('auth-pass').value='';
+    submitBtn.disabled=false;submitBtn.textContent='Войти';
+    lock();
+  });
+})();
+
 </script>
 </body>
 </html>
