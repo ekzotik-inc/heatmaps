@@ -1,0 +1,883 @@
+/* ── UTILS: COLOUR ───────────────────────────────────────────────────── */
+function h2r(h) {
+  h = h.replace('#', '');
+  return { r: parseInt(h.substr(0, 2), 16), g: parseInt(h.substr(2, 2), 16), b: parseInt(h.substr(4, 2), 16) };
+}
+function r2h(o) {
+  const t = v => ('0' + Math.round(Math.max(0, Math.min(255, v))).toString(16)).slice(-2);
+  return '#' + t(o.r) + t(o.g) + t(o.b);
+}
+function mix(hex, t, a) {
+  const c = h2r(hex);
+  return r2h({ r: c.r + (t.r - c.r) * a, g: c.g + (t.g - c.g) * a, b: c.b + (t.b - c.b) * a });
+}
+const W = { r: 255, g: 255, b: 255 }, K = { r: 0, g: 0, b: 0 };
+const lighten = (h, a) => mix(h, W, a);
+const darken  = (h, a) => mix(h, K, a);
+const mixHex  = (a, b, t) => mix(a, h2r(b), t);
+
+function heatGrad(hex) {
+  return { 0.12: mix(hex, W, .62), 0.4: mix(hex, W, .12), 0.7: hex, 1.0: darken(hex, .32) };
+}
+function rampColor(t) {
+  t = Math.max(0, Math.min(1, t));
+  return t < 0.5 ? mixHex(incCol.low, incCol.mid, t / 0.5) : mixHex(incCol.mid, incCol.high, (t - 0.5) / 0.5);
+}
+
+/* ── UTILS: GEO ──────────────────────────────────────────────────────── */
+function hav(a, b, c, d) {
+  const R = 6371000, r = Math.PI / 180,
+        dla = (c - a) * r, dlo = (d - b) * r,
+        l1 = a * r, l2 = c * r,
+        x = Math.sin(dla / 2) ** 2 + Math.cos(l1) * Math.cos(l2) * Math.sin(dlo / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+function fmtD(m) { return m >= 1000 ? (m / 1000).toFixed(1) + ' км' : Math.round(m) + ' м'; }
+
+/* ── DATA SETUP ──────────────────────────────────────────────────────── */
+const own    = DATA.own;
+const CITIES = DATA.cities;
+
+const OWN_RU = { Tashkent: 'Ташкент', Samarkand: 'Самарканд', Andijan: 'Андижан',
+                 Bukhara: 'Бухара', Fergana: 'Фергана', Kokand: 'Коканд', Margilan: 'Фергана' };
+own.forEach(o => { o.cityRu = OWN_RU[o.city] || o.city; o.chk = o.ch === 'BR' ? 'BR' : 'SE'; });
+const ownC = own.map(o => [o.lat, o.lon]);
+
+// City centroid cache for fast nearest-city lookup
+const CC = {};
+CITIES.forEach(c => {
+  const a = DATA.cig.recs.filter(s => s.fil === c);
+  if (a.length) CC[c] = [a.reduce((x, s) => x + s.lat, 0) / a.length, a.reduce((x, s) => x + s.lon, 0) / a.length];
+});
+function cityOf(lat, lon) {
+  let best = CITIES[0], bd = 1e9;
+  for (const c in CC) {
+    const d = (lat - CC[c][0]) ** 2 + (lon - CC[c][1]) ** 2;
+    if (d < bd) { bd = d; best = c; }
+  }
+  return best;
+}
+
+/* ── LAYER STATE ─────────────────────────────────────────────────────── */
+const DS = {
+  cig:      Object.assign({ key: 'cig',      name: 'Сигареты', color: '#E0492A', intensity: 1, visible: true  }, DATA.cig),
+  sticks:   Object.assign({ key: 'sticks',   name: 'Стики',    color: '#2C7FB8', intensity: 1, visible: false }, DATA.sticks),
+  combined: Object.assign({ key: 'combined', name: 'Оба',      color: '#6A3D9A', intensity: 1, visible: false }, DATA.combined),
+};
+let heatKeys = ['cig', 'sticks'];
+let heatBoost = 1;
+
+// UI state
+let city = '', covR = 600, topN = 12, recShow = true, recBasis = 'cig';
+
+/* ── MAP INIT ────────────────────────────────────────────────────────── */
+const map = L.map('map', { preferCanvas: true, zoomControl: true, minZoom: 5, zoomSnap: .5 })
+              .setView([41, 67], 6);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: 'abcd', maxZoom: 20,
+}).addTo(map);
+
+map.createPane('districts'); map.getPane('districts').style.zIndex = 460;
+map.createPane('income');    map.getPane('income').style.zIndex = 445;
+map.getPane('income').style.pointerEvents = 'none';
+
+const distRenderer  = L.svg({ pane: 'districts' });
+const districtGroup = L.layerGroup().addTo(map);
+const coresGroup    = L.layerGroup().addTo(map);
+const pointsGroup   = L.layerGroup().addTo(map);
+const recLayer      = L.layerGroup().addTo(map);
+
+/* ── INCOME / DISTRICTS ──────────────────────────────────────────────── */
+const incCol = { high: '#C0392B', mid: '#F39C12', low: '#1F9E5A' };
+let districtsOn = false, incomeHeatOn = true, coresOn = true;
+let fieldOverlay = null;
+
+const TIER_NAME = { high: 'High income', mid: 'Middle income', low: 'Lower / emerging' };
+const CX = {
+  high: 'Premium engagement · KPI: ARPU, retention · формат: flagship / lounge',
+  mid:  'Value proposition · KPI: conversion / frequency · формат: retail + акции + bundle',
+  low:  'Цена-чувствительный сегмент · KPI: охват / трафик · формат: эконом + промо',
+};
+const ZONES = [
+  { n:  1, tier: 'high', name: 'CBD / Golden core',          lat: 41.3110, lon: 69.2810, pl: 'Сквер Амира Тимура – Ц1 – Ц2 – Broadway' },
+  { n:  2, tier: 'high', name: 'Tashkent City cluster',      lat: 41.3165, lon: 69.2685, pl: 'Tashkent City + север Шайхантахура' },
+  { n:  3, tier: 'high', name: 'Мирабад premium belt',       lat: 41.2960, lon: 69.2860, pl: 'Айбек – Госпитальный – Mirabad Avenue' },
+  { n:  4, tier: 'high', name: 'Яккасарай luxury strip',     lat: 41.2905, lon: 69.2680, pl: 'Руставели – Космонавтов – центр' },
+  { n:  5, tier: 'high', name: 'Юнусабад centrified',        lat: 41.3380, lon: 69.2880, pl: 'Шахристан – Minor – Алайский' },
+  { n:  6, tier: 'high', name: 'Мирзо-Улугбек elite pockets',lat: 41.3250, lon: 69.3300, pl: 'Ц1 / Ц2 / Карасу-2' },
+  { n:  7, tier: 'mid',  name: 'Чиланзар core',              lat: 41.2835, lon: 69.2050, pl: '1–9 кварталы / Новза' },
+  { n:  8, tier: 'mid',  name: 'Юнусабад outer',             lat: 41.3640, lon: 69.2930, pl: '6–19 кварталы' },
+  { n:  9, tier: 'mid',  name: 'Мирзо-Улугбек mass zone',    lat: 41.3120, lon: 69.3150, pl: 'Хамза / Феруза / Луначарского' },
+  { n: 10, tier: 'mid',  name: 'Яшнабад active growth',      lat: 41.2880, lon: 69.3150, pl: 'Кадышева – Авиасозлар' },
+  { n: 11, tier: 'mid',  name: 'Алмазар mixed',              lat: 41.3280, lon: 69.2250, pl: 'Сабир Рахимов – Кукча' },
+  { n: 12, tier: 'low',  name: 'Сергели (new city)',         lat: 41.2250, lon: 69.2200, pl: 'Сергели 5–8 / Янги Сергели' },
+  { n: 13, tier: 'low',  name: 'Янгихаёт (fast-growing)',    lat: 41.2400, lon: 69.2700, pl: 'Спутник / новые массивы' },
+  { n: 14, tier: 'low',  name: 'Учтепа',                     lat: 41.2880, lon: 69.1850, pl: 'Фархадский массив' },
+  { n: 15, tier: 'low',  name: 'Бектемир / промзона',        lat: 41.2000, lon: 69.3350, pl: 'industrial clusters' },
+];
+
+function coreIcon(z) {
+  const col = incCol[z.tier];
+  return L.divIcon({
+    className: '',
+    html: `<div class="core-pin" style="background:radial-gradient(circle at 34% 30%,${lighten(col, .35)},${col} 60%,${darken(col, .18)})">${z.n}</div>`,
+    iconSize: [26, 26], iconAnchor: [13, 13],
+  });
+}
+
+function renderDistricts() {
+  districtGroup.clearLayers();
+  if (!districtsOn) return;
+  const tn = { high: 'Высокий доход', mid: 'Средний доход', low: 'Ниже / растущий' };
+  (DATA.districts || []).forEach(f => {
+    const fill = incCol[f.tier];
+    try {
+      L.polygon(llswap(f.mp), { renderer: distRenderer, color: darken(fill, .2), weight: 2.2,
+                                fillColor: fill, fillOpacity: .16, opacity: .9 })
+       .bindTooltip(`<b style="font-weight:700">${f.ru}</b><br>${tn[f.tier]}`, { className: 'tt', sticky: true })
+       .addTo(districtGroup);
+    } catch (e) { console.warn('District render error:', e); }
+  });
+}
+function llswap(mp) { return mp.map(poly => poly.map(ring => ring.map(c => [c[1], c[0]]))); }
+
+function renderIncome() {
+  if (fieldOverlay) { map.removeLayer(fieldOverlay); fieldOverlay = null; }
+  coresGroup.clearLayers();
+  const f = DATA.field;
+  if (incomeHeatOn && f) {
+    const cv  = document.createElement('canvas');
+    cv.width  = f.nx; cv.height = f.ny;
+    const ctx = cv.getContext('2d'), img = ctx.createImageData(f.nx, f.ny);
+    let mn = 1e9, mx = -1e9;
+    for (const v of f.grid) { if (v >= 0) { if (v < mn) mn = v; if (v > mx) mx = v; } }
+    const rng = Math.max(mx - mn, 1);
+    for (let i = 0; i < f.grid.length; i++) {
+      const v = f.grid[i], o = i * 4;
+      if (v < 0) { img.data[o + 3] = 0; continue; }
+      const col = h2r(rampColor((v - mn) / rng));
+      img.data[o] = col.r; img.data[o + 1] = col.g; img.data[o + 2] = col.b; img.data[o + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    fieldOverlay = L.imageOverlay(cv.toDataURL(), [[f.s, f.w], [f.n, f.e]],
+                                  { opacity: 0.62, interactive: false, pane: 'income' }).addTo(map);
+  }
+  if (coresOn) {
+    ZONES.forEach(z => {
+      L.marker([z.lat, z.lon], { icon: coreIcon(z), zIndexOffset: 1800 })
+       .bindTooltip(`<b style="font-weight:700">${z.n}. ${z.name}</b><br>${TIER_NAME[z.tier]}`,
+                    { className: 'tt', direction: 'top', offset: [0, -12] })
+       .bindPopup(`<div class="pp-title">${z.n}. ${z.name}</div>
+                   <div class="pp-row"><span>Уровень</span><b>${TIER_NAME[z.tier]}</b></div>
+                   <div class="pp-row"><span>Ориентиры</span><b style="font-family:Manrope;font-weight:500;text-align:right">${z.pl}</b></div>
+                   <div class="pp-why">${CX[z.tier]}</div>`)
+       .addTo(coresGroup);
+    });
+  }
+}
+
+/* ── POINT MARKERS ───────────────────────────────────────────────────── */
+const SHAPES = [
+  ['teardrop', 'Капля'], ['hex', 'Гексагон'], ['beacon', 'Маяк'], ['shield', 'Щит'],
+  ['pin', 'Булавка'], ['circle', 'Круг'], ['square', 'Квадрат'],
+  ['diamond', 'Ромб'], ['triangle', 'Треугольник'], ['star', 'Звезда'], ['ring', 'Кольцо'],
+];
+
+const pointLayers = [
+  { id: 'br', name: 'IQOS — BR',          color: '#3FA9F5', shape: 'teardrop', visible: true, data: own.filter(o => o.chk === 'BR') },
+  { id: 'se', name: 'IQOS — IP with 2nd SE', color: '#13B074', shape: 'hex',      visible: true, data: own.filter(o => o.chk === 'SE') },
+];
+
+function starPath(h, s) {
+  let p = '';
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 ? s * 0.16 : s * 0.36, a = -Math.PI / 2 + i * Math.PI / 5;
+    p += (i ? ' L' : 'M') + (h + r * Math.cos(a)).toFixed(1) + ' ' + (h + r * Math.sin(a)).toFixed(1);
+  }
+  return p + ' Z';
+}
+
+function shp(shape, color, s) {
+  const h = s / 2, sw = Math.max(2, s * 0.085), gid = 'g' + color.replace('#', '') + shape;
+  const defs = `<defs><radialGradient id="${gid}" cx="36%" cy="30%">
+    <stop offset="0%"   stop-color="${lighten(color, .5)}"/>
+    <stop offset="62%"  stop-color="${color}"/>
+    <stop offset="100%" stop-color="${darken(color, .14)}"/>
+  </radialGradient></defs>`;
+  const st = `stroke="#fff" stroke-width="${sw}" stroke-linejoin="round"`;
+  const f  = `fill="url(#${gid})"`;
+  let body, anchor = [h, h];
+  switch (shape) {
+    case 'square':
+      body = `<rect x="${s*.2}" y="${s*.2}" width="${s*.6}" height="${s*.6}" rx="${s*.15}" ${f} ${st}/>`;
+      break;
+    case 'diamond':
+      body = `<rect x="${s*.24}" y="${s*.24}" width="${s*.52}" height="${s*.52}" rx="${s*.1}" transform="rotate(45 ${h} ${h})" ${f} ${st}/>`;
+      break;
+    case 'triangle':
+      body = `<polygon points="${h},${s*.18} ${s*.84},${s*.8} ${s*.16},${s*.8}" ${f} ${st}/>`;
+      break;
+    case 'star':
+      body = `<path d="${starPath(h, s)}" ${f} ${st}/>`;
+      break;
+    case 'ring':
+      body = `<circle cx="${h}" cy="${h}" r="${s*.3}" fill="none" stroke="${color}" stroke-width="${s*.17}"/>
+              <circle cx="${h}" cy="${h}" r="${s*.38}" fill="none" stroke="#fff" stroke-width="${s*.05}"/>`;
+      break;
+    case 'pin':
+      body   = `<path d="M ${h} ${s*.94} C ${s*.16} ${s*.56},${s*.18} ${s*.14},${h} ${s*.14} C ${s*.82} ${s*.14},${s*.84} ${s*.56},${h} ${s*.94} Z" ${f} ${st}/><circle cx="${h}" cy="${s*.38}" r="${s*.12}" fill="#fff" opacity=".92"/>`;
+      anchor = [h, s * .94];
+      break;
+    case 'teardrop':
+      body   = `<path d="M ${h} ${s*.95} C ${s*.18} ${s*.6},${s*.2} ${s*.1},${h} ${s*.1} C ${s*.8} ${s*.1},${s*.82} ${s*.6},${h} ${s*.95} Z" ${f} ${st}/><circle cx="${h}" cy="${s*.39}" r="${s*.135}" fill="#fff"/>`;
+      anchor = [h, s * .95];
+      break;
+    case 'hex': {
+      const hp = [];
+      for (let i = 0; i < 6; i++) {
+        const a = -Math.PI / 2 + i * Math.PI / 3;
+        hp.push((h + s * .37 * Math.cos(a)).toFixed(1) + ',' + (h + s * .37 * Math.sin(a)).toFixed(1));
+      }
+      body = `<polygon points="${hp.join(' ')}" ${f} ${st}/><circle cx="${h}" cy="${h}" r="${s*.13}" fill="#fff" opacity=".92"/>`;
+      break;
+    }
+    case 'shield':
+      body   = `<path d="M ${h} ${s*.14} L ${s*.79} ${s*.27} L ${s*.79} ${s*.54} C ${s*.79} ${s*.75},${h} ${s*.88},${h} ${s*.88} C ${h} ${s*.88},${s*.21} ${s*.75},${s*.21} ${s*.54} L ${s*.21} ${s*.27} Z" ${f} ${st}/><circle cx="${h}" cy="${s*.46}" r="${s*.1}" fill="#fff" opacity=".9"/>`;
+      anchor = [h, s * .88];
+      break;
+    case 'beacon':
+      body = `<circle cx="${h}" cy="${h}" r="${s*.35}" ${f} ${st}/><circle cx="${h}" cy="${h}" r="${s*.145}" fill="#fff"/>`;
+      break;
+    default:
+      body = `<circle cx="${h}" cy="${h}" r="${s*.32}" ${f} ${st}/><circle cx="${h*.82}" cy="${h*.78}" r="${s*.08}" fill="#fff" opacity=".5"/>`;
+  }
+  return { html: `<svg class="pt-pin" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}">${defs}${body}</svg>`, anchor };
+}
+
+function renderPoints() {
+  pointsGroup.clearLayers();
+  pointLayers.forEach(L0 => {
+    if (!L0.visible) return;
+    const ic = shp(L0.shape, L0.color, 32);
+    L0.data.filter(o => !city || o.cityRu === city).forEach(o => {
+      L.marker([o.lat, o.lon], {
+        icon: L.divIcon({ className: '', html: ic.html, iconSize: [32, 32], iconAnchor: ic.anchor }),
+        zIndexOffset: 1500,
+      })
+      .bindTooltip(`<b style="font-weight:700">${o.name}</b><br>${L0.name}`,
+                   { className: 'tt', direction: 'top', offset: [0, -ic.anchor[1] + 4] })
+      .bindPopup(`<div class="pp-title">${o.name}</div>
+                  <div class="pp-row"><span>Канал</span><b>${o.ch}</b></div>
+                  <div class="pp-row"><span>Город</span><b>${o.cityRu}</b></div>
+                  ${o.addr  ? `<div class="pp-row"><span>Адрес</span><b style="font-family:Manrope;font-weight:500;text-align:right">${o.addr}</b></div>` : ''}
+                  ${o.hours ? `<div class="pp-row"><span>Часы</span><b>${o.hours}</b></div>` : ''}
+                  <span class="pp-tag" style="background:rgba(136,169,209,.14);color:#bcd6ef;border:1px solid rgba(136,169,209,.35)">ТОЧКА IQOS</span>`)
+      .addTo(pointsGroup);
+    });
+  });
+}
+
+/* ── HEAT LAYERS ─────────────────────────────────────────────────────── */
+function applyHeatBoost(canvas) {
+  if (!canvas) return;
+  canvas.style.filter  = heatBoost === 1 ? '' : `brightness(${heatBoost}) saturate(${Math.max(heatBoost * .8 + .2, 0)})`;
+  canvas.style.opacity = heatBoost < 1 ? String(heatBoost) : '';
+}
+
+function renderHeat() {
+  let total = 0;
+  heatKeys.forEach(k => {
+    const d = DS[k];
+    if (!d) return;
+    if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
+    if (!d.visible) return;
+    const recs  = d.recs.filter(r => !city || r.fil === city);
+    const scale = Math.max(d.stats.p90, 0.01);
+    const pts   = recs.map(r => [r.lat, r.lon, Math.min(r.vol / scale, 1)]);
+    total += recs.length;
+    d._leaf = L.heatLayer(pts, {
+      radius: 28, blur: 22, minOpacity: .25,
+      max: 1 / (d.intensity || 1),
+      gradient: heatGrad(d.color),
+    }).addTo(map);
+    // canvas may not exist until next frame
+    requestAnimationFrame(() => applyHeatBoost(d._leaf && d._leaf._canvas));
+  });
+  document.getElementById('b-count').textContent = total.toLocaleString('ru-RU');
+}
+
+/* ── RECOMMENDATIONS ─────────────────────────────────────────────────── */
+const SUPPRESS = 1100;
+const PREVIEW  = 3;
+let lastRecs = [], lastBasisName = '';
+
+function mkRecItem(s, idx) {
+  const x = document.createElement('div');
+  x.className = 'rec-item';
+  x.innerHTML = `
+    <div class="rec-rank">${idx}</div>
+    <div class="rec-main">
+      <b>${s.name}</b>
+      <div class="meta"><span class="hi">спрос ${Math.round(s.ld)}</span> · ${s.lc} тч · ${s.fil} · ${fmtD(s.nd)}</div>
+    </div>
+    <div class="rec-demand">
+      <div class="dv">${Math.round(s.ld)}</div>
+      <div class="dl">ед/км²</div>
+    </div>`;
+  x.addEventListener('click', () => {
+    map.flyTo([s.lat, s.lon], 15, { duration: .8 });
+    setTimeout(() => openRec(s, idx), 700);
+  });
+  return x;
+}
+
+function openRec(s, rank) {
+  const d = DS[recBasis];
+  if (!d) return;
+  L.popup({ maxWidth: 260 })
+   .setLatLng([s.lat, s.lon])
+   .setContent(`
+     <div class="pp-title">Зона #${rank} — кандидат на ТТ BR</div>
+     <div class="pp-row"><span>Основа</span><b>${d.name}</b></div>
+     <div class="pp-row"><span>Город</span><b>${s.fil}</b></div>
+     <div class="pp-row"><span>Спрос рядом</span><b>${Math.round(s.ld)} ед.</b></div>
+     <div class="pp-row"><span>Точек рынка в зоне</span><b>${s.lc}</b></div>
+     <div class="pp-row"><span>До ближайшей ТТ</span><b>${fmtD(s.nd)}</b></div>
+     <div class="pp-why">Высокий спрос (${d.name.toLowerCase()}) в радиусе ~700 м без нашей ТТ ближе ${fmtD(covR)}. Ориентир — «${s.name}». Рекомендуется открытие BR.</div>
+     <span class="pp-tag" style="background:#10362a;color:#7fe3b4;border:1px solid #1c5a44">РЕКОМЕНДАЦИЯ BR</span>`)
+   .openOn(map);
+}
+
+function renderRecs() {
+  recLayer.clearLayers();
+  const d = DS[recBasis];
+  if (!d) return;
+  lastBasisName = d.name;
+
+  // Compute candidates
+  const cand = d.recs
+    .filter(s => (!city || s.fil === city) && s.nd > covR)
+    .sort((a, b) => b.ld - a.ld || b.vol - a.vol);
+
+  // Greedy suppression O(n log n) via Set
+  const recs = [], used = new Set();
+  for (const s of cand) {
+    if (used.has(s)) continue;
+    recs.push(s);
+    for (const o of cand) {
+      if (!used.has(o) && hav(s.lat, s.lon, o.lat, o.lon) <= SUPPRESS) used.add(o);
+    }
+    if (recs.length >= topN) break;
+  }
+  lastRecs = recs;
+
+  // Summary
+  const uncSum    = cand.reduce((a, s) => a + s.vol, 0);
+  const cityTotal = d.recs.filter(s => !city || s.fil === city).reduce((a, s) => a + s.vol, 0) || 1;
+  document.getElementById('rec-count').textContent = recs.length;
+  document.getElementById('rec-lbl').innerHTML =
+    `зон для новой <b>BR</b> · основа: <b>${d.name.toLowerCase()}</b> · вне покрытия <b>${Math.round(uncSum).toLocaleString('ru-RU')}</b> ед. (<b>${Math.round(uncSum / cityTotal * 100)}%</b>)`;
+
+  // Render list
+  const el = document.getElementById('rec-list');
+  el.innerHTML = '';
+
+  const preview = document.createElement('div');
+  preview.className = 'rec-preview';
+  recs.slice(0, PREVIEW).forEach((s, i) => preview.appendChild(mkRecItem(s, i + 1)));
+  el.appendChild(preview);
+
+  const tog = document.getElementById('rec-toggle');
+  if (recs.length > PREVIEW) {
+    const wrap  = document.createElement('div');
+    const inner = document.createElement('div');
+    wrap.className  = 'rec-expand-wrap';
+    inner.className = 'rec-expand-inner';
+    recs.slice(PREVIEW).forEach((s, i) => inner.appendChild(mkRecItem(s, i + PREVIEW + 1)));
+    wrap.appendChild(inner);
+    el.appendChild(wrap);
+
+    const rest = recs.length - PREVIEW;
+    const plural = n => n === 1 ? 'зону' : n < 5 ? 'зоны' : 'зон';
+    tog.style.display = '';
+    tog.className = 'rec-toggle';
+    tog.innerHTML = `<span>Показать ещё ${rest} ${plural(rest)}</span><span class="arrow">▼</span>`;
+    tog.onclick = () => {
+      const open = wrap.classList.toggle('open');
+      tog.className = 'rec-toggle' + (open ? ' open' : '');
+      tog.innerHTML  = open
+        ? `<span>Скрыть</span><span class="arrow">▼</span>`
+        : `<span>Показать ещё ${rest} ${plural(rest)}</span><span class="arrow">▼</span>`;
+    };
+  } else {
+    tog.style.display = 'none';
+  }
+
+  // Map pins
+  if (!recShow) return;
+  recs.forEach((s, i) => {
+    const m = L.marker([s.lat, s.lon], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div class="rec-pin"><div class="ring"></div><div class="core"></div><span>${i + 1}</span></div>`,
+        iconSize: [30, 30], iconAnchor: [15, 15],
+      }),
+      zIndexOffset: 2000,
+    });
+    m.bindTooltip(
+      `<b style="font-weight:700">Зона #${i + 1} · ${s.fil}</b><br>спрос ${Math.round(s.ld)} (${d.name.toLowerCase()})`,
+      { className: 'tt', direction: 'top', offset: [0, -14] }
+    );
+    m.on('click', () => openRec(s, i + 1));
+    recLayer.addLayer(m);
+  });
+}
+
+/* ── UI BUILDERS ─────────────────────────────────────────────────────── */
+function buildHeatUI() {
+  const el = document.getElementById('heat-list');
+  el.innerHTML = '';
+  heatKeys.forEach(k => {
+    const d = DS[k];
+    if (!d) return;
+    const custom = k.startsWith('custom_');
+    const card   = document.createElement('div');
+    card.className = 'lyr';
+    card.innerHTML = `
+      <div class="lyr-top">
+        <div class="cbx${d.visible ? ' on' : ''}"></div>
+        <div class="nm">${d.name}
+          <small>${d.stats.n.toLocaleString('ru-RU')} точек · объём ${Math.round(d.stats.sum).toLocaleString('ru-RU')}</small>
+        </div>
+        ${custom ? `<div class="lyr-del" title="Удалить слой" style="cursor:pointer;color:var(--dim);font-size:18px;line-height:1;padding:0 4px;transition:.15s">&times;</div>` : ''}
+      </div>
+      <div class="lyr-ctl">
+        <div class="grp">Цвет <input type="color" value="${d.color}"></div>
+        <div class="grp" style="flex:1">Интенс. <input type="range" min="0.4" max="3" step="0.1" value="${d.intensity}" style="flex:1"></div>
+      </div>`;
+
+    card.querySelector('.cbx').addEventListener('click', e => {
+      d.visible = !d.visible; e.target.classList.toggle('on', d.visible); renderHeat();
+    });
+    card.querySelector('input[type=color]').addEventListener('input', e => { d.color = e.target.value; renderHeat(); });
+    card.querySelector('input[type=range]').addEventListener('input', e => { d.intensity = +e.target.value; renderHeat(); });
+
+    if (custom) {
+      const del = card.querySelector('.lyr-del');
+      del.addEventListener('mouseenter', () => del.style.color = '#e05454');
+      del.addEventListener('mouseleave', () => del.style.color = 'var(--dim)');
+      del.addEventListener('click', () => {
+        if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
+        delete DS[k];
+        heatKeys = heatKeys.filter(x => x !== k);
+        buildHeatUI(); rebuildUpTarget(); renderHeat(); renderRecs();
+      });
+    }
+    el.appendChild(card);
+  });
+}
+
+function buildPtUI() {
+  const el = document.getElementById('pt-list');
+  el.innerHTML = '';
+  pointLayers.forEach(L0 => {
+    const card = document.createElement('div');
+    card.className = 'lyr';
+    const opts = SHAPES.map(s => `<option value="${s[0]}"${s[0] === L0.shape ? ' selected' : ''}>${s[1]}</option>`).join('');
+    card.innerHTML = `
+      <div class="lyr-top">
+        <div class="cbx${L0.visible ? ' on' : ''}"></div>
+        <div class="nm">${L0.name}</div>
+      </div>
+      <div class="lyr-ctl">
+        <div class="grp">Цвет <input type="color" value="${L0.color}"></div>
+        <div class="grp">Иконка <select>${opts}</select></div>
+      </div>`;
+    card.querySelector('.cbx').addEventListener('click', e => { L0.visible = !L0.visible; e.target.classList.toggle('on', L0.visible); renderPoints(); });
+    card.querySelector('input[type=color]').addEventListener('input', e => { L0.color = e.target.value; renderPoints(); });
+    card.querySelector('select').addEventListener('change', e => { L0.shape = e.target.value; renderPoints(); });
+    el.appendChild(card);
+  });
+}
+
+function buildCityUI() {
+  const el = document.getElementById('seg-city');
+  el.innerHTML = '';
+  const mk = (val, lab, on) => {
+    const b = document.createElement('button');
+    b.dataset.city = val; b.textContent = lab;
+    if (on) b.classList.add('on');
+    b.addEventListener('click', () => {
+      el.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      city = val;
+      renderHeat(); renderPoints(); renderRecs();
+      const pts = DS.combined.recs.filter(s => !city || s.fil === city).map(s => [s.lat, s.lon]);
+      if (pts.length) map.flyToBounds(L.latLngBounds(pts).pad(.12), { duration: .7 });
+    });
+    el.appendChild(b);
+  };
+  mk('', 'Все', !city);
+  CITIES.forEach(c => mk(c, c, city === c));
+}
+
+function rebuildUpTarget() {
+  const sel = document.getElementById('up-target');
+  const cur = sel.value;
+  sel.innerHTML = heatKeys.map(k => `<option value="${k}">${DS[k] ? DS[k].name : k}</option>`).join('');
+  if (heatKeys.includes(cur)) sel.value = cur;
+}
+
+/* ── TOAST NOTIFICATIONS ─────────────────────────────────────────────── */
+function toast(msg, type = 'info', ms = 2800) {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => {
+    t.classList.add('out');
+    t.addEventListener('animationend', () => t.remove(), { once: true });
+  }, ms);
+}
+
+/* ── CREATE LAYER MODAL ──────────────────────────────────────────────── */
+const LAYER_PALETTE = ['#9B59B6', '#E67E22', '#1ABC9C', '#E84393', '#F1C40F', '#16A085'];
+
+function openLayerModal() {
+  const overlay = document.getElementById('layer-modal-overlay');
+  const input   = document.getElementById('layer-modal-input');
+  input.value = '';
+  overlay.classList.add('open');
+  setTimeout(() => input.focus(), 150);
+}
+function closeLayerModal() {
+  document.getElementById('layer-modal-overlay').classList.remove('open');
+}
+function confirmLayerModal() {
+  const name = document.getElementById('layer-modal-input').value.trim();
+  closeLayerModal();
+  if (!name) return;
+  const key   = 'custom_' + Date.now();
+  const color = LAYER_PALETTE[(heatKeys.length - 2) % LAYER_PALETTE.length];
+  DS[key] = { key, name, color, intensity: 1, visible: true, recs: [], stats: { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 } };
+  heatKeys.push(key);
+  buildHeatUI(); rebuildUpTarget(); renderHeat();
+  document.getElementById('up-target').value = key;
+  // Highlight upload area
+  const fb = document.getElementById('filebox');
+  fb.style.borderColor = 'var(--acc)';
+  setTimeout(() => fb.style.borderColor = '', 1400);
+  toast(`Слой «${name}» создан — загрузите данные ниже`, 'ok');
+}
+
+/* ── DATA UPLOAD ─────────────────────────────────────────────────────── */
+function pick(o, keys) {
+  for (const k in o) {
+    const lk = ('' + k).toLowerCase().trim();
+    for (const w of keys) if (lk === w || lk.includes(w)) return o[k];
+  }
+  return undefined;
+}
+
+function toRecs(rows) {
+  const out = [];
+  for (const r of rows) {
+    const la = parseFloat(('' + pick(r, ['lat', 'широт'])).replace(',', '.'));
+    const lo = parseFloat(('' + pick(r, ['lon', 'lng', 'долгот'])).replace(',', '.'));
+    let v = pick(r, ['value', 'объ', 'vol', 'amount', 'итог']);
+    v = parseFloat(('' + (v == null ? 1 : v)).replace(',', '.'));
+    if (!isFinite(v) || v <= 0) v = 1;
+    const nm = pick(r, ['name', 'назв', 'точк']) || '';
+    if (isFinite(la) && isFinite(lo)) out.push({ name: '' + nm, fil: cityOf(la, lo), lat: la, lon: lo, vol: v });
+  }
+  return out;
+}
+
+function enrich(recs) {
+  for (const s of recs) {
+    let best = 1e18;
+    for (const [a, b] of ownC) { const d = hav(s.lat, s.lon, a, b); if (d < best) best = d; }
+    s.nd = Math.round(best);
+  }
+  const grid = {};
+  recs.forEach((s, i) => {
+    const k = Math.round(s.lat * 100) + '_' + Math.round(s.lon * 100);
+    (grid[k] = grid[k] || []).push(i);
+  });
+  for (const s of recs) {
+    let ld = 0, lc = 0;
+    const kla = Math.round(s.lat * 100), klo = Math.round(s.lon * 100);
+    for (let dla = -1; dla <= 1; dla++) {
+      for (let dlo = -1; dlo <= 1; dlo++) {
+        const arr = grid[(kla + dla) + '_' + (klo + dlo)];
+        if (!arr) continue;
+        for (const j of arr) {
+          const t = recs[j];
+          if (hav(s.lat, s.lon, t.lat, t.lon) <= 700) { ld += t.vol; lc++; }
+        }
+      }
+    }
+    s.ld = Math.round(ld * 100) / 100;
+    s.lc = lc;
+  }
+  return recs;
+}
+
+function statsOf(recs) {
+  const v = recs.map(r => r.vol).sort((a, b) => a - b), n = v.length;
+  return { n, sum: Math.round(v.reduce((a, b) => a + b, 0) * 10) / 10, max: v[n - 1] || 0, p50: v[Math.floor(n * 0.5)] || 0, p90: v[Math.floor(n * 0.9)] || 0.01 };
+}
+
+/* ── EXPORT ──────────────────────────────────────────────────────────── */
+function exportRecs() {
+  if (!lastRecs.length) { toast('Нет рекомендаций для экспорта', 'err'); return; }
+  const header = ['Ранг', 'Название зоны', 'Город', 'Широта', 'Долгота', 'Спрос (ед/км²)', 'Точек рядом', 'Объём', 'До ближайшей ТТ, м'];
+  const rows   = [header];
+  lastRecs.forEach((s, i) => rows.push([
+    i + 1, s.name || ('Зона ' + (i + 1)), s.fil || '',
+    +s.lat.toFixed(6), +s.lon.toFixed(6),
+    Math.round(s.ld), s.lc, Math.round(s.vol * 100) / 100, s.nd,
+  ]));
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{ wch: 6 }, { wch: 30 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 20 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Рекомендации BR');
+  XLSX.writeFile(wb, 'rekomendacii_BR_' + lastBasisName.toLowerCase() + '_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  toast('Файл скачан', 'ok');
+}
+
+/* ── PERSISTENCE ─────────────────────────────────────────────────────── */
+const STORE_KEY = 'hm_state_v1';
+let stateReady = false, _saveTimer = null;
+
+function doSave() {
+  try {
+    const layers = {};
+    heatKeys.forEach(k => {
+      const d = DS[k]; if (!d) return;
+      const o = { name: d.name, color: d.color, intensity: d.intensity, visible: d.visible };
+      if (k.startsWith('custom_') || d._userData) { o.recs = d.recs; o.stats = d.stats; o._userData = true; }
+      layers[k] = o;
+    });
+    const pts = {};
+    pointLayers.forEach(p => pts[p.id] = { color: p.color, shape: p.shape, visible: p.visible });
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      heatKeys, layers, pts, incCol: { ...incCol },
+      city, covR, topN, recBasis, recShow, heatBoost, districtsOn, incomeHeatOn, coresOn,
+    }));
+  } catch (e) { /* quota exceeded or private mode */ }
+}
+
+function saveState() {
+  if (!stateReady) return;
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(doSave, 400);
+}
+
+function loadState() {
+  let st;
+  try { const raw = localStorage.getItem(STORE_KEY); if (!raw) return; st = JSON.parse(raw); } catch (e) { return; }
+
+  if (Array.isArray(st.heatKeys)) heatKeys = st.heatKeys.slice();
+  if (st.layers) {
+    for (const k of heatKeys) {
+      const sv = st.layers[k]; if (!sv) continue;
+      if (!DS[k]) DS[k] = { key: k };
+      Object.assign(DS[k], { name: sv.name, color: sv.color, intensity: sv.intensity, visible: sv.visible });
+      if (sv.recs) { DS[k].recs = sv.recs; DS[k].stats = sv.stats || statsOf(sv.recs); DS[k]._userData = true; }
+      else if (!DS[k].recs) { DS[k].recs = []; DS[k].stats = { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 }; }
+    }
+  }
+  if (st.pts) pointLayers.forEach(p => { const sv = st.pts[p.id]; if (sv) Object.assign(p, sv); });
+  if (st.incCol)            Object.assign(incCol, st.incCol);
+  if (typeof st.city       === 'string')  city         = st.city;
+  if (typeof st.covR       === 'number')  covR         = st.covR;
+  if (typeof st.topN       === 'number')  topN         = st.topN;
+  if (typeof st.recBasis   === 'string' && DS[st.recBasis]) recBasis = st.recBasis;
+  if (typeof st.recShow    === 'boolean') recShow      = st.recShow;
+  if (typeof st.heatBoost  === 'number')  heatBoost    = st.heatBoost;
+  if (typeof st.districtsOn  === 'boolean') districtsOn  = st.districtsOn;
+  if (typeof st.incomeHeatOn === 'boolean') incomeHeatOn = st.incomeHeatOn;
+  if (typeof st.coresOn      === 'boolean') coresOn      = st.coresOn;
+}
+
+function syncControls() {
+  const $ = id => document.getElementById(id);
+  $('s-cov').value         = covR;  $('v-cov').textContent  = fmtD(covR);
+  $('s-top').value         = topN;  $('v-top').textContent  = topN;
+  $('s-heat-boost').value  = heatBoost; $('v-heat-boost').textContent = Math.round(heatBoost * 100) + '%';
+  $('rec-show').classList.toggle('on', recShow);
+  document.querySelectorAll('#rec-basis button').forEach(b => b.classList.toggle('on', b.dataset.b === recBasis));
+  $('dist-cbx').classList.toggle('on', districtsOn);
+  $('inc-heat-cbx').classList.toggle('on', incomeHeatOn);
+  $('inc-core-cbx').classList.toggle('on', coresOn);
+  ['high', 'mid', 'low'].forEach(t => { const el = $('d-' + t); if (el) el.value = incCol[t]; });
+}
+
+/* ── EVENT WIRING ────────────────────────────────────────────────────── */
+function wireEvents() {
+  const $ = id => document.getElementById(id);
+
+  // Rec basis
+  document.querySelectorAll('#rec-basis button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#rec-basis button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on'); recBasis = b.dataset.b; renderRecs();
+    });
+  });
+
+  $('rec-show').addEventListener('click', e => { recShow = !recShow; e.target.classList.toggle('on', recShow); renderRecs(); });
+  $('s-cov').addEventListener('input', e => { covR = +e.target.value; $('v-cov').textContent = fmtD(covR); renderRecs(); });
+  $('s-top').addEventListener('input', e => { topN = +e.target.value; $('v-top').textContent = topN; renderRecs(); });
+
+  // Heat brightness (fast path — no full re-render)
+  $('s-heat-boost').addEventListener('input', e => {
+    heatBoost = +e.target.value;
+    $('v-heat-boost').textContent = Math.round(heatBoost * 100) + '%';
+    heatKeys.forEach(k => { const d = DS[k]; if (d && d._leaf && d._leaf._canvas) applyHeatBoost(d._leaf._canvas); });
+  });
+
+  // Create layer
+  $('add-layer-btn').addEventListener('click', openLayerModal);
+  $('layer-modal-cancel').addEventListener('click', closeLayerModal);
+  $('layer-modal-confirm').addEventListener('click', confirmLayerModal);
+  $('layer-modal-input').addEventListener('keydown', e => { if (e.key === 'Enter') confirmLayerModal(); if (e.key === 'Escape') closeLayerModal(); });
+  $('layer-modal-overlay').addEventListener('click', e => { if (e.target === $('layer-modal-overlay')) closeLayerModal(); });
+
+  // Template download
+  $('dl-tpl').addEventListener('click', () => {
+    const rows = [['name', 'lat', 'lon', 'value'], ['Пример ТТ', 41.311100, 69.279700, 12.5], ['Пример ТТ 2', 41.299000, 69.240000, 8]];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 10 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Данные');
+    XLSX.writeFile(wb, 'shablon_dannye.xlsx');
+  });
+
+  // File upload
+  const fileInp = $('file');
+  $('filebox').addEventListener('click', () => fileInp.click());
+  fileInp.addEventListener('change', () => {
+    const f = fileInp.files[0]; if (!f) return;
+    const ext = f.name.split('.').pop().toLowerCase();
+    const done = recs => {
+      if (!recs.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
+      pendingUpload = recs;
+      const fn = $('fname'); fn.style.display = 'block';
+      fn.textContent = '✓ ' + f.name + ' — ' + recs.length + ' точек';
+      $('btn-update').disabled = false;
+      toast(`Загружено ${recs.length} точек`, 'ok');
+    };
+    if (ext === 'csv') {
+      Papa.parse(f, { header: true, skipEmptyLines: true, complete: r => done(toRecs(r.data)) });
+    } else {
+      const rd = new FileReader();
+      rd.onload = e => { const wb = XLSX.read(e.target.result, { type: 'array' }); done(toRecs(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]))); };
+      rd.readAsArrayBuffer(f);
+    }
+  });
+
+  $('btn-update').addEventListener('click', () => {
+    if (!pendingUpload) return;
+    const tk = $('up-target').value;
+    const d  = DS[tk]; if (!d) return;
+    d.recs = enrich(pendingUpload); d.stats = statsOf(d.recs); d.visible = true; d._userData = true;
+    pendingUpload = null;
+    $('btn-update').disabled = true;
+    $('fname').style.display = 'none';
+    fileInp.value = '';
+    buildHeatUI(); renderHeat(); renderRecs();
+    toast(`Слой «${d.name}» обновлён (${d.stats.n} точек)`, 'ok');
+  });
+
+  // Income + districts
+  $('dist-cbx').addEventListener('click',     e => { districtsOn  = !districtsOn;  e.target.classList.toggle('on', districtsOn);  renderDistricts(); });
+  $('inc-heat-cbx').addEventListener('click', e => { incomeHeatOn = !incomeHeatOn; e.target.classList.toggle('on', incomeHeatOn); renderIncome(); });
+  $('inc-core-cbx').addEventListener('click', e => { coresOn      = !coresOn;      e.target.classList.toggle('on', coresOn);      renderIncome(); });
+  ['high', 'mid', 'low'].forEach(t => {
+    $('d-' + t).addEventListener('input', e => { incCol[t] = e.target.value; renderIncome(); renderDistricts(); });
+  });
+
+  // Export
+  $('rec-export').addEventListener('click', exportRecs);
+
+  // Mobile burger
+  $('burger').addEventListener('click', () => $('side').classList.toggle('open'));
+
+  // Autosave — delegated on sidebar, captures all interactions
+  document.getElementById('side').addEventListener('input',  saveState);
+  document.getElementById('side').addEventListener('change', saveState);
+  document.getElementById('side').addEventListener('click',  saveState);
+}
+
+/* ── PENDING UPLOAD ──────────────────────────────────────────────────── */
+let pendingUpload = null;
+
+/* ── AUTH ────────────────────────────────────────────────────────────── */
+(function initAuth() {
+  const CREDS = [{ u: 'br', p: 'heatmap2024' }, { u: 'admin', p: 'admin123' }];
+  const SK    = 'hm_auth_ok';
+  const screen    = document.getElementById('auth-screen');
+  const form      = document.getElementById('auth-form');
+  const errEl     = document.getElementById('auth-err');
+  const submitBtn = document.getElementById('auth-submit');
+  const logoutBtn = document.getElementById('logout-btn');
+
+  const unlock = () => { screen.classList.add('hidden'); document.body.style.overflow = ''; };
+  const lock   = () => { screen.classList.remove('hidden'); document.body.style.overflow = 'hidden'; };
+
+  if (sessionStorage.getItem(SK) === '1') unlock(); else lock();
+
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const u  = document.getElementById('auth-user').value.trim().toLowerCase();
+    const p  = document.getElementById('auth-pass').value;
+    const ok = CREDS.some(c => c.u === u && c.p === p);
+    if (ok) {
+      sessionStorage.setItem(SK, '1');
+      submitBtn.disabled = true; submitBtn.textContent = 'Загрузка…';
+      setTimeout(unlock, 380);
+    } else {
+      errEl.classList.add('show');
+      ['auth-user', 'auth-pass'].forEach(id => document.getElementById(id).classList.add('err'));
+      document.getElementById('auth-pass').value = '';
+      document.getElementById('auth-pass').focus();
+      setTimeout(() => {
+        errEl.classList.remove('show');
+        ['auth-user', 'auth-pass'].forEach(id => document.getElementById(id).classList.remove('err'));
+      }, 3000);
+    }
+  });
+
+  ['auth-user', 'auth-pass'].forEach(id => {
+    document.getElementById(id).addEventListener('input', function () {
+      this.classList.remove('err'); errEl.classList.remove('show');
+    });
+  });
+
+  logoutBtn.addEventListener('click', () => {
+    sessionStorage.removeItem(SK);
+    document.getElementById('auth-user').value = '';
+    document.getElementById('auth-pass').value = '';
+    submitBtn.disabled = false; submitBtn.textContent = 'Войти';
+    lock();
+  });
+})();
+
+/* ── INIT ────────────────────────────────────────────────────────────── */
+(function init() {
+  loadState();
+  buildCityUI(); buildHeatUI(); buildPtUI(); rebuildUpTarget(); syncControls();
+  renderHeat(); renderPoints(); renderRecs(); renderDistricts(); renderIncome();
+  wireEvents();
+  stateReady = true;
+
+  // Only fit bounds on first load (no saved city)
+  if (!city) {
+    map.fitBounds(
+      L.latLngBounds(DS.combined.recs.map(s => [s.lat, s.lon]).concat(own.map(o => [o.lat, o.lon]))).pad(.05)
+    );
+  }
+})();
