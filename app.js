@@ -831,11 +831,22 @@ function wireEvents() {
     XLSX.writeFile(wb, 'shablon_dannye.xlsx');
   });
 
-  // File upload
-  const fileInp = $('file');
-  $('filebox').addEventListener('click', () => fileInp.click());
+  // File upload (click + drag&drop)
+  const fileInp = $('file'), fileBox = $('filebox');
+  fileBox.addEventListener('click', () => fileInp.click());
+  ['dragenter', 'dragover'].forEach(ev =>
+    fileBox.addEventListener(ev, e => { e.preventDefault(); fileBox.classList.add('drag'); }));
+  ['dragleave', 'drop'].forEach(ev =>
+    fileBox.addEventListener(ev, e => { e.preventDefault(); fileBox.classList.remove('drag'); }));
+  fileBox.addEventListener('drop', e => {
+    const f = e.dataTransfer.files[0];
+    if (f) handleDataFile(f);
+  });
   fileInp.addEventListener('change', () => {
     const f = fileInp.files[0]; if (!f) return;
+    handleDataFile(f);
+  });
+  function handleDataFile(f) {
     const ext = f.name.split('.').pop().toLowerCase();
     const done = recs => {
       if (!recs.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
@@ -852,7 +863,7 @@ function wireEvents() {
       rd.onload = e => { const wb = XLSX.read(e.target.result, { type: 'array' }); done(toRecs(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]))); };
       rd.readAsArrayBuffer(f);
     }
-  });
+  }
 
   $('btn-update').addEventListener('click', () => {
     if (!pendingUpload) return;
@@ -889,8 +900,14 @@ function wireEvents() {
     stateFileInp.value = '';
   });
 
-  // Mobile burger
-  $('burger').addEventListener('click', () => $('side').classList.toggle('open'));
+  // Mobile burger + backdrop
+  const sideEl = $('side'), backdrop = $('side-backdrop');
+  const setSide = open => {
+    sideEl.classList.toggle('open', open);
+    backdrop.classList.toggle('show', open);
+  };
+  $('burger').addEventListener('click', () => setSide(!sideEl.classList.contains('open')));
+  backdrop.addEventListener('click', () => setSide(false));
 
   // Autosave — delegated on sidebar, captures all interactions
   document.getElementById('side').addEventListener('input',  saveState);
