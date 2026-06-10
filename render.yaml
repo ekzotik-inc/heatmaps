@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: hm-server
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node server.js
+    plan: free
+    envVars:
+      - key: API_KEY
+        value: hm_br_tashkent_2026_secret
+      - key: ALLOWED_ORIGINS
+        value: ""

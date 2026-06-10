@@ -976,5 +976,8 @@ let pendingUpload = null;
     buildCityUI(); buildHeatUI(); buildPtUI(); rebuildUpTarget(); syncControls();
     renderHeat(); renderPoints(); renderRecs(); renderDistricts(); renderIncome();
     toast('Настройки загружены с сервера', 'ok');
+  } else if (SERVER_URL && localStorage.getItem(STORE_KEY)) {
+    // Server is empty (e.g. restarted) but we have a local copy — restore it
+    pushToServer(buildStateSnapshot());
   }
 })();
