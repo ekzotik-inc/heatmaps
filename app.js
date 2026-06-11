@@ -811,6 +811,7 @@ function setSyncBadge(state, label) {
 
 async function pushToServer(snapshot) {
   if (!SERVER_URL) return;
+  if (workMode !== 'edit') return;
   setSyncBadge('syncing', 'Сохранение…');
   try {
     const res = await fetch(SERVER_URL + '/state', {
@@ -1025,20 +1026,67 @@ function wireEvents() {
 /* ── PENDING UPLOAD ──────────────────────────────────────────────────── */
 let pendingUpload = null;
 
+/* ── WORK MODE ───────────────────────────────────────────────────────── */
+let workMode = sessionStorage.getItem('hm_work_mode') || null; // 'view' | 'edit'
+
+function setWorkMode(mode) {
+  workMode = mode;
+  sessionStorage.setItem('hm_work_mode', mode);
+  const badge = document.getElementById('mode-badge');
+  if (badge) {
+    badge.style.display = '';
+    if (mode === 'edit') {
+      badge.textContent = '✏ Режим редактирования';
+      badge.className = 'mode-badge mode-edit';
+    } else {
+      badge.textContent = '👁 Просмотр';
+      badge.className = 'mode-badge mode-view';
+    }
+  }
+}
+
+function clearWorkMode() {
+  workMode = null;
+  sessionStorage.removeItem('hm_work_mode');
+  const badge = document.getElementById('mode-badge');
+  if (badge) badge.style.display = 'none';
+}
+
 /* ── AUTH ────────────────────────────────────────────────────────────── */
 (function initAuth() {
   const CREDS = [{ u: 'br', p: 'heatmap2024' }, { u: 'admin', p: 'admin123' }];
   const SK    = 'hm_auth_ok';
   const screen    = document.getElementById('auth-screen');
+  const stepLogin = document.getElementById('auth-step-login');
+  const stepMode  = document.getElementById('auth-step-mode');
   const form      = document.getElementById('auth-form');
   const errEl     = document.getElementById('auth-err');
   const submitBtn = document.getElementById('auth-submit');
   const logoutBtn = document.getElementById('logout-btn');
 
   const unlock = () => { screen.classList.add('hidden'); document.body.style.overflow = ''; };
-  const lock   = () => { screen.classList.remove('hidden'); document.body.style.overflow = 'hidden'; };
+  const lock   = () => {
+    screen.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    stepLogin.style.display = '';
+    stepMode.style.display = 'none';
+  };
 
-  if (sessionStorage.getItem(SK) === '1') unlock(); else lock();
+  const showModeStep = () => {
+    stepLogin.style.display = 'none';
+    stepMode.style.display = '';
+  };
+
+  // If already authed and mode chosen, go straight to map
+  if (sessionStorage.getItem(SK) === '1' && workMode) {
+    setWorkMode(workMode);
+    unlock();
+  } else if (sessionStorage.getItem(SK) === '1') {
+    // Authed but mode not chosen (e.g. after refresh before choosing)
+    showModeStep();
+  } else {
+    lock();
+  }
 
   form.addEventListener('submit', e => {
     e.preventDefault();
@@ -1047,8 +1095,8 @@ let pendingUpload = null;
     const ok = CREDS.some(c => c.u === u && c.p === p);
     if (ok) {
       sessionStorage.setItem(SK, '1');
-      submitBtn.disabled = true; submitBtn.textContent = 'Загрузка…';
-      setTimeout(unlock, 380);
+      submitBtn.disabled = true; submitBtn.textContent = 'Входим…';
+      setTimeout(showModeStep, 320);
     } else {
       errEl.classList.add('show');
       ['auth-user', 'auth-pass'].forEach(id => document.getElementById(id).classList.add('err'));
@@ -1067,8 +1115,19 @@ let pendingUpload = null;
     });
   });
 
+  document.getElementById('mode-view').addEventListener('click', () => {
+    setWorkMode('view');
+    unlock();
+  });
+
+  document.getElementById('mode-edit').addEventListener('click', () => {
+    setWorkMode('edit');
+    unlock();
+  });
+
   logoutBtn.addEventListener('click', () => {
     sessionStorage.removeItem(SK);
+    clearWorkMode();
     document.getElementById('auth-user').value = '';
     document.getElementById('auth-pass').value = '';
     submitBtn.disabled = false; submitBtn.textContent = 'Войти';
