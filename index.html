@@ -57,6 +57,20 @@
         <div class="row"><label>Общая яркость тепла</label><span class="val blue" id="v-heat-boost">100%</span></div>
         <input type="range" class="full" id="s-heat-boost" min="0.3" max="3" step="0.1" value="1"/>
       </div>
+      <div class="ctrl">
+        <div class="row"><label>Размер пятна</label><span class="val blue" id="v-heat-radius">28 px</span></div>
+        <input type="range" class="full" id="s-heat-radius" min="14" max="48" step="2" value="28"/>
+      </div>
+      <div class="ctrl">
+        <div class="row" style="align-items:center">
+          <label>Наложение слоёв</label>
+          <select id="heat-blend">
+            <option value="multiply">Умножение (смешивание)</option>
+            <option value="normal">Обычное (верхний поверх)</option>
+            <option value="darken">Затемнение</option>
+          </select>
+        </div>
+      </div>
       <button class="add-layer-btn" id="add-layer-btn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Создать новый слой

@@ -17,7 +17,32 @@ const darken  = (h, a) => mix(h, K, a);
 const mixHex  = (a, b, t) => mix(a, h2r(b), t);
 
 function heatGrad(hex) {
-  return { 0.12: mix(hex, W, .62), 0.4: mix(hex, W, .12), 0.7: hex, 1.0: darken(hex, .32) };
+  // Single-hue ramp: light→hue→dark, perceptually smoother stops
+  return { 0.1: mix(hex, W, .78), 0.32: mix(hex, W, .45), 0.55: mix(hex, W, .15), 0.78: hex, 1.0: darken(hex, .38) };
+}
+
+/* Perceptually-uniform scientific colormaps (matplotlib/CARTO standards).
+   Low values stay light/transparent, high values dark & saturated —
+   reads naturally on a light basemap and is colorblind-safe (viridis). */
+const HEAT_RAMPS = {
+  warm:    { 0.10: '#ffffb2', 0.32: '#fed976', 0.55: '#fd8d3c', 0.78: '#e31a1c', 1.0: '#800026' }, // YlOrRd — классика тепла
+  cool:    { 0.10: '#e0f3f8', 0.32: '#abd9e9', 0.55: '#41b6c4', 0.78: '#2c7fb8', 1.0: '#253494' }, // Blues — холодная
+  viridis: { 0.10: '#fde725', 0.32: '#5ec962', 0.55: '#21918c', 0.78: '#3b528b', 1.0: '#440154' },
+  inferno: { 0.10: '#fcffa4', 0.32: '#f98e09', 0.55: '#bc3754', 0.78: '#57106e', 1.0: '#000004' },
+  magma:   { 0.10: '#fcfdbf', 0.32: '#fc8961', 0.55: '#b73779', 0.78: '#51127c', 1.0: '#000004' },
+  turbo:   { 0.10: '#28bbec', 0.32: '#a4fc3c', 0.55: '#fb7e21', 0.78: '#d23105', 1.0: '#7a0403' },
+};
+const RAMP_NAMES = {
+  custom:  'Свой цвет',
+  warm:    'Классика (жёлто-красная)',
+  cool:    'Холодная (синяя)',
+  viridis: 'Viridis (научная)',
+  inferno: 'Inferno',
+  magma:   'Magma',
+  turbo:   'Turbo (контрастная)',
+};
+function gradOf(d) {
+  return (d.ramp && d.ramp !== 'custom' && HEAT_RAMPS[d.ramp]) ? HEAT_RAMPS[d.ramp] : heatGrad(d.color);
 }
 function rampColor(t) {
   t = Math.max(0, Math.min(1, t));
@@ -64,8 +89,15 @@ const DS = {
   sticks:   Object.assign({ key: 'sticks',   name: 'Стики',    color: '#2C7FB8', intensity: 1, visible: false }, DATA.sticks),
   combined: Object.assign({ key: 'combined', name: 'Оба',      color: '#6A3D9A', intensity: 1, visible: false }, DATA.combined),
 };
+DS.cig.ramp      = 'warm';
+DS.sticks.ramp   = 'cool';
+DS.combined.ramp = 'viridis';
+Object.values(DS).forEach(d => { d.opacity = 1; });
+
 let heatKeys = ['cig', 'sticks'];
 let heatBoost = 1;
+let heatBlend = 'multiply';   // multiply makes overlapping layers mix like ink on a light basemap
+let heatRadius = 28;
 
 // UI state
 let city = '', covR = 600, topN = 12, recShow = true, recBasis = 'cig';
@@ -279,10 +311,16 @@ function renderPoints() {
 }
 
 /* ── HEAT LAYERS ─────────────────────────────────────────────────────── */
-function applyHeatBoost(canvas) {
+function applyHeatCanvas(d) {
+  const canvas = d._leaf && d._leaf._canvas;
   if (!canvas) return;
+  canvas.style.mixBlendMode = heatBlend === 'normal' ? '' : heatBlend;
   canvas.style.filter  = heatBoost === 1 ? '' : `brightness(${heatBoost}) saturate(${Math.max(heatBoost * .8 + .2, 0)})`;
-  canvas.style.opacity = heatBoost < 1 ? String(heatBoost) : '';
+  const op = (d.opacity == null ? 1 : d.opacity) * (heatBoost < 1 ? heatBoost : 1);
+  canvas.style.opacity = op >= 1 ? '' : String(op);
+}
+function restyleHeatCanvases() {
+  heatKeys.forEach(k => { const d = DS[k]; if (d) applyHeatCanvas(d); });
 }
 
 function renderHeat() {
@@ -297,12 +335,12 @@ function renderHeat() {
     const pts   = recs.map(r => [r.lat, r.lon, Math.min(r.vol / scale, 1)]);
     total += recs.length;
     d._leaf = L.heatLayer(pts, {
-      radius: 28, blur: 22, minOpacity: .25,
+      radius: heatRadius, blur: Math.round(heatRadius * .8), minOpacity: .22,
       max: 1 / (d.intensity || 1),
-      gradient: heatGrad(d.color),
+      gradient: gradOf(d),
     }).addTo(map);
     // canvas may not exist until next frame
-    requestAnimationFrame(() => applyHeatBoost(d._leaf && d._leaf._canvas));
+    requestAnimationFrame(() => applyHeatCanvas(d));
   });
   document.getElementById('b-count').textContent = total.toLocaleString('ru-RU');
 }
@@ -453,15 +491,42 @@ function buildHeatUI() {
         ${custom ? `<div class="lyr-del" title="Удалить слой" style="cursor:pointer;color:var(--dim);font-size:18px;line-height:1;padding:0 4px;transition:.15s">&times;</div>` : ''}
       </div>
       <div class="lyr-ctl">
-        <div class="grp">Цвет <input type="color" value="${d.color}"></div>
-        <div class="grp" style="flex:1">Интенс. <input type="range" min="0.4" max="3" step="0.1" value="${d.intensity}" style="flex:1"></div>
+        <div class="grp" style="flex:1">Палитра
+          <select class="ramp-sel" style="flex:1">${Object.keys(RAMP_NAMES).map(r =>
+            `<option value="${r}"${(d.ramp || 'custom') === r ? ' selected' : ''}>${RAMP_NAMES[r]}</option>`).join('')}</select>
+          <input type="color" value="${d.color}" style="display:${(d.ramp || 'custom') === 'custom' ? '' : 'none'}">
+        </div>
+      </div>
+      <div class="ramp-preview"></div>
+      <div class="lyr-ctl">
+        <div class="grp" style="flex:1">Интенс. <input type="range" class="r-int" min="0.4" max="3" step="0.1" value="${d.intensity}" style="flex:1"></div>
+        <div class="grp" style="flex:1">Прозр. <input type="range" class="r-op" min="0.15" max="1" step="0.05" value="${d.opacity == null ? 1 : d.opacity}" style="flex:1"></div>
       </div>`;
+
+    const colorInp = card.querySelector('input[type=color]');
+    const rampSel  = card.querySelector('.ramp-sel');
+    const preview  = card.querySelector('.ramp-preview');
+    const drawPreview = () => {
+      const g = gradOf(d);
+      const stops = Object.keys(g).map(Number).sort((a, b) => a - b)
+        .map(s => `${g[s]} ${Math.round(s * 100)}%`).join(', ');
+      preview.style.background = `linear-gradient(90deg, transparent 0%, ${stops})`;
+    };
+    drawPreview();
 
     card.querySelector('.cbx').addEventListener('click', e => {
       d.visible = !d.visible; e.target.classList.toggle('on', d.visible); renderHeat();
     });
-    card.querySelector('input[type=color]').addEventListener('input', e => { d.color = e.target.value; renderHeat(); });
-    card.querySelector('input[type=range]').addEventListener('input', e => { d.intensity = +e.target.value; renderHeat(); });
+    rampSel.addEventListener('change', e => {
+      d.ramp = e.target.value;
+      colorInp.style.display = d.ramp === 'custom' ? '' : 'none';
+      drawPreview(); renderHeat();
+    });
+    colorInp.addEventListener('input', e => { d.color = e.target.value; drawPreview(); renderHeat(); });
+    card.querySelector('.r-int').addEventListener('input', e => { d.intensity = +e.target.value; renderHeat(); });
+    card.querySelector('.r-op').addEventListener('input', e => {
+      d.opacity = +e.target.value; applyHeatCanvas(d); // fast path, no re-render
+    });
 
     if (custom) {
       const del = card.querySelector('.lyr-del');
@@ -561,7 +626,7 @@ function confirmLayerModal() {
   if (!name) return;
   const key   = 'custom_' + Date.now();
   const color = LAYER_PALETTE[(heatKeys.length - 2) % LAYER_PALETTE.length];
-  DS[key] = { key, name, color, intensity: 1, visible: true, recs: [], stats: { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 } };
+  DS[key] = { key, name, color, ramp: 'custom', opacity: 1, intensity: 1, visible: true, recs: [], stats: { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 } };
   heatKeys.push(key);
   buildHeatUI(); rebuildUpTarget(); renderHeat();
   document.getElementById('up-target').value = key;
@@ -635,7 +700,7 @@ function buildStateSnapshot() {
   const layers = {};
   heatKeys.forEach(k => {
     const d = DS[k]; if (!d) return;
-    const o = { name: d.name, color: d.color, intensity: d.intensity, visible: d.visible };
+    const o = { name: d.name, color: d.color, ramp: d.ramp, opacity: d.opacity, intensity: d.intensity, visible: d.visible };
     if (k.startsWith('custom_') || d._userData) { o.recs = d.recs; o.stats = d.stats; o._userData = true; }
     layers[k] = o;
   });
@@ -644,7 +709,7 @@ function buildStateSnapshot() {
   return {
     _v: 1, _app: 'hm-br', _date: new Date().toISOString().slice(0, 10),
     heatKeys, layers, pts, incCol: { ...incCol },
-    city, covR, topN, recBasis, recShow, heatBoost, districtsOn, incomeHeatOn, coresOn,
+    city, covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
   };
 }
 
@@ -683,6 +748,8 @@ function applySnapshot(st) {
       const sv = st.layers[k]; if (!sv) continue;
       if (!DS[k]) DS[k] = { key: k };
       Object.assign(DS[k], { name: sv.name, color: sv.color, intensity: sv.intensity, visible: sv.visible });
+      if (typeof sv.ramp    === 'string') DS[k].ramp    = sv.ramp;
+      if (typeof sv.opacity === 'number') DS[k].opacity = sv.opacity;
       if (sv.recs) { DS[k].recs = sv.recs; DS[k].stats = sv.stats || statsOf(sv.recs); DS[k]._userData = true; }
       else if (!DS[k].recs) { DS[k].recs = []; DS[k].stats = { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 }; }
     }
@@ -695,6 +762,8 @@ function applySnapshot(st) {
   if (typeof st.recBasis   === 'string' && DS[st.recBasis]) recBasis = st.recBasis;
   if (typeof st.recShow    === 'boolean') recShow      = st.recShow;
   if (typeof st.heatBoost  === 'number')  heatBoost    = st.heatBoost;
+  if (typeof st.heatBlend  === 'string')  heatBlend    = st.heatBlend;
+  if (typeof st.heatRadius === 'number')  heatRadius   = st.heatRadius;
   if (typeof st.districtsOn  === 'boolean') districtsOn  = st.districtsOn;
   if (typeof st.incomeHeatOn === 'boolean') incomeHeatOn = st.incomeHeatOn;
   if (typeof st.coresOn      === 'boolean') coresOn      = st.coresOn;
@@ -806,6 +875,8 @@ function syncControls() {
   $('s-cov').value         = covR;  $('v-cov').textContent  = fmtD(covR);
   $('s-top').value         = topN;  $('v-top').textContent  = topN;
   $('s-heat-boost').value  = heatBoost; $('v-heat-boost').textContent = Math.round(heatBoost * 100) + '%';
+  $('s-heat-radius').value = heatRadius; $('v-heat-radius').textContent = heatRadius + ' px';
+  $('heat-blend').value    = heatBlend;
   $('rec-show').classList.toggle('on', recShow);
   document.querySelectorAll('#rec-basis button').forEach(b => b.classList.toggle('on', b.dataset.b === recBasis));
   $('dist-cbx').classList.toggle('on', districtsOn);
@@ -834,7 +905,20 @@ function wireEvents() {
   $('s-heat-boost').addEventListener('input', e => {
     heatBoost = +e.target.value;
     $('v-heat-boost').textContent = Math.round(heatBoost * 100) + '%';
-    heatKeys.forEach(k => { const d = DS[k]; if (d && d._leaf && d._leaf._canvas) applyHeatBoost(d._leaf._canvas); });
+    restyleHeatCanvases();
+  });
+
+  // Heat spot radius
+  $('s-heat-radius').addEventListener('input', e => {
+    heatRadius = +e.target.value;
+    $('v-heat-radius').textContent = heatRadius + ' px';
+    renderHeat();
+  });
+
+  // Blend mode (fast path)
+  $('heat-blend').addEventListener('change', e => {
+    heatBlend = e.target.value;
+    restyleHeatCanvases();
   });
 
   // Create layer
