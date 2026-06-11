@@ -122,6 +122,13 @@ html, body {
 }
 .lyr-ctl .grp { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--mut); }
 
+/* gradient strip showing the layer's active colour ramp */
+.ramp-preview {
+  height: 7px; border-radius: 4px; margin-top: 8px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: #1e3248;
+}
+
 /* ── CHECKBOXES ──────────────────────────────────────────────────────── */
 .cbx {
   width: 18px; height: 18px; border-radius: 5px;
