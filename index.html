@@ -12,7 +12,8 @@
 <body>
 
 <div id="auth-screen">
-  <div class="auth-card">
+  <!-- Step 1: Login -->
+  <div class="auth-card" id="auth-step-login">
     <div class="auth-logo">
       <div class="mk"></div>
       <div class="auth-logo-text">
@@ -34,6 +35,35 @@
       <button type="submit" class="auth-btn" id="auth-submit">Войти</button>
       <div class="auth-err" id="auth-err">Неверный логин или пароль. Попробуйте ещё раз.</div>
     </form>
+    <div class="auth-footer">Аналитика торговых точек · 2025</div>
+  </div>
+  <!-- Step 2: Mode selection -->
+  <div class="auth-card auth-card-mode" id="auth-step-mode" style="display:none">
+    <div class="auth-logo">
+      <div class="mk"></div>
+      <div class="auth-logo-text">
+        <h2>Heat Map · BR</h2>
+        <p>Выберите режим работы</p>
+      </div>
+    </div>
+    <h1 class="auth-title">Как вы будете работать?</h1>
+    <p class="auth-sub">Режим можно сменить только после повторного входа</p>
+    <div class="mode-cards">
+      <button class="mode-card" id="mode-view">
+        <div class="mode-icon">👁</div>
+        <div class="mode-body">
+          <div class="mode-name">Просто посмотреть</div>
+          <div class="mode-desc">Все функции доступны. Ваши изменения сохраняются локально и не влияют на карту команды.</div>
+        </div>
+      </button>
+      <button class="mode-card mode-card-edit" id="mode-edit">
+        <div class="mode-icon">✏️</div>
+        <div class="mode-body">
+          <div class="mode-name">Редактировать</div>
+          <div class="mode-desc">Изменения отправляются на сервер — карта обновится у всей команды.</div>
+        </div>
+      </button>
+    </div>
     <div class="auth-footer">Аналитика торговых точек · 2025</div>
   </div>
 </div>
@@ -155,6 +185,7 @@
     <span class="sync-dot" id="sync-dot"></span>
     <span id="sync-label"></span>
   </div>
+  <div class="mode-badge" id="mode-badge" style="display:none"></div>
 </div>
 
 <div id="layer-modal-overlay">
