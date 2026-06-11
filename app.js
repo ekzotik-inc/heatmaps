@@ -730,29 +730,52 @@ const SERVER_KEY = window._HM_SERVER_KEY || '';
 
 let stateReady = false, _saveTimer = null;
 
+function setSyncBadge(state, label) {
+  if (!SERVER_URL) return;
+  const badge = document.getElementById('sync-badge');
+  const lbl   = document.getElementById('sync-label');
+  if (!badge) return;
+  badge.style.display = '';
+  badge.className = 'sync-badge ' + state;
+  lbl.textContent = label;
+}
+
 async function pushToServer(snapshot) {
   if (!SERVER_URL) return;
+  setSyncBadge('syncing', 'Сохранение…');
   try {
     const res = await fetch(SERVER_URL + '/state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Key': SERVER_KEY },
       body: JSON.stringify(snapshot),
     });
-    if (!res.ok) console.warn('Server sync error:', res.status, await res.text());
+    if (!res.ok) {
+      setSyncBadge('err', 'Ошибка сохранения');
+      console.warn('Server sync error:', res.status);
+    } else {
+      const now = new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+      setSyncBadge('ok', 'Сохранено ' + now);
+    }
   } catch (e) {
+    setSyncBadge('err', 'Сервер недоступен');
     console.warn('Server unreachable, saved locally only:', e.message);
   }
 }
 
 async function fetchFromServer() {
   if (!SERVER_URL) return null;
+  setSyncBadge('syncing', 'Загрузка…');
   try {
     const res = await fetch(SERVER_URL + '/state');
-    if (!res.ok) return null;
+    if (!res.ok) { setSyncBadge('err', 'Ошибка загрузки'); return null; }
     const data = await res.json();
-    if (!data || data.empty || data._app !== 'hm-br') return null;
+    if (!data || data.empty || data._app !== 'hm-br') {
+      setSyncBadge('ok', 'Нет данных на сервере');
+      return null;
+    }
     return data;
   } catch (e) {
+    setSyncBadge('err', 'Сервер недоступен');
     console.warn('Could not load from server, using local state:', e.message);
     return null;
   }
@@ -992,6 +1015,10 @@ let pendingUpload = null;
     try { localStorage.setItem(STORE_KEY, JSON.stringify(serverState)); } catch (e) {}
     buildCityUI(); buildHeatUI(); buildPtUI(); rebuildUpTarget(); syncControls();
     renderHeat(); renderPoints(); renderRecs(); renderDistricts(); renderIncome();
+    const savedAt = serverState._savedAt
+      ? new Date(serverState._savedAt).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
+      : '';
+    setSyncBadge('ok', 'Обновлено' + (savedAt ? ' ' + savedAt : ''));
     toast('Настройки загружены с сервера', 'ok');
   } else if (SERVER_URL && localStorage.getItem(STORE_KEY)) {
     // Server is empty (e.g. restarted) but we have a local copy — restore it
