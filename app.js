@@ -102,6 +102,11 @@ let heatRadius = 28;
 // UI state
 let city = '', covR = 600, topN = 12, recShow = true, recBasis = 'cig';
 
+// Address-program export state
+let rtRadius = 1000;          // radius from BR/IQOS own points (m)
+let rtExclRadius = 150;       // proximity radius for excluding points (m)
+let rtExclKeys = [];          // layer keys to exclude points from (e.g. Re-traffic)
+
 /* ── MAP INIT ────────────────────────────────────────────────────────── */
 const map = L.map('map', { preferCanvas: true, zoomControl: true, minZoom: 5, zoomSnap: .5 })
               .setView([41, 67], 6);
@@ -710,6 +715,7 @@ function buildStateSnapshot() {
     _v: 1, _app: 'hm-br', _date: new Date().toISOString().slice(0, 10),
     heatKeys, layers, pts, incCol: { ...incCol },
     city, covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
+    rtRadius, rtExclRadius, rtExclKeys,
   };
 }
 
@@ -767,6 +773,9 @@ function applySnapshot(st) {
   if (typeof st.districtsOn  === 'boolean') districtsOn  = st.districtsOn;
   if (typeof st.incomeHeatOn === 'boolean') incomeHeatOn = st.incomeHeatOn;
   if (typeof st.coresOn      === 'boolean') coresOn      = st.coresOn;
+  if (typeof st.rtRadius     === 'number')  rtRadius     = st.rtRadius;
+  if (typeof st.rtExclRadius === 'number')  rtExclRadius = st.rtExclRadius;
+  if (Array.isArray(st.rtExclKeys))         rtExclKeys   = st.rtExclKeys.slice();
 }
 
 /* ── EXPORT RECS ─────────────────────────────────────────────────────── */
@@ -788,14 +797,50 @@ function exportRecs() {
 }
 
 /* ── RETRAFFIC FILTERED EXPORT ───────────────────────────────────────── */
-function exportRetraffic() {
-  // Find Re-traffic layer (any key whose name matches)
-  const rtKey = heatKeys.find(k => {
-    const n = (DS[k] && DS[k].name) || '';
-    return /re.?traffic/i.test(n) || /ретрафик/i.test(n);
-  });
+// Layers eligible for use as "exclusions" — custom layers, not base shipment layers
+function rtExclLayerKeys() {
+  return heatKeys.filter(k => k !== 'cig' && k !== 'sticks' && DS[k] && (DS[k].recs || []).length);
+}
 
-  const rtRecs = (rtKey && DS[rtKey] && DS[rtKey].recs) ? DS[rtKey].recs : [];
+// Build the exclusion-layer checkbox list. Default-selects any Re-traffic layer.
+function buildRtExclUI() {
+  const box = document.getElementById('rt-excl-list');
+  if (!box) return;
+  const keys = rtExclLayerKeys();
+
+  // Auto-select Re-traffic layer the first time (when nothing chosen yet)
+  if (!rtExclKeys.length) {
+    const rt = keys.find(k => /re.?traffic|ретрафик/i.test(DS[k].name || ''));
+    if (rt) rtExclKeys = [rt];
+  }
+  // Drop selections that no longer exist
+  rtExclKeys = rtExclKeys.filter(k => keys.includes(k));
+
+  if (!keys.length) {
+    box.innerHTML = '<div class="rt-excl-empty">Нет дополнительных слоёв. Загрузите слой Re-traffic, чтобы исключать его точки.</div>';
+    return;
+  }
+  box.innerHTML = keys.map(k =>
+    `<label class="chk rt-excl-item"><div class="cbx${rtExclKeys.includes(k) ? ' on' : ''}" data-rtx="${k}"></div><span>${DS[k].name || k}</span></label>`
+  ).join('');
+  box.querySelectorAll('[data-rtx]').forEach(cb => {
+    cb.addEventListener('click', () => {
+      const k = cb.dataset.rtx;
+      if (rtExclKeys.includes(k)) rtExclKeys = rtExclKeys.filter(x => x !== k);
+      else rtExclKeys.push(k);
+      cb.classList.toggle('on');
+      saveState();
+    });
+  });
+}
+
+function exportRetraffic() {
+  // Collect exclusion records from all selected layers
+  const exclRecs = [];
+  rtExclKeys.forEach(k => {
+    if (DS[k] && DS[k].recs) exclRecs.push(...DS[k].recs);
+  });
+  const exclNames = rtExclKeys.map(k => DS[k] && DS[k].name).filter(Boolean);
 
   // Build combined vol per point (cig + sticks), keyed by code
   const byCode = {};
@@ -824,35 +869,35 @@ function exportRetraffic() {
   // Filter: volume >= average
   points = points.filter(p => p.vol_total >= avg);
 
-  // Filter: within 1 km of any BR/IQOS own point
+  // Filter: within chosen radius of any BR/IQOS own point
   const ownFiltered = city ? own.filter(o => o.cityRu === city) : own;
   const inRadius = points.filter(p =>
-    ownFiltered.some(o => hav(p.lat, p.lon, o.lat, o.lon) <= 1000)
+    ownFiltered.some(o => hav(p.lat, p.lon, o.lat, o.lon) <= rtRadius)
   );
 
-  console.log('[RT Export] total points:', Object.keys(byCode).length,
-    '| after city+avg filter:', points.length,
-    '| within 1km of BR/IQOS:', inRadius.length);
+  console.log('[Addr Export] total:', Object.keys(byCode).length,
+    '| after city+avg:', points.length,
+    `| within ${rtRadius}m:`, inRadius.length);
 
   if (!inRadius.length) {
-    toast(`Нет точек в радиусе 1 км от BR/IQOS (всего с нужным объёмом: ${points.length})`, 'err');
+    toast(`Нет точек в радиусе ${fmtD(rtRadius)} от BR/IQOS (с нужным объёмом: ${points.length})`, 'err');
     return;
   }
   points = inRadius;
 
-  // Exclude points present in Re-traffic layer (proximity < 150 m or code match)
-  const isRetraffic = (p) => {
-    if (!rtRecs.length) return false;
-    return rtRecs.some(r => {
+  // Exclude points near any selected exclusion layer (proximity or code match)
+  const isExcluded = (p) => {
+    if (!exclRecs.length) return false;
+    return exclRecs.some(r => {
       if (r.code && p.code && r.code === p.code) return true;
-      return hav(p.lat, p.lon, r.lat, r.lon) < 150;
+      return hav(p.lat, p.lon, r.lat, r.lon) < rtExclRadius;
     });
   };
-  const excluded = points.filter(isRetraffic).length;
-  points = points.filter(p => !isRetraffic(p));
+  const excluded = points.filter(isExcluded).length;
+  points = points.filter(p => !isExcluded(p));
 
   if (!points.length) {
-    if (rtRecs.length) toast(`После исключения Re-traffic (${excluded} шт.) точек не осталось`, 'err');
+    if (exclRecs.length) toast(`После исключения (${excluded} шт.) точек не осталось`, 'err');
     else toast('Нет точек после применения фильтров', 'err');
     return;
   }
@@ -900,9 +945,11 @@ function exportRetraffic() {
   // Info sheet
   const infoData = [
     ['Параметры фильтра'],
-    ['Радиус от BR/IQOS', '≤ 1000 м'],
+    ['Радиус от BR/IQOS', '≤ ' + fmtD(rtRadius)],
     ['Объём', `≥ среднего (${avg.toFixed(2)} ед.)`],
-    ['Re-traffic', rtRecs.length ? `исключено ${excluded} точек (слой «${DS[rtKey].name}»)` : 'слой не загружен — фильтр не применялся'],
+    ['Исключаемые слои', exclNames.length ? exclNames.join(', ') : 'не выбраны'],
+    ['Радиус исключения', fmtD(rtExclRadius)],
+    ['Исключено точек', excluded],
     ['Город', city || 'все'],
     ['Дата выгрузки', new Date().toLocaleDateString('ru')],
     [],
@@ -912,12 +959,12 @@ function exportRetraffic() {
   wsInfo['!cols'] = [{ wch: 28 }, { wch: 42 }];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Адреса без Re-traffic');
+  XLSX.utils.book_append_sheet(wb, ws, 'Адресная программа');
   XLSX.utils.book_append_sheet(wb, wsInfo, 'Параметры');
 
-  const fname = 'BR_bez_retraffic_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+  const fname = 'BR_adresa_' + new Date().toISOString().slice(0, 10) + '.xlsx';
   XLSX.writeFile(wb, fname);
-  toast(`Скачано ${points.length} точек (исключено Re-traffic: ${excluded})`, 'ok');
+  toast(`Скачано ${points.length} точек (исключено: ${excluded})`, 'ok');
 }
 
 /* ── PERSISTENCE ─────────────────────────────────────────────────────── */
@@ -1017,6 +1064,9 @@ function syncControls() {
   $('inc-heat-cbx').classList.toggle('on', incomeHeatOn);
   $('inc-core-cbx').classList.toggle('on', coresOn);
   ['high', 'mid', 'low'].forEach(t => { const el = $('d-' + t); if (el) el.value = incCol[t]; });
+  $('s-rt-radius').value = rtRadius;     $('v-rt-radius').textContent = fmtD(rtRadius);
+  $('s-rt-excl').value   = rtExclRadius; $('v-rt-excl').textContent   = fmtD(rtExclRadius);
+  buildRtExclUI();
 }
 
 /* ── EVENT WIRING ────────────────────────────────────────────────────── */
@@ -1115,7 +1165,7 @@ function wireEvents() {
     $('btn-update').disabled = true;
     $('fname').style.display = 'none';
     fileInp.value = '';
-    buildHeatUI(); renderHeat(); renderRecs();
+    buildHeatUI(); renderHeat(); renderRecs(); buildRtExclUI();
     toast(`Слой «${d.name}» обновлён (${d.stats.n} точек)`, 'ok');
   });
 
@@ -1130,6 +1180,12 @@ function wireEvents() {
   // Export recs
   $('rec-export').addEventListener('click', exportRecs);
   $('btn-retraffic-export').addEventListener('click', exportRetraffic);
+  $('s-rt-radius').addEventListener('input', e => {
+    rtRadius = +e.target.value; $('v-rt-radius').textContent = fmtD(rtRadius);
+  });
+  $('s-rt-excl').addEventListener('input', e => {
+    rtExclRadius = +e.target.value; $('v-rt-excl').textContent = fmtD(rtExclRadius);
+  });
 
   // Share / import state
   $('btn-export-state').addEventListener('click', exportState);
