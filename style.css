@@ -683,3 +683,10 @@ input[type=range].full { width: 100%; }
   background: rgba(20,60,30,.82); color: #6ed88f;
   border: 1px solid rgba(93,188,116,.3);
 }
+
+/* ── RETRAFFIC EXPORT BTN ────────────────────────────────────────────── */
+.btn-retraffic {
+  background: linear-gradient(180deg, #1a6640, #124d30);
+  box-shadow: 0 2px 10px rgba(26,102,64,.35);
+}
+.btn-retraffic:hover { filter: brightness(1.12); box-shadow: 0 4px 16px rgba(26,102,64,.45); }
