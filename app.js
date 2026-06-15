@@ -787,6 +787,127 @@ function exportRecs() {
   toast('Файл скачан', 'ok');
 }
 
+/* ── RETRAFFIC FILTERED EXPORT ───────────────────────────────────────── */
+function exportRetraffic() {
+  // Find Re-traffic layer (any key whose name matches)
+  const rtKey = heatKeys.find(k => {
+    const n = (DS[k] && DS[k].name) || '';
+    return /re.?traffic/i.test(n) || /ретрафик/i.test(n);
+  });
+
+  const rtRecs = (rtKey && DS[rtKey] && DS[rtKey].recs) ? DS[rtKey].recs : [];
+
+  // Build combined vol per point (cig + sticks), keyed by code
+  const byCode = {};
+  const addLayer = (key, field) => {
+    const d = DS[key];
+    if (!d || !d.recs) return;
+    d.recs.forEach(r => {
+      const c = r.code || (r.lat + '|' + r.lon);
+      if (!byCode[c]) byCode[c] = { ...r, vol_cig: 0, vol_sticks: 0 };
+      byCode[c][field] = (byCode[c][field] || 0) + (r.vol || 0);
+    });
+  };
+  addLayer('cig',    'vol_cig');
+  addLayer('sticks', 'vol_sticks');
+
+  // Filter by city if active
+  let points = Object.values(byCode);
+  if (city) points = points.filter(p => p.fil === city);
+
+  // Compute combined volume
+  points.forEach(p => { p.vol_total = (p.vol_cig || 0) + (p.vol_sticks || 0); });
+
+  // Average volume threshold
+  const avg = points.reduce((s, p) => s + p.vol_total, 0) / (points.length || 1);
+
+  // Filter: volume >= average
+  points = points.filter(p => p.vol_total >= avg);
+
+  // Filter: within 1 km of any BR/IQOS own point
+  const ownFiltered = city ? own.filter(o => o.cityRu === city) : own;
+  points = points.filter(p =>
+    ownFiltered.some(o => hav(p.lat, p.lon, o.lat, o.lon) <= 1000)
+  );
+
+  if (!points.length) { toast('Нет точек по заданным критериям', 'err'); return; }
+
+  // Exclude points present in Re-traffic layer (proximity < 150 m or code match)
+  const isRetraffic = (p) => {
+    if (!rtRecs.length) return false;
+    return rtRecs.some(r => {
+      if (r.code && p.code && r.code === p.code) return true;
+      return hav(p.lat, p.lon, r.lat, r.lon) < 150;
+    });
+  };
+  const excluded = points.filter(isRetraffic).length;
+  points = points.filter(p => !isRetraffic(p));
+
+  if (!points.length) { toast('После исключения Re-traffic точек не осталось', 'err'); return; }
+
+  // Sort by combined volume descending
+  points.sort((a, b) => b.vol_total - a.vol_total);
+
+  // Find nearest own point distance for each
+  points.forEach(p => {
+    let minD = Infinity;
+    ownFiltered.forEach(o => { const d = hav(p.lat, p.lon, o.lat, o.lon); if (d < minD) minD = d; });
+    p._distOwn = Math.round(minD);
+  });
+
+  // Build Excel
+  const header = [
+    '№', 'Название точки', 'Город', 'Адрес',
+    'Широта', 'Долгота',
+    'Объём сигареты', 'Объём стики', 'Объём итого',
+    'До ближ. BR/IQOS, м', 'Код'
+  ];
+  const rows = [header];
+  points.forEach((p, i) => rows.push([
+    i + 1,
+    p.name || '',
+    p.fil  || '',
+    p.addr || '',
+    +p.lat.toFixed(6),
+    +p.lon.toFixed(6),
+    Math.round((p.vol_cig    || 0) * 100) / 100,
+    Math.round((p.vol_sticks || 0) * 100) / 100,
+    Math.round(p.vol_total   * 100) / 100,
+    p._distOwn,
+    p.code || '',
+  ]));
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 4 }, { wch: 38 }, { wch: 12 }, { wch: 36 },
+    { wch: 12 }, { wch: 12 },
+    { wch: 16 }, { wch: 14 }, { wch: 14 },
+    { wch: 20 }, { wch: 10 },
+  ];
+
+  // Info sheet
+  const infoData = [
+    ['Параметры фильтра'],
+    ['Радиус от BR/IQOS', '≤ 1000 м'],
+    ['Объём', `≥ среднего (${avg.toFixed(2)} ед.)`],
+    ['Re-traffic', rtRecs.length ? `исключено ${excluded} точек (слой «${DS[rtKey].name}»)` : 'слой не загружен — фильтр не применялся'],
+    ['Город', city || 'все'],
+    ['Дата выгрузки', new Date().toLocaleDateString('ru')],
+    [],
+    ['Итого точек в файле', points.length],
+  ];
+  const wsInfo = XLSX.utils.aoa_to_sheet(infoData);
+  wsInfo['!cols'] = [{ wch: 28 }, { wch: 42 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Адреса без Re-traffic');
+  XLSX.utils.book_append_sheet(wb, wsInfo, 'Параметры');
+
+  const fname = 'BR_bez_retraffic_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+  XLSX.writeFile(wb, fname);
+  toast(`Скачано ${points.length} точек (исключено Re-traffic: ${excluded})`, 'ok');
+}
+
 /* ── PERSISTENCE ─────────────────────────────────────────────────────── */
 const STORE_KEY = 'hm_state_v1';
 
@@ -996,6 +1117,7 @@ function wireEvents() {
 
   // Export recs
   $('rec-export').addEventListener('click', exportRecs);
+  $('btn-retraffic-export').addEventListener('click', exportRetraffic);
 
   // Share / import state
   $('btn-export-state').addEventListener('click', exportState);
