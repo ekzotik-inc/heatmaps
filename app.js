@@ -418,6 +418,7 @@ function renderRecs() {
     if (recs.length >= topN) break;
   }
   lastRecs = recs;
+  updateAccBadges();
 
   // Summary
   const uncSum    = cand.reduce((a, s) => a + s.vol, 0);
@@ -481,6 +482,35 @@ function renderRecs() {
   });
 }
 
+/* ── SLIDER FILL HELPER ──────────────────────────────────────────────── */
+function fillSlider(el) {
+  if (!el) return;
+  const min = +el.min || 0, max = +el.max || 100, val = +el.value;
+  el.style.setProperty('--pct', ((val - min) / (max - min) * 100).toFixed(1) + '%');
+}
+function fillAllSliders() {
+  document.querySelectorAll('input[type=range]').forEach(fillSlider);
+}
+
+/* ── ACCORDION BADGE UPDATER ─────────────────────────────────────────── */
+function updateAccBadges() {
+  // Heat layers badge: visible / total
+  const heatBadge = document.getElementById('acc-badge-heat');
+  if (heatBadge) {
+    const vis = heatKeys.filter(k => DS[k] && DS[k].visible).length;
+    heatBadge.textContent = `${vis}/${heatKeys.length}`;
+  }
+  // Custom point layers badge
+  const cptBadge = document.getElementById('acc-badge-cpt');
+  if (cptBadge) {
+    const cptVis = customPtLayers.filter(l => l.visible).length;
+    cptBadge.textContent = customPtLayers.length ? `${cptVis}/${customPtLayers.length}` : '';
+  }
+  // Rec badge
+  const recBadge = document.getElementById('acc-badge-rec');
+  if (recBadge && lastRecs.length) recBadge.textContent = lastRecs.length;
+}
+
 /* ── UI BUILDERS ─────────────────────────────────────────────────────── */
 function buildHeatUI() {
   const el = document.getElementById('heat-list');
@@ -524,7 +554,7 @@ function buildHeatUI() {
     drawPreview();
 
     card.querySelector('.cbx').addEventListener('click', e => {
-      d.visible = !d.visible; e.target.classList.toggle('on', d.visible); renderHeat();
+      d.visible = !d.visible; e.target.classList.toggle('on', d.visible); renderHeat(); updateAccBadges();
     });
     rampSel.addEventListener('change', e => {
       d.ramp = e.target.value;
@@ -532,9 +562,9 @@ function buildHeatUI() {
       drawPreview(); renderHeat();
     });
     colorInp.addEventListener('input', e => { d.color = e.target.value; drawPreview(); renderHeat(); });
-    card.querySelector('.r-int').addEventListener('input', e => { d.intensity = +e.target.value; renderHeat(); });
+    card.querySelector('.r-int').addEventListener('input', e => { d.intensity = +e.target.value; fillSlider(e.target); renderHeat(); });
     card.querySelector('.r-op').addEventListener('input', e => {
-      d.opacity = +e.target.value; applyHeatCanvas(d); // fast path, no re-render
+      d.opacity = +e.target.value; fillSlider(e.target); applyHeatCanvas(d); // fast path, no re-render
     });
 
     if (custom) {
@@ -617,7 +647,7 @@ function renderCustomPoints() {
 
 function buildCustomPtUI() {
   const box   = document.getElementById('custom-pt-list');
-  const badge = document.getElementById('acc-cpt-badge');
+  const badge = document.getElementById('acc-badge-cpt');
   if (!box) return;
 
   const vis = customPtLayers.filter(l => l.visible).length;
@@ -1180,6 +1210,8 @@ function syncControls() {
   $('s-rt-radius').value = rtRadius;     $('v-rt-radius').textContent = fmtD(rtRadius);
   $('s-rt-excl').value   = rtExclRadius; $('v-rt-excl').textContent   = fmtD(rtExclRadius);
   buildRtExclUI();
+  fillAllSliders();
+  updateAccBadges();
 }
 
 /* ── EVENT WIRING ────────────────────────────────────────────────────── */
@@ -1195,21 +1227,21 @@ function wireEvents() {
   });
 
   $('rec-show').addEventListener('click', e => { recShow = !recShow; e.target.classList.toggle('on', recShow); renderRecs(); });
-  $('s-cov').addEventListener('input', e => { covR = +e.target.value; $('v-cov').textContent = fmtD(covR); renderRecs(); });
-  $('s-top').addEventListener('input', e => { topN = +e.target.value; $('v-top').textContent = topN; renderRecs(); });
+  $('s-cov').addEventListener('input', e => { covR = +e.target.value; $('v-cov').textContent = fmtD(covR); fillSlider(e.target); renderRecs(); });
+  $('s-top').addEventListener('input', e => { topN = +e.target.value; $('v-top').textContent = topN; fillSlider(e.target); renderRecs(); });
 
   // Heat brightness (fast path — no full re-render)
   $('s-heat-boost').addEventListener('input', e => {
     heatBoost = +e.target.value;
     $('v-heat-boost').textContent = Math.round(heatBoost * 100) + '%';
-    restyleHeatCanvases();
+    fillSlider(e.target); restyleHeatCanvases();
   });
 
   // Heat spot radius
   $('s-heat-radius').addEventListener('input', e => {
     heatRadius = +e.target.value;
     $('v-heat-radius').textContent = heatRadius + ' px';
-    renderHeat();
+    fillSlider(e.target); renderHeat();
   });
 
   // Blend mode (fast path)
@@ -1294,10 +1326,10 @@ function wireEvents() {
   $('rec-export').addEventListener('click', exportRecs);
   $('btn-retraffic-export').addEventListener('click', exportRetraffic);
   $('s-rt-radius').addEventListener('input', e => {
-    rtRadius = +e.target.value; $('v-rt-radius').textContent = fmtD(rtRadius);
+    rtRadius = +e.target.value; $('v-rt-radius').textContent = fmtD(rtRadius); fillSlider(e.target);
   });
   $('s-rt-excl').addEventListener('input', e => {
-    rtExclRadius = +e.target.value; $('v-rt-excl').textContent = fmtD(rtExclRadius);
+    rtExclRadius = +e.target.value; $('v-rt-excl').textContent = fmtD(rtExclRadius); fillSlider(e.target);
   });
 
   // Share / import state
