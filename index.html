@@ -12,7 +12,6 @@
 <body>
 
 <div id="auth-screen">
-  <!-- Step 1: Login -->
   <div class="auth-card" id="auth-step-login">
     <div class="auth-logo">
       <div class="mk"></div>
@@ -37,7 +36,6 @@
     </form>
     <div class="auth-footer">Аналитика торговых точек · 2025</div>
   </div>
-  <!-- Step 2: Mode selection -->
   <div class="auth-card auth-card-mode" id="auth-step-mode" style="display:none">
     <div class="auth-logo">
       <div class="mk"></div>
@@ -78,118 +76,222 @@
       </div>
     </div>
     <div class="scroll">
-      <div class="sec">Город</div>
-      <div class="cities" id="seg-city"></div>
 
-      <div class="sec">Тепловые слои <span style="text-transform:none;letter-spacing:0;color:var(--dim);font-family:Manrope;font-size:11px">(можно оба)</span></div>
-      <div id="heat-list"></div>
-      <div class="ctrl" style="margin-top:6px">
-        <div class="row"><label>Общая яркость тепла</label><span class="val blue" id="v-heat-boost">100%</span></div>
-        <input type="range" class="full" id="s-heat-boost" min="0.3" max="3" step="0.1" value="1"/>
-      </div>
-      <div class="ctrl">
-        <div class="row"><label>Размер пятна</label><span class="val blue" id="v-heat-radius">28 px</span></div>
-        <input type="range" class="full" id="s-heat-radius" min="14" max="48" step="2" value="28"/>
-      </div>
-      <div class="ctrl">
-        <div class="row" style="align-items:center">
-          <label>Наложение слоёв</label>
-          <select id="heat-blend">
-            <option value="multiply">Умножение (смешивание)</option>
-            <option value="normal">Обычное (верхний поверх)</option>
-            <option value="darken">Затемнение</option>
-          </select>
+      <!-- 1. ГОРОД -->
+      <div class="acc-section">
+        <div class="acc-hdr open" data-acc="city">
+          <span class="acc-icon">🏙</span>
+          <span class="acc-title">Город</span>
+          <span class="acc-chevron">▾</span>
+        </div>
+        <div class="acc-body open" id="acc-body-city">
+          <div class="cities" id="seg-city"></div>
         </div>
       </div>
-      <button class="add-layer-btn" id="add-layer-btn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Создать новый слой
-      </button>
 
-      <div class="sec">Наши точки · IQOS</div>
-      <div id="pt-list"></div>
-
-      <div class="sec acc">Рекомендации · где открыть ТТ BR</div>
-      <div class="rec-basis" id="rec-basis">
-        <button class="on" data-b="cig">Сигареты</button>
-        <button data-b="sticks">Стики</button>
-        <button data-b="combined">Оба</button>
-      </div>
-      <div class="rec-summary">
-        <div class="rec-summary-icon">📍</div>
-        <div class="rec-summary-body">
-          <div class="big" id="rec-count">—</div>
-          <div class="lbl" id="rec-lbl"></div>
+      <!-- 2. ТЕПЛОВЫЕ СЛОИ -->
+      <div class="acc-section">
+        <div class="acc-hdr open" data-acc="heat">
+          <span class="acc-icon">🔥</span>
+          <span class="acc-title">Тепловые слои</span>
+          <span class="acc-badge" id="acc-badge-heat"></span>
+          <span class="acc-chevron">▾</span>
+        </div>
+        <div class="acc-body open" id="acc-body-heat">
+          <div id="heat-list"></div>
+          <div class="ctrl" style="margin-top:6px">
+            <div class="row">
+              <label>Общая яркость тепла <span class="tip-icon" data-tip="Усиливает или ослабляет яркость всех тепловых слоёв одновременно">ⓘ</span></label>
+              <span class="val blue" id="v-heat-boost">100%</span>
+            </div>
+            <input type="range" class="full" id="s-heat-boost" min="0.3" max="3" step="0.1" value="1"/>
+          </div>
+          <div class="ctrl">
+            <div class="row">
+              <label>Размер пятна <span class="tip-icon" data-tip="Радиус размытия каждой точки на тепловой карте в пикселях">ⓘ</span></label>
+              <span class="val blue" id="v-heat-radius">28 px</span>
+            </div>
+            <input type="range" class="full" id="s-heat-radius" min="14" max="48" step="2" value="28"/>
+          </div>
+          <div class="ctrl">
+            <div class="row" style="align-items:center">
+              <label>Наложение слоёв</label>
+              <select id="heat-blend">
+                <option value="multiply">Умножение (смешивание)</option>
+                <option value="normal">Обычное (верхний поверх)</option>
+                <option value="darken">Затемнение</option>
+              </select>
+            </div>
+          </div>
+          <button class="add-layer-btn" id="add-layer-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Создать новый слой
+          </button>
         </div>
       </div>
-      <label class="chk"><div class="cbx green on" id="rec-show"></div><span>Показывать на карте</span></label>
-      <div class="ctrl">
-        <div class="row"><label>Радиус покрытия наших ТТ</label><span class="val" id="v-cov">600 м</span></div>
-        <input type="range" class="full green" id="s-cov" min="200" max="3000" step="50" value="600"/>
-      </div>
-      <div class="ctrl">
-        <div class="row"><label>Сколько зон показать</label><span class="val" id="v-top">12</span></div>
-        <input type="range" class="full green" id="s-top" min="5" max="30" step="1" value="12"/>
-      </div>
-      <div class="rec-list" id="rec-list"></div>
-      <button class="rec-toggle" id="rec-toggle" style="display:none"></button>
-      <button class="btn" id="rec-export" style="margin-top:8px">⬇ Экспорт рекомендаций (Excel)</button>
 
-      <div class="sec">Экспорт · Адресная программа</div>
-      <p style="font-size:11.5px;color:var(--dim);line-height:1.55;margin:0 0 12px">
-        Точки отгрузки (сигареты + стики) рядом с BR/IQOS, объём
-        <b style="color:var(--ink)">≥ среднего</b>, с исключением выбранных слоёв.
-      </p>
-      <div class="ctrl">
-        <div class="row"><label>Радиус от BR/IQOS</label><span class="val" id="v-rt-radius">1.0 км</span></div>
-        <input type="range" class="full" id="s-rt-radius" min="200" max="5000" step="100" value="1000"/>
-      </div>
-      <div class="ctrl">
-        <div class="row"><label>Радиус исключения</label><span class="val" id="v-rt-excl">150 м</span></div>
-        <input type="range" class="full" id="s-rt-excl" min="50" max="1000" step="50" value="150"/>
-      </div>
-      <div class="rt-excl-block">
-        <div class="rt-excl-title">Исключать слои (на какие ориентироваться):</div>
-        <div id="rt-excl-list"></div>
-      </div>
-      <button class="btn btn-retraffic" id="btn-retraffic-export">⬇ Скачать список (Excel)</button>
-
-      <div class="sec">Доход Ташкента · микро-уровень</div>
-      <div class="lyr">
-        <div style="display:flex;flex-direction:column;gap:9px">
-          <label style="display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink);cursor:pointer"><input type="color" id="d-high" value="#C0392B"> 🔴 Высокий доход <span style="margin-left:auto;font-size:9.5px;color:var(--dim);font-family:'IBM Plex Mono'">ядра 1–6</span></label>
-          <label style="display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink);cursor:pointer"><input type="color" id="d-mid" value="#F39C12"> 🟠 Средний <span style="margin-left:auto;font-size:9.5px;color:var(--dim);font-family:'IBM Plex Mono'">7–11</span></label>
-          <label style="display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink);cursor:pointer"><input type="color" id="d-low" value="#1F9E5A"> 🟢 Ниже / растущий <span style="margin-left:auto;font-size:9.5px;color:var(--dim);font-family:'IBM Plex Mono'">12–15</span></label>
+      <!-- 3. НАШИ ТОЧКИ -->
+      <div class="acc-section">
+        <div class="acc-hdr open" data-acc="pts">
+          <span class="acc-icon">📍</span>
+          <span class="acc-title">Наши точки · IQOS</span>
+          <span class="acc-chevron">▾</span>
         </div>
-        <div style="height:1px;background:var(--line);margin:12px 0"></div>
-        <label class="chk" style="padding:6px 4px"><div class="cbx" id="inc-heat-cbx"></div><span>Тепловая карта дохода</span></label>
-        <label class="chk" style="padding:6px 4px"><div class="cbx" id="inc-core-cbx"></div><span>Ядра дохода (метки 1–15)</span></label>
-        <label class="chk" style="padding:6px 4px"><div class="cbx" id="dist-cbx"></div><span>Границы 12 районов</span></label>
-        <p style="font-size:10px;color:var(--dim);line-height:1.5;margin:10px 0 0">Координаты ядер — приближённые центры; классификация по предоставленным данным. Микро-слой относится к Ташкенту.</p>
+        <div class="acc-body open" id="acc-body-pts">
+          <div id="pt-list"></div>
+        </div>
       </div>
 
-      <div class="sec">Поделиться настройками</div>
-      <div class="share-row">
-        <button class="share-btn export" id="btn-export-state">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          Экспорт настроек
-        </button>
-        <button class="share-btn import" id="btn-import-state">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Импорт настроек
-        </button>
+      <!-- 4. СВОИ ТОЧКИ -->
+      <div class="acc-section">
+        <div class="acc-hdr open" data-acc="cpt">
+          <span class="acc-icon">📌</span>
+          <span class="acc-title">Свои точки</span>
+          <span class="acc-badge" id="acc-badge-cpt"></span>
+          <span class="acc-chevron">▾</span>
+        </div>
+        <div class="acc-body open" id="acc-body-cpt">
+          <div id="custom-pt-list"></div>
+          <button class="add-layer-btn" id="add-custom-pt-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Добавить слой точек
+          </button>
+          <input type="file" id="cpt-file" accept=".csv,.xlsx,.xls" style="display:none"/>
+        </div>
       </div>
-      <input type="file" id="state-file" accept=".json" style="display:none"/>
-      <p class="share-hint">Экспортируй настройки в файл и отправь коллегам — они загрузят и увидят всё то же самое</p>
 
-      <div class="sec">Загрузка данных по шаблону</div>
-      <a class="lnk" id="dl-tpl">⬇ Скачать шаблон (Excel)</a>
-      <div class="up-row">Слой для загрузки:&nbsp;<select id="up-target"><option value="cig">Сигареты</option><option value="sticks">Стики</option></select></div>
-      <div class="filebox" id="filebox">Выберите файл <b>CSV / XLSX</b></div>
-      <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none"/>
-      <div class="fname" id="fname" style="display:none"></div>
-      <button class="btn" id="btn-update" disabled>Обновить карту</button>
-      <div class="foot">Сигареты и стики — независимые тепловые слои. Рекомендации по открытию BR считаются по выбранной основе. Маркеры IQOS: BR и 2nd SE различаются цветом и формой.</div>
+      <!-- 5. РЕКОМЕНДАЦИИ -->
+      <div class="acc-section">
+        <div class="acc-hdr open" data-acc="rec">
+          <span class="acc-icon">🎯</span>
+          <span class="acc-title">Рекомендации</span>
+          <span class="acc-badge acc-badge-green" id="acc-badge-rec"></span>
+          <span class="acc-chevron">▾</span>
+        </div>
+        <div class="acc-body open" id="acc-body-rec">
+          <div class="rec-basis" id="rec-basis">
+            <button class="on" data-b="cig">Сигареты</button>
+            <button data-b="sticks">Стики</button>
+            <button data-b="combined">Оба</button>
+          </div>
+          <div class="rec-summary">
+            <div class="rec-summary-icon">📍</div>
+            <div class="rec-summary-body">
+              <div class="big" id="rec-count">—</div>
+              <div class="lbl" id="rec-lbl"></div>
+            </div>
+          </div>
+          <label class="chk"><div class="cbx green on" id="rec-show"></div><span>Показывать на карте</span></label>
+          <div class="ctrl">
+            <div class="row">
+              <label>Радиус покрытия наших ТТ <span class="tip-icon" data-tip="Зоны ближе этого расстояния от BR/IQOS исключаются из рекомендаций">ⓘ</span></label>
+              <span class="val" id="v-cov">600 м</span>
+            </div>
+            <input type="range" class="full green" id="s-cov" min="200" max="3000" step="50" value="600"/>
+          </div>
+          <div class="ctrl">
+            <div class="row">
+              <label>Сколько зон показать <span class="tip-icon" data-tip="Максимальное число рекомендованных зон в списке и на карте">ⓘ</span></label>
+              <span class="val" id="v-top">12</span>
+            </div>
+            <input type="range" class="full green" id="s-top" min="5" max="30" step="1" value="12"/>
+          </div>
+          <div class="rec-list" id="rec-list"></div>
+          <button class="rec-toggle" id="rec-toggle" style="display:none"></button>
+          <button class="btn" id="rec-export" style="margin-top:8px">⬇ Экспорт рекомендаций (Excel)</button>
+        </div>
+      </div>
+
+      <!-- 6. АДРЕСНАЯ ПРОГРАММА -->
+      <div class="acc-section">
+        <div class="acc-hdr" data-acc="addr">
+          <span class="acc-icon">📊</span>
+          <span class="acc-title">Адресная программа</span>
+          <span class="acc-chevron">▾</span>
+        </div>
+        <div class="acc-body" id="acc-body-addr">
+          <p style="font-size:11.5px;color:var(--dim);line-height:1.55;margin:0 0 12px">
+            Точки отгрузки (сигареты + стики) рядом с BR/IQOS, объём
+            <b style="color:var(--ink)">≥ среднего</b>, с исключением выбранных слоёв.
+          </p>
+          <div class="ctrl">
+            <div class="row">
+              <label>Радиус от BR/IQOS <span class="tip-icon" data-tip="Берём только точки отгрузки, находящиеся в этом радиусе от наших BR/IQOS">ⓘ</span></label>
+              <span class="val" id="v-rt-radius">1.0 км</span>
+            </div>
+            <input type="range" class="full" id="s-rt-radius" min="200" max="5000" step="100" value="1000"/>
+          </div>
+          <div class="ctrl">
+            <div class="row">
+              <label>Радиус исключения <span class="tip-icon" data-tip="Точки ближе этого расстояния к любой точке исключаемого слоя не попадут в выгрузку">ⓘ</span></label>
+              <span class="val" id="v-rt-excl">150 м</span>
+            </div>
+            <input type="range" class="full" id="s-rt-excl" min="50" max="1000" step="50" value="150"/>
+          </div>
+          <div class="rt-excl-block">
+            <div class="rt-excl-title">Исключать слои (на какие ориентироваться):</div>
+            <div id="rt-excl-list"></div>
+          </div>
+          <button class="btn btn-retraffic" id="btn-retraffic-export">⬇ Скачать список (Excel)</button>
+        </div>
+      </div>
+
+      <!-- 7. ДОХОД ТАШКЕНТА -->
+      <div class="acc-section">
+        <div class="acc-hdr" data-acc="income">
+          <span class="acc-icon">💰</span>
+          <span class="acc-title">Доход Ташкента</span>
+          <span class="acc-chevron">▾</span>
+        </div>
+        <div class="acc-body" id="acc-body-income">
+          <div class="lyr">
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <label style="display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink);cursor:pointer"><input type="color" id="d-high" value="#C0392B"> 🔴 Высокий доход <span style="margin-left:auto;font-size:9.5px;color:var(--dim);font-family:'IBM Plex Mono'">ядра 1–6</span></label>
+              <label style="display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink);cursor:pointer"><input type="color" id="d-mid" value="#F39C12"> 🟠 Средний <span style="margin-left:auto;font-size:9.5px;color:var(--dim);font-family:'IBM Plex Mono'">7–11</span></label>
+              <label style="display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink);cursor:pointer"><input type="color" id="d-low" value="#1F9E5A"> 🟢 Ниже / растущий <span style="margin-left:auto;font-size:9.5px;color:var(--dim);font-family:'IBM Plex Mono'">12–15</span></label>
+            </div>
+            <div style="height:1px;background:var(--line);margin:12px 0"></div>
+            <label class="chk" style="padding:6px 4px"><div class="cbx" id="inc-heat-cbx"></div><span>Тепловая карта дохода</span></label>
+            <label class="chk" style="padding:6px 4px"><div class="cbx" id="inc-core-cbx"></div><span>Ядра дохода (метки 1–15)</span></label>
+            <label class="chk" style="padding:6px 4px"><div class="cbx" id="dist-cbx"></div><span>Границы 12 районов</span></label>
+            <p style="font-size:10px;color:var(--dim);line-height:1.5;margin:10px 0 0">Координаты ядер — приближённые центры; классификация по предоставленным данным. Микро-слой относится к Ташкенту.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 8. ДАННЫЕ И НАСТРОЙКИ -->
+      <div class="acc-section">
+        <div class="acc-hdr" data-acc="settings">
+          <span class="acc-icon">⚙️</span>
+          <span class="acc-title">Данные и настройки</span>
+          <span class="acc-chevron">▾</span>
+        </div>
+        <div class="acc-body" id="acc-body-settings">
+          <div class="sec" style="margin-top:4px">Поделиться настройками</div>
+          <div class="share-row">
+            <button class="share-btn export" id="btn-export-state">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Экспорт настроек
+            </button>
+            <button class="share-btn import" id="btn-import-state">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Импорт настроек
+            </button>
+          </div>
+          <input type="file" id="state-file" accept=".json" style="display:none"/>
+          <p class="share-hint">Экспортируй настройки в файл и отправь коллегам — они загрузят и увидят всё то же самое</p>
+
+          <div class="sec">Загрузка данных по шаблону</div>
+          <a class="lnk" id="dl-tpl">⬇ Скачать шаблон (Excel)</a>
+          <div class="up-row">Слой для загрузки:&nbsp;<select id="up-target"><option value="cig">Сигареты</option><option value="sticks">Стики</option></select></div>
+          <div class="filebox" id="filebox">Выберите файл <b>CSV / XLSX</b></div>
+          <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none"/>
+          <div class="fname" id="fname" style="display:none"></div>
+          <button class="btn" id="btn-update" disabled>Обновить карту</button>
+          <div class="foot">Сигареты и стики — независимые тепловые слои. Рекомендации по открытию BR считаются по выбранной основе. Маркеры IQOS: BR и 2nd SE различаются цветом и формой.</div>
+        </div>
+      </div>
+
     </div>
     <button class="logout-btn" id="logout-btn" title="Выйти">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -207,6 +309,7 @@
   <div class="mode-badge" id="mode-badge" style="display:none"></div>
 </div>
 
+<!-- Heat layer modal -->
 <div id="layer-modal-overlay">
   <div class="layer-modal">
     <h3>Новый слой</h3>
@@ -219,13 +322,29 @@
   </div>
 </div>
 
+<!-- Custom point layer modal -->
+<div id="cpt-modal-overlay">
+  <div class="layer-modal">
+    <h3>Новый слой точек</h3>
+    <p>Задайте название и цвет — потом загрузите CSV/XLSX с колонками name, lat, lon</p>
+    <input type="text" id="cpt-modal-name" placeholder="Название слоя…" maxlength="40"/>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <label style="font-size:12px;color:var(--mut)">Цвет маркеров:</label>
+      <input type="color" id="cpt-modal-color" value="#E84393" style="width:40px;height:32px;border-radius:8px"/>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn secondary" id="cpt-modal-cancel">Отмена</button>
+      <button class="modal-btn primary" id="cpt-modal-confirm">Создать</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast-container"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<!-- Server sync config — set these to your VPS API URL and key, or leave empty to use localStorage only -->
 <script>
   window._HM_SERVER_URL = 'https://hm-server-xpg0.onrender.com';
   window._HM_SERVER_KEY = 'hm_br_tashkent_2026_secret';

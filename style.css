@@ -703,3 +703,160 @@ input[type=range].full { width: 100%; }
   background: rgba(255,255,255,.03); border: 1px dashed rgba(255,255,255,.1);
   border-radius: 9px; padding: 10px 12px;
 }
+
+/* settings sub-groups */
+.settings-group { margin-bottom: 18px; }
+.settings-group:last-child { margin-bottom: 0; }
+.settings-group-label {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .5px;
+  text-transform: uppercase; color: #4a7a9e;
+  font-family: "IBM Plex Mono"; margin-bottom: 10px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   CUSTOM POINT LAYERS
+   ══════════════════════════════════════════════════════════════════════ */
+.cpt-empty {
+  font-size: 11.5px; color: var(--dim); line-height: 1.55;
+  background: rgba(255,255,255,.03);
+  border: 1px dashed rgba(255,255,255,.1);
+  border-radius: 10px; padding: 12px 14px; text-align: center;
+}
+.cpt-layer {
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 11px; padding: 11px 12px;
+  margin-bottom: 8px; transition: border-color .15s;
+}
+.cpt-layer:hover { border-color: rgba(255,255,255,.14); }
+.cpt-top {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.cpt-name {
+  font-size: 13px; font-weight: 600; color: var(--ink);
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cpt-count {
+  font-size: 10px; font-family: "IBM Plex Mono"; color: var(--dim);
+  background: rgba(255,255,255,.07); padding: 2px 6px; border-radius: 10px;
+}
+.cpt-del {
+  background: none; border: none; color: var(--dim); cursor: pointer;
+  font-size: 16px; line-height: 1; padding: 2px 4px;
+  border-radius: 6px; transition: color .15s, background .15s;
+}
+.cpt-del:hover { color: var(--danger); background: rgba(224,84,84,.1); }
+.cpt-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.cpt-color {
+  width: 28px; height: 28px; border-radius: 7px;
+  border: 1.5px solid rgba(255,255,255,.15); cursor: pointer;
+  padding: 2px; background: none; flex-shrink: 0;
+}
+.cpt-upload {
+  flex: 1; padding: 6px 10px; font-size: 11.5px; font-family: "Manrope";
+  font-weight: 600; color: var(--acc);
+  background: rgba(136,169,209,.1); border: 1px solid rgba(136,169,209,.2);
+  border-radius: 8px; cursor: pointer; transition: .15s;
+}
+.cpt-upload:hover { background: rgba(136,169,209,.18); border-color: rgba(136,169,209,.35); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   REMOVE old .sec styles — accordion replaces them
+   ══════════════════════════════════════════════════════════════════════ */
+/* Increase acc badge visibility for points */
+#acc-iqos-badge, #acc-cpt-badge { margin-left: auto; }
+
+/* ── ACCORDION NAVIGATION ────────────────────────────────────────────── */
+.acc-section {
+  border-bottom: 1px solid var(--line);
+}
+.acc-section:last-child { border-bottom: none; }
+
+.acc-hdr {
+  display: flex; align-items: center; gap: 8px;
+  padding: 11px 4px 11px 2px; cursor: pointer;
+  user-select: none;
+  transition: background .14s;
+  border-radius: 9px;
+}
+.acc-hdr:hover { background: rgba(136,169,209,.06); }
+
+.acc-icon { font-size: 15px; flex: 0 0 auto; }
+
+.acc-title {
+  flex: 1; font-family: "IBM Plex Mono"; font-size: 10px;
+  letter-spacing: 1.4px; text-transform: uppercase;
+  color: var(--dim); font-weight: 500;
+}
+.acc-hdr.open .acc-title { color: var(--mut); }
+
+.acc-badge {
+  font-family: "IBM Plex Mono"; font-size: 9.5px;
+  color: var(--acc); background: rgba(136,169,209,.12);
+  border: 1px solid rgba(136,169,209,.2);
+  border-radius: 5px; padding: 2px 6px; flex: 0 0 auto;
+  transition: opacity .2s;
+}
+.acc-badge:empty { display: none; }
+.acc-badge.acc-badge-green {
+  color: var(--rec); background: rgba(19,176,116,.1);
+  border-color: rgba(19,176,116,.2);
+}
+
+.acc-chevron {
+  font-size: 12px; color: var(--dim); flex: 0 0 auto;
+  display: inline-block;
+  transition: transform .26s cubic-bezier(.4,0,.2,1);
+}
+.acc-hdr.open .acc-chevron { transform: rotate(180deg); }
+
+.acc-body {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height .32s cubic-bezier(.4,0,.2,1);
+  padding: 0 2px;
+}
+.acc-body.open {
+  max-height: 3000px;
+  padding-bottom: 10px;
+}
+
+/* ── CSS TOOLTIPS ────────────────────────────────────────────────────── */
+.tip-icon {
+  display: inline-block; font-size: 10px;
+  color: var(--dim); cursor: help;
+  position: relative; margin-left: 3px;
+  line-height: 1; vertical-align: middle;
+}
+.tip-icon::after {
+  content: attr(data-tip);
+  position: absolute; bottom: calc(100% + 7px); left: 50%;
+  transform: translateX(-50%);
+  background: #0d1c2c; color: #c8ddf0;
+  border: 1px solid var(--line2); border-radius: 8px;
+  padding: 6px 10px; font-size: 10.5px; font-family: "Manrope";
+  line-height: 1.5; white-space: normal; width: 180px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.5);
+  pointer-events: none; opacity: 0;
+  transition: opacity .15s, transform .15s;
+  transform: translateX(-50%) translateY(4px);
+  z-index: 9000;
+}
+.tip-icon:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ── CUSTOM POINT MODAL ──────────────────────────────────────────────── */
+#cpt-modal-overlay {
+  position: fixed; inset: 0; z-index: 8000;
+  background: rgba(4,10,18,.7); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s;
+}
+#cpt-modal-overlay.open { opacity: 1; pointer-events: auto; }
+#cpt-modal-overlay .layer-modal { transform: scale(.96); transition: transform .2s cubic-bezier(.2,.8,.3,1); }
+#cpt-modal-overlay.open .layer-modal { transform: scale(1); }

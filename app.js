@@ -107,6 +107,10 @@ let rtRadius = 1000;          // radius from BR/IQOS own points (m)
 let rtExclRadius = 150;       // proximity radius for excluding points (m)
 let rtExclKeys = [];          // layer keys to exclude points from (e.g. Re-traffic)
 
+// Custom point layers (user-uploaded marker sets)
+let customPtLayers = [];      // [{ id, name, color, visible, recs: [], _group: L.LayerGroup }]
+let _cptUploadTarget = null;  // id of layer awaiting file upload
+
 /* ── MAP INIT ────────────────────────────────────────────────────────── */
 const map = L.map('map', { preferCanvas: true, zoomControl: true, minZoom: 5, zoomSnap: .5 })
               .setView([41, 67], 6);
@@ -592,6 +596,110 @@ function buildCityUI() {
   CITIES.forEach(c => mk(c, c, city === c));
 }
 
+/* ── CUSTOM POINT LAYERS ─────────────────────────────────────────────── */
+function renderCustomPoints() {
+  customPtLayers.forEach(l => {
+    if (!l._group) { l._group = L.layerGroup().addTo(map); }
+    l._group.clearLayers();
+    if (!l.visible || !l.recs.length) return;
+    l.recs.forEach(r => {
+      const m = L.circleMarker([r.lat, r.lon], {
+        radius: 7, fillColor: l.color, color: '#fff', weight: 1.8, fillOpacity: 0.9,
+      });
+      const parts = [r.name ? `<b>${r.name}</b>` : ''];
+      if (r.addr) parts.push(r.addr);
+      if (r.code) parts.push(`<code style="font-size:10px;color:#7a9ab8">${r.code}</code>`);
+      m.bindPopup(parts.filter(Boolean).join('<br>'));
+      m.addTo(l._group);
+    });
+  });
+}
+
+function buildCustomPtUI() {
+  const box   = document.getElementById('custom-pt-list');
+  const badge = document.getElementById('acc-cpt-badge');
+  if (!box) return;
+
+  const vis = customPtLayers.filter(l => l.visible).length;
+  if (badge) badge.textContent = customPtLayers.length ? `${vis}/${customPtLayers.length}` : '';
+
+  if (!customPtLayers.length) {
+    box.innerHTML = '<div class="cpt-empty">Добавьте слой и загрузите CSV/XLSX с колонками name, lat, lon</div>';
+    return;
+  }
+
+  box.innerHTML = customPtLayers.map(l => `
+    <div class="cpt-layer" data-cpid="${l.id}">
+      <div class="cpt-top">
+        <div class="cbx${l.visible ? ' on' : ''}" style="border-color:${l.color};${l.visible ? 'background:' + l.color : ''}" data-cpvis="${l.id}"></div>
+        <span class="cpt-name">${l.name}</span>
+        <span class="cpt-count">${l.recs.length}</span>
+        <button class="cpt-del" data-cpdel="${l.id}" title="Удалить слой">✕</button>
+      </div>
+      <div class="cpt-row">
+        <input type="color" class="cpt-color" value="${l.color}" data-cpcol="${l.id}" title="Цвет маркеров"/>
+        <button class="cpt-upload" data-cpup="${l.id}">⬆ Загрузить данные</button>
+      </div>
+    </div>`).join('');
+
+  // Toggle visibility
+  box.querySelectorAll('[data-cpvis]').forEach(el => {
+    el.addEventListener('click', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cpvis); if (!l) return;
+      l.visible = !l.visible;
+      el.classList.toggle('on', l.visible);
+      el.style.background = l.visible ? l.color : '';
+      el.style.borderColor = l.color;
+      renderCustomPoints(); buildCustomPtUI(); saveState();
+    });
+  });
+
+  // Color change
+  box.querySelectorAll('[data-cpcol]').forEach(el => {
+    el.addEventListener('input', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cpcol); if (!l) return;
+      l.color = el.value;
+      renderCustomPoints(); buildCustomPtUI(); saveState();
+    });
+  });
+
+  // Upload trigger
+  box.querySelectorAll('[data-cpup]').forEach(el => {
+    el.addEventListener('click', () => {
+      _cptUploadTarget = el.dataset.cpup;
+      document.getElementById('cpt-file').click();
+    });
+  });
+
+  // Delete layer
+  box.querySelectorAll('[data-cpdel]').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.cpdel;
+      const l  = customPtLayers.find(x => x.id === id); if (!l) return;
+      if (l._group) { l._group.clearLayers(); l._group.remove(); }
+      customPtLayers = customPtLayers.filter(x => x.id !== id);
+      buildCustomPtUI(); saveState();
+      toast(`Слой «${l.name}» удалён`, 'info');
+    });
+  });
+}
+
+function toCustomPtRecs(rows) {
+  const out = [];
+  for (const r of rows) {
+    const la = parseFloat(('' + pick(r, ['lat', 'широт'])).replace(',', '.'));
+    const lo = parseFloat(('' + pick(r, ['lon', 'lng', 'долгот'])).replace(',', '.'));
+    if (!isFinite(la) || !isFinite(lo)) continue;
+    out.push({
+      name: '' + (pick(r, ['name', 'назв', 'точк', 'title']) || ''),
+      addr: '' + (pick(r, ['addr', 'address', 'адрес']) || ''),
+      code: '' + (pick(r, ['code', 'код', 'id']) || ''),
+      lat: la, lon: lo,
+    });
+  }
+  return out;
+}
+
 function rebuildUpTarget() {
   const sel = document.getElementById('up-target');
   const cur = sel.value;
@@ -716,6 +824,7 @@ function buildStateSnapshot() {
     heatKeys, layers, pts, incCol: { ...incCol },
     city, covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
     rtRadius, rtExclRadius, rtExclKeys,
+    customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, recs: l.recs })),
   };
 }
 
@@ -776,6 +885,10 @@ function applySnapshot(st) {
   if (typeof st.rtRadius     === 'number')  rtRadius     = st.rtRadius;
   if (typeof st.rtExclRadius === 'number')  rtExclRadius = st.rtExclRadius;
   if (Array.isArray(st.rtExclKeys))         rtExclKeys   = st.rtExclKeys.slice();
+  if (Array.isArray(st.customPtLayers)) {
+    // Restore custom point layers without their Leaflet groups (re-created on render)
+    customPtLayers = st.customPtLayers.map(l => ({ ...l, _group: null }));
+  }
 }
 
 /* ── EXPORT RECS ─────────────────────────────────────────────────────── */
@@ -1207,6 +1320,63 @@ function wireEvents() {
   $('burger').addEventListener('click', () => setSide(!sideEl.classList.contains('open')));
   backdrop.addEventListener('click', () => setSide(false));
 
+  // Accordion toggle — HTML uses .acc-hdr.open + .acc-body.open siblings
+  document.querySelectorAll('.acc-hdr[data-acc]').forEach(hdr => {
+    hdr.addEventListener('click', () => {
+      const body = document.getElementById('acc-body-' + hdr.dataset.acc);
+      const isOpen = hdr.classList.contains('open');
+      hdr.classList.toggle('open', !isOpen);
+      if (body) body.classList.toggle('open', !isOpen);
+    });
+  });
+
+  // Custom point layers — modal
+  $('add-custom-pt-btn').addEventListener('click', () => {
+    $('cpt-modal-name').value = '';
+    $('cpt-modal-color').value = '#E84393';
+    $('cpt-modal-overlay').classList.add('open');
+    setTimeout(() => $('cpt-modal-name').focus(), 150);
+  });
+  $('cpt-modal-cancel').addEventListener('click', () => {
+    $('cpt-modal-overlay').classList.remove('open');
+  });
+  $('cpt-modal-confirm').addEventListener('click', () => {
+    const name = $('cpt-modal-name').value.trim();
+    if (!name) { $('cpt-modal-name').focus(); return; }
+    const color = $('cpt-modal-color').value;
+    $('cpt-modal-overlay').classList.remove('open');
+    const id = 'cpt_' + Date.now();
+    customPtLayers.push({ id, name, color, visible: true, recs: [], _group: null });
+    buildCustomPtUI(); saveState();
+    toast(`Слой «${name}» создан — загрузите данные`, 'ok');
+  });
+  $('cpt-modal-overlay').addEventListener('click', e => {
+    if (e.target === $('cpt-modal-overlay')) $('cpt-modal-overlay').classList.remove('open');
+  });
+
+  // Custom point layers — file upload
+  const cptFileInp = $('cpt-file');
+  cptFileInp.addEventListener('change', () => {
+    const f = cptFileInp.files[0]; if (!f) return;
+    const l = customPtLayers.find(x => x.id === _cptUploadTarget); if (!l) return;
+    const ext = f.name.split('.').pop().toLowerCase();
+    const done = recs => {
+      if (!recs.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
+      l.recs = recs;
+      buildCustomPtUI(); renderCustomPoints(); saveState();
+      toast(`Слой «${l.name}» — загружено ${recs.length} точек`, 'ok');
+    };
+    if (ext === 'csv') {
+      Papa.parse(f, { header: true, skipEmptyLines: true, complete: r => done(toCustomPtRecs(r.data)) });
+    } else {
+      const rd = new FileReader();
+      rd.onload = e => { const wb2 = XLSX.read(e.target.result, { type: 'array' }); done(toCustomPtRecs(XLSX.utils.sheet_to_json(wb2.Sheets[wb2.SheetNames[0]]))); };
+      rd.readAsArrayBuffer(f);
+    }
+    cptFileInp.value = '';
+    _cptUploadTarget = null;
+  });
+
   // Autosave — delegated on sidebar, captures all interactions
   document.getElementById('side').addEventListener('input',  saveState);
   document.getElementById('side').addEventListener('change', saveState);
@@ -1329,8 +1499,8 @@ function clearWorkMode() {
 (async function init() {
   // Load local state first so UI is immediately responsive
   loadState();
-  buildCityUI(); buildHeatUI(); buildPtUI(); rebuildUpTarget(); syncControls();
-  renderHeat(); renderPoints(); renderRecs(); renderDistricts(); renderIncome();
+  buildCityUI(); buildHeatUI(); buildPtUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
+  renderHeat(); renderPoints(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
   wireEvents();
   stateReady = true;
 
