@@ -826,11 +826,19 @@ function exportRetraffic() {
 
   // Filter: within 1 km of any BR/IQOS own point
   const ownFiltered = city ? own.filter(o => o.cityRu === city) : own;
-  points = points.filter(p =>
+  const inRadius = points.filter(p =>
     ownFiltered.some(o => hav(p.lat, p.lon, o.lat, o.lon) <= 1000)
   );
 
-  if (!points.length) { toast('Нет точек по заданным критериям', 'err'); return; }
+  console.log('[RT Export] total points:', Object.keys(byCode).length,
+    '| after city+avg filter:', points.length,
+    '| within 1km of BR/IQOS:', inRadius.length);
+
+  if (!inRadius.length) {
+    toast(`Нет точек в радиусе 1 км от BR/IQOS (всего с нужным объёмом: ${points.length})`, 'err');
+    return;
+  }
+  points = inRadius;
 
   // Exclude points present in Re-traffic layer (proximity < 150 m or code match)
   const isRetraffic = (p) => {
@@ -843,7 +851,11 @@ function exportRetraffic() {
   const excluded = points.filter(isRetraffic).length;
   points = points.filter(p => !isRetraffic(p));
 
-  if (!points.length) { toast('После исключения Re-traffic точек не осталось', 'err'); return; }
+  if (!points.length) {
+    if (rtRecs.length) toast(`После исключения Re-traffic (${excluded} шт.) точек не осталось`, 'err');
+    else toast('Нет точек после применения фильтров', 'err');
+    return;
+  }
 
   // Sort by combined volume descending
   points.sort((a, b) => b.vol_total - a.vol_total);
