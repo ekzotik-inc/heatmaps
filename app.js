@@ -1345,8 +1345,8 @@ function syncControls() {
   $('op-rt-vol').value    = rtVolOp;
   $('vol-mode').value     = rtVolMode;
   $('vol-custom-val').value = rtVolCustom;
-  $('vol-custom-block').style.display = rtVolMode === 'custom' ? '' : 'none';
-  buildAddrSrcSel(); // also calls buildAddrRefSel internally
+  $('vol-custom-val').style.display = rtVolMode === 'custom' ? '' : 'none';
+  buildAddrSrcSel();
   buildRtExclUI();
   fillAllSliders();
   updateAccBadges();
@@ -1475,7 +1475,7 @@ function wireEvents() {
   $('op-rt-vol').addEventListener('change', e => { rtVolOp = e.target.value; saveState(); });
   $('vol-mode').addEventListener('change', e => {
     rtVolMode = e.target.value;
-    $('vol-custom-block').style.display = rtVolMode === 'custom' ? '' : 'none';
+    $('vol-custom-val').style.display = rtVolMode === 'custom' ? '' : 'none';
     saveState();
   });
   $('vol-custom-val').addEventListener('input', e => { rtVolCustom = +e.target.value; saveState(); });
