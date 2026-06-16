@@ -1101,11 +1101,15 @@ function runAddrFilter() {
     ? (city ? own.filter(o => o.cityRu === city) : own)
     : addrRefPoints();
 
-  // Attach nearest reference-point distance
+  // Attach nearest reference-point distance AND the ref point itself
   points.forEach(p => {
-    let minD = Infinity;
-    refPts.forEach(o => { const d = hav(p.lat, p.lon, o.lat, o.lon); if (d < minD) minD = d; });
-    p._distOwn = Math.round(minD);
+    let minD = Infinity, nearestRef = null;
+    refPts.forEach(o => {
+      const d = hav(p.lat, p.lon, o.lat, o.lon);
+      if (d < minD) { minD = d; nearestRef = o; }
+    });
+    p._distOwn  = Math.round(minD);
+    p._nearRef  = nearestRef; // reference point object
   });
 
   // Volume filter (shipment + heat layers; skip for custom point layers)
@@ -1147,22 +1151,62 @@ function previewAddrOnMap() {
   addrLayer.clearLayers();
   const { points } = runAddrFilter();
   if (!points.length) { toast('Нет точек по текущим фильтрам', 'warn'); return; }
+
+  const refLabel = addrRefName();
+
+  // Collect unique nearest-ref points to highlight
+  const usedRefs = new Map(); // key = 'lat|lon' → ref object
+  points.forEach(p => {
+    if (p._nearRef) {
+      const key = p._nearRef.lat + '|' + p._nearRef.lon;
+      usedRefs.set(key, p._nearRef);
+    }
+  });
+
+  // Draw dashed lines from source point to nearest ref
+  points.forEach(p => {
+    if (!p._nearRef) return;
+    const line = L.polyline(
+      [[p.lat, p.lon], [p._nearRef.lat, p._nearRef.lon]],
+      { color: '#FF8C00', weight: 1.2, opacity: 0.45, dashArray: '5 6' }
+    );
+    addrLayer.addLayer(line);
+  });
+
+  // Draw ref point markers (blue)
+  usedRefs.forEach(ref => {
+    const refName = ref.name || ref.ch || ref.id || refLabel;
+    const m = L.circleMarker([ref.lat, ref.lon], {
+      radius: 6, fillColor: '#6C8EFF', color: '#fff', weight: 2,
+      fillOpacity: 1, pane: 'markerPane',
+    });
+    m.bindTooltip(
+      `<b style="color:#6C8EFF">${refLabel}</b><br>${refName}`,
+      { className: 'tt', direction: 'top', offset: [0, -8] }
+    );
+    addrLayer.addLayer(m);
+  });
+
+  // Draw result markers (orange) — on top of lines
   points.forEach((p, i) => {
     const m = L.circleMarker([p.lat, p.lon], {
       radius: 8, fillColor: '#FF8C00', color: '#fff', weight: 2,
-      fillOpacity: 0.9, pane: 'markerPane',
+      fillOpacity: 0.92, pane: 'markerPane',
     });
+    const nearName = p._nearRef ? (p._nearRef.name || p._nearRef.ch || '') : '';
     const lines = [`<b style="color:#FF8C00">#${i + 1} ${p.name || '—'}</b>`];
     if (p.addr) lines.push(p.addr);
     if (p.fil)  lines.push(p.fil);
-    lines.push(`До ${addrRefName()}: <b>${fmtD(p._distOwn)}</b>`);
+    lines.push(`До ${refLabel}${nearName ? ' (' + nearName + ')' : ''}: <b>${fmtD(p._distOwn)}</b>`);
     if (p.vol_total != null) lines.push(`Объём: ${Math.round(p.vol_total)}`);
     m.bindPopup(lines.join('<br>'));
     addrLayer.addLayer(m);
   });
-  const bounds = L.latLngBounds(points.map(p => [p.lat, p.lon]));
-  map.flyToBounds(bounds.pad(.12), { duration: .7 });
-  toast(`На карте: ${points.length} точек`, 'ok');
+
+  const allPts = [...points.map(p => [p.lat, p.lon]),
+                  ...[...usedRefs.values()].map(r => [r.lat, r.lon])];
+  map.flyToBounds(L.latLngBounds(allPts).pad(.12), { duration: .7 });
+  toast(`На карте: ${points.length} точек · ${usedRefs.size} ориентиров`, 'ok');
 }
 
 function exportRetraffic() {
