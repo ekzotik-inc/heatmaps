@@ -730,6 +730,18 @@ input[type=range].full { width: 100%; }
 }
 .btn-retraffic:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.15), 0 8px 22px rgba(26,102,64,.45); }
 
+/* ── OPERATOR SELECT ─────────────────────────────────────────────────── */
+.op-sel {
+  appearance: none; -webkit-appearance: none;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+  color: var(--acc); font-size: 13px; font-weight: 700; font-family: inherit;
+  padding: 2px 8px; border-radius: 6px; cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.op-sel:hover { border-color: var(--acc); background: var(--acc-l); }
+.op-sel:focus { outline: none; border-color: var(--acc); }
+.op-sel option { background: #181c27; color: var(--ink); }
+
 /* ── ADDRESS-PROGRAM EXPORT ──────────────────────────────────────────── */
 .rt-excl-block { margin: 4px 0 12px; }
 .rt-excl-title {

@@ -214,22 +214,43 @@
             Точки отгрузки (сигареты + стики) рядом с BR/IQOS, объём
             <b style="color:var(--ink)">≥ среднего</b>, с исключением выбранных слоёв.
           </p>
+
+          <!-- Расстояние до BR/IQOS -->
           <div class="ctrl">
             <div class="row">
-              <label>Радиус от BR/IQOS <span class="tip-icon" data-tip="Берём только точки отгрузки, находящиеся в этом радиусе от наших BR/IQOS">ⓘ</span></label>
-              <span class="val" id="v-rt-radius">1.0 км</span>
+              <label>Расстояние до BR/IQOS <span class="tip-icon" data-tip="Берём точки отгрузки, удовлетворяющие условию расстояния до ближайшего нашего BR/IQOS">ⓘ</span></label>
+              <div style="display:flex;align-items:center;gap:6px">
+                <select id="op-rt-radius" class="op-sel">
+                  <option value="lte">≤</option>
+                  <option value="lt">&lt;</option>
+                  <option value="gte">≥</option>
+                  <option value="gt">&gt;</option>
+                </select>
+                <span class="val" id="v-rt-radius">1.0 км</span>
+              </div>
             </div>
             <input type="range" class="full" id="s-rt-radius" min="200" max="5000" step="100" value="1000"/>
           </div>
+
+          <!-- Расстояние до исключаемого слоя -->
           <div class="ctrl">
             <div class="row">
-              <label>Радиус исключения <span class="tip-icon" data-tip="Точки ближе этого расстояния к любой точке исключаемого слоя не попадут в выгрузку">ⓘ</span></label>
-              <span class="val" id="v-rt-excl">150 м</span>
+              <label>Расстояние до Re-traffic <span class="tip-icon" data-tip="Точки, у которых расстояние до ближайшей точки исключаемого слоя удовлетворяет условию — убираются из выгрузки">ⓘ</span></label>
+              <div style="display:flex;align-items:center;gap:6px">
+                <select id="op-rt-excl" class="op-sel">
+                  <option value="lt">&lt;</option>
+                  <option value="lte">≤</option>
+                  <option value="gt">&gt;</option>
+                  <option value="gte">≥</option>
+                </select>
+                <span class="val" id="v-rt-excl">150 м</span>
+              </div>
             </div>
             <input type="range" class="full" id="s-rt-excl" min="50" max="1000" step="50" value="150"/>
           </div>
+
           <div class="rt-excl-block">
-            <div class="rt-excl-title">Исключать слои (на какие ориентироваться):</div>
+            <div class="rt-excl-title">Исключать слои:</div>
             <div id="rt-excl-list"></div>
           </div>
           <button class="btn btn-retraffic" id="btn-retraffic-export">⬇ Скачать список (Excel)</button>
