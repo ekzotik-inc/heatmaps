@@ -242,10 +242,16 @@
             </div>
           </div>
 
-          <!-- Distance to BR/IQOS -->
+          <!-- Distance reference layer + filter -->
           <div class="ctrl">
             <div class="row">
-              <label>Расстояние до BR/IQOS <span class="tip-icon" data-tip="Фильтруем точки слоя по расстоянию до ближайшего BR/IQOS">ⓘ</span></label>
+              <label>Расстояние до <span class="tip-icon" data-tip="Считаем расстояние от каждой точки исходного слоя до ближайшей точки выбранного ориентира">ⓘ</span></label>
+            </div>
+            <select id="addr-ref-sel" class="op-sel" style="width:100%;font-size:12px;padding:5px 10px;color:var(--ink);margin-bottom:8px">
+              <option value="__own__">BR / IQOS (наши точки)</option>
+            </select>
+            <div class="row">
+              <label style="color:var(--dim);font-size:11px">Расстояние</label>
               <div style="display:flex;align-items:center;gap:6px">
                 <select id="op-rt-radius" class="op-sel">
                   <option value="lte">≤</option>

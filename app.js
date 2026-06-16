@@ -104,7 +104,8 @@ let city = '', covR = 600, topN = 12, recShow = true, recBasis = 'cig';
 
 // Address-program state
 let addrSrcKey  = '__shipment__'; // source layer key or '__shipment__'
-let rtRadius    = 1000;           // distance threshold from BR/IQOS (m)
+let addrRefKey  = '__own__';      // reference points key: '__own__' = BR/IQOS, '__cpt__<id>' = custom layer
+let rtRadius    = 1000;           // distance threshold (m)
 let rtRadiusOp  = 'lte';         // lte ≤ | lt < | gte ≥ | gt >
 let rtVolOp     = 'gte';         // volume operator (shipment mode only)
 let rtVolMode   = 'avg';         // 'avg' | 'custom'
@@ -687,7 +688,7 @@ function buildCustomPtUI() {
       el.classList.toggle('on', l.visible);
       el.style.background = l.visible ? l.color : '';
       el.style.borderColor = l.color;
-      renderCustomPoints(); buildCustomPtUI(); buildAddrSrcSel(); saveState();
+      renderCustomPoints(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); saveState();
     });
   });
 
@@ -696,7 +697,7 @@ function buildCustomPtUI() {
     el.addEventListener('input', () => {
       const l = customPtLayers.find(x => x.id === el.dataset.cpcol); if (!l) return;
       l.color = el.value;
-      renderCustomPoints(); buildCustomPtUI(); buildAddrSrcSel(); saveState();
+      renderCustomPoints(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); saveState();
     });
   });
 
@@ -860,7 +861,7 @@ function buildStateSnapshot() {
     _v: 1, _app: 'hm-br', _date: new Date().toISOString().slice(0, 10),
     heatKeys, layers, pts, incCol: { ...incCol },
     city, covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
-    addrSrcKey, rtRadius, rtRadiusOp, rtVolOp, rtVolMode, rtVolCustom, rtExclRadius, rtExclOp, rtExclKeys,
+    addrSrcKey, addrRefKey, rtRadius, rtRadiusOp, rtVolOp, rtVolMode, rtVolCustom, rtExclRadius, rtExclOp, rtExclKeys,
     customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, recs: l.recs })),
   };
 }
@@ -920,6 +921,7 @@ function applySnapshot(st) {
   if (typeof st.incomeHeatOn === 'boolean') incomeHeatOn = st.incomeHeatOn;
   if (typeof st.coresOn      === 'boolean') coresOn      = st.coresOn;
   if (typeof st.addrSrcKey   === 'string')  addrSrcKey   = st.addrSrcKey;
+  if (typeof st.addrRefKey   === 'string')  addrRefKey   = st.addrRefKey;
   if (typeof st.rtRadius     === 'number')  rtRadius     = st.rtRadius;
   if (typeof st.rtRadiusOp   === 'string')  rtRadiusOp   = st.rtRadiusOp;
   if (typeof st.rtVolOp      === 'string')  rtVolOp      = st.rtVolOp;
@@ -1024,6 +1026,28 @@ function buildAddrSrcSel() {
   const exclBlock = document.getElementById('addr-excl-block');
   if (volBlock)  volBlock.style.display  = isShipment ? '' : 'none';
   if (exclBlock) exclBlock.style.display = isShipment ? '' : 'none';
+  buildAddrRefSel();
+}
+
+/* Rebuilds the reference-points selector dropdown */
+function buildAddrRefSel() {
+  const sel = document.getElementById('addr-ref-sel');
+  if (!sel) return;
+  const opts = [{ key: '__own__', name: 'BR / IQOS (наши точки)' }];
+  customPtLayers.forEach(l => {
+    if (l.recs.length) opts.push({ key: '__cpt__' + l.id, name: l.name });
+  });
+  sel.innerHTML = opts.map(o =>
+    `<option value="${o.key}"${o.key === addrRefKey ? ' selected' : ''}>${o.name}</option>`
+  ).join('');
+}
+
+/* Returns reference points array for distance calculation */
+function addrRefPoints() {
+  if (addrRefKey === '__own__') return own;
+  const id = addrRefKey.slice(7);
+  const layer = customPtLayers.find(l => l.id === id);
+  return layer ? layer.recs : [];
 }
 
 /* Get source records for current addrSrcKey */
@@ -1060,12 +1084,14 @@ function runAddrFilter() {
   let points = addrSrcRecs();
   if (city) points = points.filter(p => p.fil === city || !p.fil);
 
-  const ownFiltered = city ? own.filter(o => o.cityRu === city) : own;
+  const refPts = addrRefKey === '__own__'
+    ? (city ? own.filter(o => o.cityRu === city) : own)
+    : addrRefPoints();
 
-  // Attach nearest own-point distance
+  // Attach nearest reference-point distance
   points.forEach(p => {
     let minD = Infinity;
-    ownFiltered.forEach(o => { const d = hav(p.lat, p.lon, o.lat, o.lon); if (d < minD) minD = d; });
+    refPts.forEach(o => { const d = hav(p.lat, p.lon, o.lat, o.lon); if (d < minD) minD = d; });
     p._distOwn = Math.round(minD);
   });
 
@@ -1178,7 +1204,7 @@ function exportRetraffic() {
   const infoData = [
     ['Параметры фильтра'],
     ['Исходный слой', srcName],
-    ['Расстояние до BR/IQOS', opLabel(rtRadiusOp) + ' ' + fmtD(rtRadius)],
+    ['Расстояние до ' + (addrRefKey === '__own__' ? 'BR/IQOS' : (addrRefPoints().length ? customPtLayers.find(l => '__cpt__' + l.id === addrRefKey)?.name : addrRefKey)), opLabel(rtRadiusOp) + ' ' + fmtD(rtRadius)],
     ...(isShipment ? [
       ['Объём', opLabel(rtVolOp) + ' ' + (rtVolMode === 'avg' ? `среднего (${avg.toFixed(1)} ед.)` : volThresh)],
       ['Исключаемые слои', exclNames.length ? exclNames.join(', ') : 'не выбраны'],
@@ -1307,7 +1333,7 @@ function syncControls() {
   $('vol-mode').value     = rtVolMode;
   $('vol-custom-val').value = rtVolCustom;
   $('vol-custom-block').style.display = rtVolMode === 'custom' ? '' : 'none';
-  buildAddrSrcSel();
+  buildAddrSrcSel(); // also calls buildAddrRefSel internally
   buildRtExclUI();
   fillAllSliders();
   updateAccBadges();
@@ -1428,6 +1454,9 @@ function wireEvents() {
 
   $('addr-src-sel').addEventListener('change', e => {
     addrSrcKey = e.target.value; buildAddrSrcSel(); addrLayer.clearLayers(); saveState();
+  });
+  $('addr-ref-sel').addEventListener('change', e => {
+    addrRefKey = e.target.value; addrLayer.clearLayers(); saveState();
   });
 
   $('op-rt-vol').addEventListener('change', e => { rtVolOp = e.target.value; saveState(); });
