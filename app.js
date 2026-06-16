@@ -716,7 +716,8 @@ function buildCustomPtUI() {
       const l  = customPtLayers.find(x => x.id === id); if (!l) return;
       if (l._group) { l._group.clearLayers(); l._group.remove(); }
       customPtLayers = customPtLayers.filter(x => x.id !== id);
-      buildCustomPtUI(); buildAddrSrcSel(); saveState();
+      addrLayer.clearLayers();
+      buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); saveState();
       toast(`Слой «${l.name}» удалён`, 'info');
     });
   });
@@ -1018,13 +1019,16 @@ function buildAddrSrcSel() {
   const sel = document.getElementById('addr-src-sel');
   if (!sel) return;
   const opts = addrSrcOptions();
+  // If current key no longer exists, reset to default
+  if (!opts.find(o => o.key === addrSrcKey)) addrSrcKey = '__shipment__';
   sel.innerHTML = opts.map(o =>
     `<option value="${o.key}"${o.key === addrSrcKey ? ' selected' : ''}>${o.name}</option>`
   ).join('');
+  const isCpt = addrSrcKey.startsWith('__cpt__');
   const isShipment = addrSrcKey === '__shipment__';
   const volBlock  = document.getElementById('addr-vol-block');
   const exclBlock = document.getElementById('addr-excl-block');
-  if (volBlock)  volBlock.style.display  = isShipment ? '' : 'none';
+  if (volBlock)  volBlock.style.display  = isCpt ? 'none' : '';   // show for shipment + heat layers
   if (exclBlock) exclBlock.style.display = isShipment ? '' : 'none';
   buildAddrRefSel();
 }
@@ -1037,9 +1041,18 @@ function buildAddrRefSel() {
   customPtLayers.forEach(l => {
     if (l.recs.length) opts.push({ key: '__cpt__' + l.id, name: l.name });
   });
+  // If current ref key no longer valid, reset
+  if (!opts.find(o => o.key === addrRefKey)) addrRefKey = '__own__';
   sel.innerHTML = opts.map(o =>
     `<option value="${o.key}"${o.key === addrRefKey ? ' selected' : ''}>${o.name}</option>`
   ).join('');
+}
+
+/* Returns reference layer name for display */
+function addrRefName() {
+  if (addrRefKey === '__own__') return 'BR/IQOS';
+  const layer = customPtLayers.find(l => '__cpt__' + l.id === addrRefKey);
+  return layer ? layer.name : 'BR/IQOS';
 }
 
 /* Returns reference points array for distance calculation */
@@ -1095,14 +1108,13 @@ function runAddrFilter() {
     p._distOwn = Math.round(minD);
   });
 
-  // Volume filter (shipment & heat layers only)
+  // Volume filter (shipment + heat layers; skip for custom point layers)
   let avg = 0, volThresh = 0;
-  if (isShipment || (addrSrcKey && !addrSrcKey.startsWith('__cpt__'))) {
+  const hasVol = !addrSrcKey.startsWith('__cpt__');
+  if (hasVol) {
     avg = points.reduce((s, p) => s + (p.vol_total || 0), 0) / (points.length || 1);
     volThresh = rtVolMode === 'custom' ? rtVolCustom : avg;
-    if (isShipment || addrSrcKey !== '__shipment__') {
-      points = points.filter(p => cmpDist(p.vol_total || 0, volThresh, rtVolOp));
-    }
+    points = points.filter(p => cmpDist(p.vol_total || 0, volThresh, rtVolOp));
   }
 
   // Distance to BR/IQOS filter
@@ -1143,7 +1155,7 @@ function previewAddrOnMap() {
     const lines = [`<b style="color:#FF8C00">#${i + 1} ${p.name || '—'}</b>`];
     if (p.addr) lines.push(p.addr);
     if (p.fil)  lines.push(p.fil);
-    lines.push(`До BR/IQOS: <b>${fmtD(p._distOwn)}</b>`);
+    lines.push(`До ${addrRefName()}: <b>${fmtD(p._distOwn)}</b>`);
     if (p.vol_total != null) lines.push(`Объём: ${Math.round(p.vol_total)}`);
     m.bindPopup(lines.join('<br>'));
     addrLayer.addLayer(m);
@@ -1156,7 +1168,7 @@ function previewAddrOnMap() {
 function exportRetraffic() {
   const { points, excluded, avg, volThresh, srcName } = runAddrFilter();
   const isShipment = addrSrcKey === '__shipment__';
-  const ownFiltered = city ? own.filter(o => o.cityRu === city) : own;
+  const refName = addrRefName();
 
   if (!points.length) {
     toast('Нет точек по текущим фильтрам', 'err');
@@ -1165,9 +1177,10 @@ function exportRetraffic() {
 
   points.sort((a, b) => (b.vol_total || 0) - (a.vol_total || 0));
 
+  const distCol = `До ${refName}, м`;
   const header = isShipment
-    ? ['№', 'Название', 'Город', 'Адрес', 'Широта', 'Долгота', 'Объём сиг.', 'Объём стики', 'Объём итого', 'До BR/IQOS, м', 'Код']
-    : ['№', 'Название', 'Город', 'Адрес', 'Широта', 'Долгота', 'Объём', 'До BR/IQOS, м', 'Код'];
+    ? ['№', 'Название', 'Город', 'Адрес', 'Широта', 'Долгота', 'Объём сиг.', 'Объём стики', 'Объём итого', distCol, 'Код']
+    : ['№', 'Название', 'Город', 'Адрес', 'Широта', 'Долгота', 'Объём', distCol, 'Код'];
 
   const rows = [header];
   points.forEach((p, i) => {
@@ -1204,7 +1217,7 @@ function exportRetraffic() {
   const infoData = [
     ['Параметры фильтра'],
     ['Исходный слой', srcName],
-    ['Расстояние до ' + (addrRefKey === '__own__' ? 'BR/IQOS' : (addrRefPoints().length ? customPtLayers.find(l => '__cpt__' + l.id === addrRefKey)?.name : addrRefKey)), opLabel(rtRadiusOp) + ' ' + fmtD(rtRadius)],
+    ['Расстояние до ' + refName, opLabel(rtRadiusOp) + ' ' + fmtD(rtRadius)],
     ...(isShipment ? [
       ['Объём', opLabel(rtVolOp) + ' ' + (rtVolMode === 'avg' ? `среднего (${avg.toFixed(1)} ед.)` : volThresh)],
       ['Исключаемые слои', exclNames.length ? exclNames.join(', ') : 'не выбраны'],
@@ -1523,7 +1536,7 @@ function wireEvents() {
     $('cpt-modal-overlay').classList.remove('open');
     const id = 'cpt_' + Date.now();
     customPtLayers.push({ id, name, color, visible: true, recs: [], _group: null });
-    buildCustomPtUI(); saveState();
+    buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); saveState();
     toast(`Слой «${name}» создан — загрузите данные`, 'ok');
   });
   $('cpt-modal-overlay').addEventListener('click', e => {
@@ -1539,7 +1552,7 @@ function wireEvents() {
     const done = recs => {
       if (!recs.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
       l.recs = recs;
-      buildCustomPtUI(); renderCustomPoints(); saveState();
+      buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); renderCustomPoints(); saveState();
       toast(`Слой «${l.name}» — загружено ${recs.length} точек`, 'ok');
     };
     if (ext === 'csv') {
