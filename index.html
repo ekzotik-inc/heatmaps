@@ -211,87 +211,68 @@
         </div>
         <div class="acc-body" id="acc-body-addr">
 
-          <!-- Source layer selector -->
-          <div class="ctrl">
-            <div class="row"><label>Исходный слой <span class="tip-icon" data-tip="Точки из этого слоя будут фильтроваться и попадут в выгрузку">ⓘ</span></label></div>
-            <select id="addr-src-sel" class="op-sel" style="width:100%;font-size:12px;padding:5px 10px;color:var(--ink)">
-              <option value="__shipment__">Отгрузки (сигареты + стики)</option>
-            </select>
+          <!-- Step 1: Source -->
+          <div class="addr-step">
+            <div class="addr-step-label"><span class="addr-num">1</span> Что анализируем?</div>
+            <select id="addr-src-sel" class="addr-sel"></select>
           </div>
 
-          <!-- Volume filter (only for shipment mode) -->
-          <div id="addr-vol-block" class="ctrl">
-            <div class="row">
-              <label>Объём <span class="tip-icon" data-tip="Порог объёма для фильтрации точек">ⓘ</span></label>
-              <div style="display:flex;align-items:center;gap:6px">
-                <select id="op-rt-vol" class="op-sel">
-                  <option value="gte">≥</option>
-                  <option value="gt">&gt;</option>
-                  <option value="lte">≤</option>
-                  <option value="lt">&lt;</option>
-                </select>
-                <select id="vol-mode" class="op-sel" style="font-size:11px;color:var(--ink)">
-                  <option value="avg">среднего</option>
-                  <option value="custom">вручную</option>
-                </select>
-              </div>
-            </div>
-            <div id="vol-custom-block" style="display:none;margin-top:6px">
-              <input type="number" id="vol-custom-val" min="0" step="1" value="0"
-                style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:var(--ink);padding:5px 10px;border-radius:6px;font-size:12px"/>
-            </div>
-          </div>
-
-          <!-- Distance reference layer + filter -->
-          <div class="ctrl">
-            <div class="row">
-              <label>Расстояние до <span class="tip-icon" data-tip="Считаем расстояние от каждой точки исходного слоя до ближайшей точки выбранного ориентира">ⓘ</span></label>
-            </div>
-            <select id="addr-ref-sel" class="op-sel" style="width:100%;font-size:12px;padding:5px 10px;color:var(--ink);margin-bottom:8px">
-              <option value="__own__">BR / IQOS (наши точки)</option>
-            </select>
-            <div class="row">
-              <label style="color:var(--dim);font-size:11px">Расстояние</label>
-              <div style="display:flex;align-items:center;gap:6px">
-                <select id="op-rt-radius" class="op-sel">
-                  <option value="lte">≤</option>
-                  <option value="lt">&lt;</option>
-                  <option value="gte">≥</option>
-                  <option value="gt">&gt;</option>
-                </select>
-                <span class="val" id="v-rt-radius">1.0 км</span>
-              </div>
+          <!-- Step 2: Distance -->
+          <div class="addr-step">
+            <div class="addr-step-label"><span class="addr-num">2</span> Расстояние до</div>
+            <select id="addr-ref-sel" class="addr-sel"></select>
+            <div class="addr-dist-row">
+              <select id="op-rt-radius" class="op-sel">
+                <option value="lte">≤</option>
+                <option value="lt">&lt;</option>
+                <option value="gte">≥</option>
+                <option value="gt">&gt;</option>
+              </select>
+              <span class="val" id="v-rt-radius">1.0 км</span>
             </div>
             <input type="range" class="full" id="s-rt-radius" min="200" max="10000" step="100" value="1000"/>
           </div>
 
-          <!-- Exclude block (only for shipment mode) -->
-          <div id="addr-excl-block">
-            <div class="ctrl">
-              <div class="row">
-                <label>Исключить точки у Re-traffic <span class="tip-icon" data-tip="Убрать из выгрузки точки, которые уже обслуживаются выбранными слоями">ⓘ</span></label>
-                <div style="display:flex;align-items:center;gap:6px">
-                  <select id="op-rt-excl" class="op-sel">
-                    <option value="lt">&lt;</option>
-                    <option value="lte">≤</option>
-                    <option value="gt">&gt;</option>
-                    <option value="gte">≥</option>
-                  </select>
-                  <span class="val" id="v-rt-excl">150 м</span>
-                </div>
-              </div>
-              <input type="range" class="full" id="s-rt-excl" min="50" max="1000" step="50" value="150"/>
+          <!-- Step 3: Volume (hidden for custom point layers) -->
+          <div class="addr-step" id="addr-vol-block">
+            <div class="addr-step-label"><span class="addr-num">3</span> Объём точки</div>
+            <div class="addr-dist-row" style="margin-bottom:0">
+              <select id="op-rt-vol" class="op-sel">
+                <option value="gte">≥</option>
+                <option value="gt">&gt;</option>
+                <option value="lte">≤</option>
+                <option value="lt">&lt;</option>
+              </select>
+              <select id="vol-mode" class="op-sel" style="color:var(--ink);flex:1">
+                <option value="avg">среднего по выборке</option>
+                <option value="custom">задать вручную</option>
+              </select>
             </div>
-            <div class="rt-excl-block">
-              <div class="rt-excl-title">Исключать слои:</div>
-              <div id="rt-excl-list"></div>
+            <input type="number" id="vol-custom-val" min="0" step="1" value="0"
+              style="display:none;width:100%;margin-top:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:var(--ink);padding:6px 10px;border-radius:8px;font-size:12px"/>
+          </div>
+
+          <!-- Step 4: Exclusions (shipment mode only) -->
+          <div class="addr-step" id="addr-excl-block">
+            <div class="addr-step-label"><span class="addr-num">4</span> Исключить точки, которые уже рядом с</div>
+            <div id="rt-excl-list"></div>
+            <div class="addr-dist-row" style="margin-top:8px">
+              <span style="font-size:11px;color:var(--dim)">ближе чем</span>
+              <select id="op-rt-excl" class="op-sel">
+                <option value="lt">&lt;</option>
+                <option value="lte">≤</option>
+                <option value="gt">&gt;</option>
+                <option value="gte">≥</option>
+              </select>
+              <span class="val" id="v-rt-excl">150 м</span>
             </div>
+            <input type="range" class="full" id="s-rt-excl" min="50" max="1000" step="50" value="150"/>
           </div>
 
           <!-- Actions -->
-          <div style="display:flex;gap:8px;margin-top:4px">
-            <button class="btn" id="btn-addr-preview" style="flex:1;background:linear-gradient(135deg,#1a3a6e,#0f2548)">👁 На карте</button>
-            <button class="btn btn-retraffic" id="btn-retraffic-export" style="flex:1">⬇ Excel</button>
+          <div class="addr-actions">
+            <button class="btn addr-btn-map" id="btn-addr-preview">👁 На карте</button>
+            <button class="btn addr-btn-xls btn-retraffic" id="btn-retraffic-export">⬇ Excel</button>
           </div>
         </div>
       </div>
