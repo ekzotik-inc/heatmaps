@@ -1008,7 +1008,7 @@ const cmpDist = (d, thresh, op) =>
 function addrSrcOptions() {
   const opts = [{ key: '__shipment__', name: 'Отгрузки (сигареты + стики)' }];
   heatKeys.forEach(k => {
-    if (k !== 'combined') opts.push({ key: k, name: DS[k].name });
+    if (k !== 'combined' && DS[k]) opts.push({ key: k, name: DS[k].name || k });
   });
   customPtLayers.forEach(l => opts.push({ key: '__cpt__' + l.id, name: l.name }));
   return opts;
