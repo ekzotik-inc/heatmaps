@@ -155,6 +155,10 @@ app.post('/state', async (req, res) => {
 const server = http.createServer(app);
 
 initDb()
+  .catch(e => {
+    console.error('Failed to connect to PostgreSQL, falling back to file storage:', e.message);
+    db = null;
+  })
   .then(() => {
     server.listen(PORT, () => {
       console.log(`\n🗺  Heat Map state server running on port ${PORT}`);
@@ -163,10 +167,6 @@ initDb()
       console.log(`   POST http://localhost:${PORT}/state  — write state (requires X-API-Key)`);
       console.log(`   GET  http://localhost:${PORT}/health — health check\n`);
     });
-  })
-  .catch(e => {
-    console.error('Failed to init DB:', e.message);
-    process.exit(1);
   });
 
 // Graceful shutdown
