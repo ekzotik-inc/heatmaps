@@ -134,6 +134,20 @@ html, body {
   margin-top: 11px; flex-wrap: wrap;
 }
 .lyr-ctl .grp { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--mut); }
+.sl-val { font-size: 10px; color: var(--acc); min-width: 28px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+/* ── LAYER LEGEND ────────────────────────────────────────────────────── */
+#layer-legend {
+  position: absolute; bottom: 32px; right: 14px; z-index: 1100;
+  background: rgba(255,255,255,.92); backdrop-filter: blur(10px);
+  border: 1px solid #dde2e8; border-radius: 10px;
+  padding: 8px 12px; font-size: 11px; color: #4a5b6e;
+  box-shadow: 0 4px 14px rgba(20,40,70,.1);
+  display: flex; flex-direction: column; gap: 5px; min-width: 120px;
+}
+.legend-item { display: flex; align-items: center; gap: 7px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.legend-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
 
 /* gradient strip showing the layer's active colour ramp */
 .ramp-preview {

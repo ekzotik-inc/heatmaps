@@ -328,16 +328,24 @@ function renderPoints() {
 }
 
 /* ── HEAT LAYERS ─────────────────────────────────────────────────────── */
-function applyHeatCanvas(d) {
-  const canvas = d._leaf && d._leaf._canvas;
-  if (!canvas) return;
-  canvas.style.mixBlendMode = heatBlend === 'normal' ? '' : heatBlend;
-  canvas.style.filter  = heatBoost === 1 ? '' : `brightness(${heatBoost}) saturate(${Math.max(heatBoost * .8 + .2, 0)})`;
-  const op = (d.opacity == null ? 1 : d.opacity) * (heatBoost < 1 ? heatBoost : 1);
-  canvas.style.opacity = op >= 1 ? '' : String(op);
+function heatPaneName(k) { return 'hp_' + k; }
+
+function applyHeatPane(d, k) {
+  const pane = map.getPane(heatPaneName(k));
+  if (!pane) return;
+  pane.style.opacity = String(d.opacity == null ? 1 : d.opacity);
+  pane.style.mixBlendMode = heatBlend === 'normal' ? '' : heatBlend;
+  pane.style.filter = heatBoost === 1 ? '' : `brightness(${heatBoost}) saturate(${Math.max(heatBoost * .8 + .2, 0)})`;
 }
+
+function applyHeatCanvas(d) {
+  // delegates to pane — canvas.style approach is unreliable after map redraws
+  const k = d.key;
+  if (k) applyHeatPane(d, k);
+}
+
 function restyleHeatCanvases() {
-  heatKeys.forEach(k => { const d = DS[k]; if (d) applyHeatCanvas(d); });
+  heatKeys.forEach(k => { const d = DS[k]; if (d) applyHeatPane(d, k); });
 }
 
 function renderHeat() {
@@ -346,20 +354,39 @@ function renderHeat() {
     const d = DS[k];
     if (!d) return;
     if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
+
+    const paneName = heatPaneName(k);
+    if (!map.getPane(paneName)) map.createPane(paneName);
+    applyHeatPane(d, k);
+
     if (!d.visible) return;
     const recs  = d.recs.filter(r => !city || r.fil === city);
     const scale = Math.max(d.stats.p90, 0.01);
-    const pts   = recs.map(r => [r.lat, r.lon, Math.min(r.vol / scale, 1)]);
+    // Scale weights directly by intensity — more reliable than Leaflet.heat's max option
+    const boost = Math.max(d.intensity || 1, 0.1);
+    const pts   = recs.map(r => [r.lat, r.lon, Math.min(r.vol / scale * boost, 1)]);
     total += recs.length;
     d._leaf = L.heatLayer(pts, {
-      radius: heatRadius, blur: Math.round(heatRadius * .8), minOpacity: .22,
-      max: 1 / (d.intensity || 1),
+      pane: paneName,
+      radius: heatRadius, blur: Math.round(heatRadius * .8), minOpacity: 0,
+      max: 1,
       gradient: gradOf(d),
     }).addTo(map);
-    // canvas may not exist until next frame
-    requestAnimationFrame(() => applyHeatCanvas(d));
   });
   document.getElementById('b-count').textContent = total.toLocaleString('ru-RU');
+  updateLayerLegend();
+}
+
+function updateLayerLegend() {
+  const el = document.getElementById('layer-legend');
+  if (!el) return;
+  const visible = heatKeys.filter(k => DS[k] && DS[k].visible && DS[k].recs.length);
+  if (visible.length < 2) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.innerHTML = visible.map(k => {
+    const d = DS[k];
+    return `<div class="legend-item"><div class="legend-dot" style="background:${d.color}"></div><span class="legend-name">${d.name}</span></div>`;
+  }).join('');
 }
 
 /* ── RECOMMENDATIONS ─────────────────────────────────────────────────── */
@@ -529,6 +556,7 @@ function buildHeatUI() {
     const custom = k.startsWith('custom_');
     const card   = document.createElement('div');
     card.className = 'lyr';
+    card.style.borderLeft = `3px solid ${d.color}`;
     card.innerHTML = `
       <div class="lyr-top">
         <div class="cbx${d.visible ? ' on' : ''}"></div>
@@ -546,8 +574,8 @@ function buildHeatUI() {
       </div>
       <div class="ramp-preview"></div>
       <div class="lyr-ctl">
-        <div class="grp" style="flex:1">Интенс. <input type="range" class="r-int" min="0.4" max="3" step="0.1" value="${d.intensity}" style="flex:1"></div>
-        <div class="grp" style="flex:1">Прозр. <input type="range" class="r-op" min="0.15" max="1" step="0.05" value="${d.opacity == null ? 1 : d.opacity}" style="flex:1"></div>
+        <div class="grp" style="flex:1">Интенс. <input type="range" class="r-int" min="0.2" max="4" step="0.1" value="${d.intensity || 1}" style="flex:1"><span class="sl-val">${(d.intensity || 1).toFixed(1)}×</span></div>
+        <div class="grp" style="flex:1">Прозр. <input type="range" class="r-op" min="0.05" max="1" step="0.05" value="${d.opacity == null ? 1 : d.opacity}" style="flex:1"><span class="sl-val">${Math.round((d.opacity == null ? 1 : d.opacity) * 100)}%</span></div>
       </div>`;
 
     const colorInp = card.querySelector('input[type=color]');
@@ -569,10 +597,18 @@ function buildHeatUI() {
       colorInp.style.display = d.ramp === 'custom' ? '' : 'none';
       drawPreview(); renderHeat();
     });
-    colorInp.addEventListener('input', e => { d.color = e.target.value; drawPreview(); renderHeat(); });
-    card.querySelector('.r-int').addEventListener('input', e => { d.intensity = +e.target.value; fillSlider(e.target); renderHeat(); });
+    colorInp.addEventListener('input', e => { d.color = e.target.value; card.style.borderLeft = `3px solid ${d.color}`; drawPreview(); renderHeat(); });
+    card.querySelector('.r-int').addEventListener('input', e => {
+      d.intensity = +e.target.value;
+      fillSlider(e.target);
+      e.target.nextElementSibling.textContent = d.intensity.toFixed(1) + '×';
+      renderHeat();
+    });
     card.querySelector('.r-op').addEventListener('input', e => {
-      d.opacity = +e.target.value; fillSlider(e.target); applyHeatCanvas(d); // fast path, no re-render
+      d.opacity = +e.target.value;
+      fillSlider(e.target);
+      e.target.nextElementSibling.textContent = Math.round(d.opacity * 100) + '%';
+      applyHeatPane(d, k); // fast path: only update pane, no full re-render
     });
 
     if (custom) {
@@ -760,7 +796,7 @@ function toast(msg, type = 'info', ms = 2800) {
 }
 
 /* ── CREATE LAYER MODAL ──────────────────────────────────────────────── */
-const LAYER_PALETTE = ['#9B59B6', '#E67E22', '#1ABC9C', '#E84393', '#F1C40F', '#16A085'];
+const LAYER_PALETTE = ['#E63946', '#457B9D', '#2DC653', '#FF9F1C', '#9B59B6', '#00B4D8', '#FF6B6B', '#06D6A0'];
 
 function openLayerModal() {
   const overlay = document.getElementById('layer-modal-overlay');
@@ -777,7 +813,8 @@ function confirmLayerModal() {
   closeLayerModal();
   if (!name) return;
   const key   = 'custom_' + Date.now();
-  const color = LAYER_PALETTE[(heatKeys.length - 2) % LAYER_PALETTE.length];
+  const usedColors = heatKeys.map(k2 => DS[k2] && DS[k2].color).filter(Boolean);
+  const color = LAYER_PALETTE.find(c => !usedColors.includes(c)) || LAYER_PALETTE[heatKeys.length % LAYER_PALETTE.length];
   DS[key] = { key, name, color, ramp: 'custom', opacity: 1, intensity: 1, visible: true, recs: [], stats: { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 } };
   heatKeys.push(key);
   buildHeatUI(); rebuildUpTarget(); renderHeat();
