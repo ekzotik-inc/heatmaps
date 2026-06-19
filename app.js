@@ -122,8 +122,8 @@ let _cptUploadTarget = null;  // id of layer awaiting file upload
 const map = L.map('map', { preferCanvas: true, zoomControl: true, minZoom: 5, zoomSnap: .5 })
               .setView([41, 67], 6);
 
-L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: 'abcd', maxZoom: 20,
+L.tileLayer('https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1', {
+  attribution: '&copy; <a href="https://2gis.ru">2ГИС</a>', subdomains: '0123', maxZoom: 18,
 }).addTo(map);
 
 map.createPane('districts'); map.getPane('districts').style.zIndex = 460;
