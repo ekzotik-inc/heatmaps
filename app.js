@@ -328,24 +328,16 @@ function renderPoints() {
 }
 
 /* ── HEAT LAYERS ─────────────────────────────────────────────────────── */
-function heatPaneName(k) { return 'hp_' + k; }
-
-function applyHeatPane(d, k) {
-  const pane = map.getPane(heatPaneName(k));
-  if (!pane) return;
-  pane.style.opacity = String(d.opacity == null ? 1 : d.opacity);
-  pane.style.mixBlendMode = heatBlend === 'normal' ? '' : heatBlend;
-  pane.style.filter = heatBoost === 1 ? '' : `brightness(${heatBoost}) saturate(${Math.max(heatBoost * .8 + .2, 0)})`;
-}
-
 function applyHeatCanvas(d) {
-  // delegates to pane — canvas.style approach is unreliable after map redraws
-  const k = d.key;
-  if (k) applyHeatPane(d, k);
+  const canvas = d._leaf && d._leaf._canvas;
+  if (!canvas) return;
+  canvas.style.mixBlendMode = heatBlend === 'normal' ? '' : heatBlend;
+  canvas.style.filter = heatBoost === 1 ? '' : `brightness(${heatBoost}) saturate(${Math.max(heatBoost * .8 + .2, 0)})`;
+  const op = (d.opacity == null ? 1 : d.opacity) * (heatBoost < 1 ? heatBoost : 1);
+  canvas.style.opacity = op >= 1 ? '' : String(op);
 }
-
 function restyleHeatCanvases() {
-  heatKeys.forEach(k => { const d = DS[k]; if (d) applyHeatPane(d, k); });
+  heatKeys.forEach(k => { const d = DS[k]; if (d) applyHeatCanvas(d); });
 }
 
 function renderHeat() {
@@ -354,24 +346,18 @@ function renderHeat() {
     const d = DS[k];
     if (!d) return;
     if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
-
-    const paneName = heatPaneName(k);
-    if (!map.getPane(paneName)) map.createPane(paneName);
-    applyHeatPane(d, k);
-
     if (!d.visible) return;
     const recs  = d.recs.filter(r => !city || r.fil === city);
     const scale = Math.max(d.stats.p90, 0.01);
-    // Scale weights directly by intensity — more reliable than Leaflet.heat's max option
     const boost = Math.max(d.intensity || 1, 0.1);
     const pts   = recs.map(r => [r.lat, r.lon, Math.min(r.vol / scale * boost, 1)]);
     total += recs.length;
     d._leaf = L.heatLayer(pts, {
-      pane: paneName,
       radius: heatRadius, blur: Math.round(heatRadius * .8), minOpacity: .22,
       max: 1,
       gradient: gradOf(d),
     }).addTo(map);
+    requestAnimationFrame(() => applyHeatCanvas(d));
   });
   document.getElementById('b-count').textContent = total.toLocaleString('ru-RU');
   updateLayerLegend();
@@ -608,7 +594,7 @@ function buildHeatUI() {
       d.opacity = +e.target.value;
       fillSlider(e.target);
       e.target.nextElementSibling.textContent = Math.round(d.opacity * 100) + '%';
-      applyHeatPane(d, k); // fast path: only update pane, no full re-render
+      renderHeat();
     });
 
     if (custom) {
