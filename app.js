@@ -368,7 +368,7 @@ function renderHeat() {
     total += recs.length;
     d._leaf = L.heatLayer(pts, {
       pane: paneName,
-      radius: heatRadius, blur: Math.round(heatRadius * .8), minOpacity: 0,
+      radius: heatRadius, blur: Math.round(heatRadius * .8), minOpacity: .22,
       max: 1,
       gradient: gradOf(d),
     }).addTo(map);
