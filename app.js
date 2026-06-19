@@ -367,7 +367,7 @@ function renderHeat() {
 function updateLayerLegend() {
   const el = document.getElementById('layer-legend');
   if (!el) return;
-  const visible = heatKeys.filter(k => DS[k] && DS[k].visible && DS[k].recs.length);
+  const visible = heatKeys.filter(k => DS[k] && DS[k].visible && DS[k].recs && DS[k].recs.length);
   if (visible.length < 2) { el.style.display = 'none'; return; }
   el.style.display = '';
   el.innerHTML = visible.map(k => {
@@ -1182,7 +1182,7 @@ function previewAddrOnMap() {
   const usedRefs = new Map(); // key = 'lat|lon' → ref object
   points.forEach(p => {
     if (p._nearRef) {
-      const key = p._nearRef.lat + '|' + p._nearRef.lon;
+      const key = p._nearRef.lat.toFixed(6) + '|' + p._nearRef.lon.toFixed(6);
       usedRefs.set(key, p._nearRef);
     }
   });
@@ -1344,11 +1344,12 @@ async function pushToServer(snapshot, isRetry = false) {
     if (!res.ok) {
       if (!isRetry) {
         setSyncBadge('err', 'Ошибка — повтор через 6 с');
-        setTimeout(() => pushToServer(snapshot, true), 6000);
+        setTimeout(() => { const fresh = buildStateSnapshot(); pushToServer(fresh, true); }, 6000);
       } else {
         setSyncBadge('err', 'Ошибка сохранения');
       }
-      console.warn('Server sync error:', res.status);
+      console.warn('Server sync error:', res.status, res.status === 413 ? '(данные слишком большие — увеличьте лимит сервера)' : '');
+      if (res.status === 413) toast('Данные слишком большие для сервера', 'err');
     } else {
       const now = new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
       setSyncBadge('ok', 'Сохранено ' + now);
@@ -1517,7 +1518,8 @@ function wireEvents() {
     }
   }
 
-  $('btn-update').addEventListener('click', () => {
+  $('btn-update').addEventListener('click', e => {
+    e.stopPropagation(); // prevent sidebar's saveState() from firing before recs are set
     if (!pendingUpload) return;
     const tk = $('up-target').value;
     const d  = DS[tk]; if (!d) return;
@@ -1527,7 +1529,7 @@ function wireEvents() {
     $('fname').style.display = 'none';
     fileInp.value = '';
     buildHeatUI(); renderHeat(); renderRecs(); buildRtExclUI();
-    saveState(); // push after recs are populated — click-on-side fires before this handler
+    saveState();
     toast(`Слой «${d.name}» обновлён (${d.stats.n} точек)`, 'ok');
   });
 
