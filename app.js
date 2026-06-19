@@ -331,6 +331,7 @@ function renderPoints() {
 function applyHeatCanvas(d) {
   const canvas = d._leaf && d._leaf._canvas;
   if (!canvas) return;
+  canvas.style.pointerEvents = 'none'; // prevent canvas from blocking tooltips on markers/polygons below
   canvas.style.mixBlendMode = heatBlend === 'normal' ? '' : heatBlend;
   canvas.style.filter = heatBoost === 1 ? '' : `brightness(${heatBoost}) saturate(${Math.max(heatBoost * .8 + .2, 0)})`;
   const op = (d.opacity == null ? 1 : d.opacity) * (heatBoost < 1 ? heatBoost : 1);
