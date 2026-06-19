@@ -882,7 +882,7 @@ function buildStateSnapshot() {
   const pts = {};
   pointLayers.forEach(p => pts[p.id] = { color: p.color, shape: p.shape, visible: p.visible });
   return {
-    _v: 1, _app: 'hm-br', _date: new Date().toISOString().slice(0, 10),
+    _v: 1, _app: 'hm-br', _savedAt: new Date().toISOString(), _date: new Date().toISOString().slice(0, 10),
     heatKeys, layers, pts, incCol: { ...incCol },
     city, covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
     addrSrcKey, addrRefKey, rtRadius, rtRadiusOp, rtVolOp, rtVolMode, rtVolCustom, rtExclRadius, rtExclOp, rtExclKeys,
@@ -1330,10 +1330,10 @@ function setSyncBadge(state, label) {
   lbl.textContent = label;
 }
 
-async function pushToServer(snapshot) {
+async function pushToServer(snapshot, isRetry = false) {
   if (!SERVER_URL) return;
   if (workMode !== 'edit') return;
-  setSyncBadge('syncing', 'Сохранение…');
+  setSyncBadge('syncing', isRetry ? 'Повтор…' : 'Сохранение…');
   try {
     const res = await fetch(SERVER_URL + '/state', {
       method: 'POST',
@@ -1341,14 +1341,24 @@ async function pushToServer(snapshot) {
       body: JSON.stringify(snapshot),
     });
     if (!res.ok) {
-      setSyncBadge('err', 'Ошибка сохранения');
+      if (!isRetry) {
+        setSyncBadge('err', 'Ошибка — повтор через 6 с');
+        setTimeout(() => pushToServer(snapshot, true), 6000);
+      } else {
+        setSyncBadge('err', 'Ошибка сохранения');
+      }
       console.warn('Server sync error:', res.status);
     } else {
       const now = new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
       setSyncBadge('ok', 'Сохранено ' + now);
     }
   } catch (e) {
-    setSyncBadge('err', 'Сервер недоступен');
+    if (!isRetry) {
+      setSyncBadge('err', 'Сервер недоступен — повтор через 6 с');
+      setTimeout(() => pushToServer(snapshot, true), 6000);
+    } else {
+      setSyncBadge('err', 'Сервер недоступен');
+    }
     console.warn('Server unreachable, saved locally only:', e.message);
   }
 }
@@ -1516,6 +1526,7 @@ function wireEvents() {
     $('fname').style.display = 'none';
     fileInp.value = '';
     buildHeatUI(); renderHeat(); renderRecs(); buildRtExclUI();
+    saveState(); // push after recs are populated — click-on-side fires before this handler
     toast(`Слой «${d.name}» обновлён (${d.stats.n} точек)`, 'ok');
   });
 
