@@ -305,6 +305,7 @@ select:focus { outline: none; border-color: var(--acc); box-shadow: 0 0 0 3px va
 
 input[type=range] {
   -webkit-appearance: none; height: 4px;
+  touch-action: pan-x; /* allow horizontal drag without triggering page scroll */
   border-radius: 3px; outline: none;
   background: linear-gradient(90deg, var(--acc) var(--pct, 50%), #dde2ec var(--pct, 50%));
 }
@@ -687,7 +688,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 .layer-modal {
   background: var(--card);
   border: 1px solid var(--line2); border-radius: 20px;
-  padding: 28px 28px 24px; width: 320px;
+  padding: 28px 28px 24px; width: clamp(260px, 90vw, 320px);
   box-shadow: var(--shadow);
   transform: scale(.96); transition: transform .2s var(--ease);
 }
@@ -794,17 +795,29 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 
 /* ── MOBILE ──────────────────────────────────────────────────────────── */
 @media (max-width: 780px) {
+  /* Sidebar: slide-in drawer, width capped so it doesn't overflow small screens */
   #side {
     position: absolute; left: 0; top: 0; height: 100%;
+    width: clamp(280px, 88vw, 348px); flex: none;
     transform: translateX(-100%);
+    transition: transform .32s var(--ease);
+    /* safe area for notched phones */
+    padding-left: env(safe-area-inset-left, 0px);
   }
   #side.open { transform: none; }
+
+  /* Prevent body scroll behind open drawer */
+  body.side-open { overflow: hidden; }
+
+  /* Backdrop */
   #side-backdrop {
-    display: block; position: absolute; inset: 0; z-index: 1150;
+    display: block; position: fixed; inset: 0; z-index: 1150;
     background: rgba(40,55,90,.4); opacity: 0; pointer-events: none;
     transition: opacity .3s;
   }
   #side-backdrop.show { opacity: 1; pointer-events: auto; }
+
+  /* Burger menu button */
   #burger {
     display: flex; position: absolute; top: 14px; left: 14px; z-index: 1300;
     width: 44px; height: 44px; align-items: center; justify-content: center;
@@ -812,7 +825,89 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
     color: var(--acc); font-size: 20px; cursor: pointer;
     box-shadow: var(--shadow-sm);
   }
-  .sync-badge { top: auto; bottom: 14px; right: 14px; }
+  #burger:active { background: var(--acc-l); }
+
+  /* Move sync badge to bottom-left so it doesn't fight the count badge */
+  .sync-badge { top: auto; bottom: 14px; left: 14px; right: auto; }
+
+  /* Move mode badge above sync badge */
+  .mode-badge { bottom: 60px; right: 12px; font-size: 10.5px; }
+
+  /* Point count badge: shift right of burger button */
+  .badge { top: 14px; left: 70px; right: auto; }
+
+  /* City bar: scrollable row on small screens */
+  #city-bar {
+    top: auto; bottom: 70px;
+    left: 50%; transform: translateX(-50%);
+    max-width: calc(100vw - 28px);
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  #city-bar::-webkit-scrollbar { display: none; }
+  #city-bar .cities { flex-wrap: nowrap; }
+  #city-bar .cities button {
+    font-size: 12px; padding: 8px 14px; /* bigger touch target */
+  }
+  .city-extra-btn { font-size: 12px; padding: 8px 14px; }
+
+  /* Hide legend on mobile — too cramped */
+  #layer-legend { display: none; }
+
+  /* Sidebar inner padding: narrower on small screens */
+  .tab-panel { padding: 12px 12px 20px; }
+
+  /* Tabs: bigger touch targets */
+  .side-tab { padding: 12px 4px 14px; font-size: 10px; }
+  .side-tab .tab-icon { font-size: 20px; }
+
+  /* Section titles: readable size */
+  .tab-section-title { font-size: 11px; }
+
+  /* Sliders: full width on mobile (was 92px hardcoded) */
+  .lyr-ctl input[type=range] { width: 100%; }
+  .lyr-ctl { flex-direction: column; align-items: stretch; }
+  .lyr-ctl .grp { width: 100%; }
+
+  /* Toggle pill: bigger hit area */
+  .cbx { width: 40px; height: 22px; }
+  .cbx::after { width: 16px; height: 16px; }
+  .cbx.on::after { left: calc(100% - 18px); }
+
+  /* Modal: fluid width, no overflow on iPhone SE */
+  .layer-modal { width: 90vw; max-width: 320px; padding: 24px 20px 20px; }
+
+  /* Auth card: tighter padding on small screens */
+  .auth-card { padding: 28px 22px 24px; }
+  .auth-title { font-size: 19px; }
+
+  /* Rec items: bigger tap area */
+  .rec-item { padding: 13px 14px; }
+
+  /* Buttons inside sidebar: ensure 44px min height */
+  .btn { min-height: 44px; }
+  .modal-btn { padding: 14px; min-height: 48px; }
+
+  /* Accordion badges */
+  .acc-badge { font-size: 10px; padding: 1.5px 6px; }
+
+  /* Address program: stack row items vertically */
+  .rt-row { flex-direction: column; gap: 8px; }
+  .rt-row .op-sel { align-self: flex-start; }
+}
+
+/* Extra-small phones (iPhone SE, 320px) */
+@media (max-width: 374px) {
+  #side { width: 90vw; }
+  .badge { font-size: 10px; padding: 6px 10px; }
+  #city-bar .cities button { font-size: 11px; padding: 7px 11px; }
+}
+
+/* Landscape mobile: sidebar narrower, city bar repositioned */
+@media (max-width: 780px) and (orientation: landscape) {
+  #side { width: clamp(260px, 60vw, 320px); }
+  #city-bar { bottom: 14px; }
+  .sync-badge { bottom: 14px; }
 }
 
 /* ── MODE SELECTION ──────────────────────────────────────────────────── */

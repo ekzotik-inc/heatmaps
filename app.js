@@ -1608,12 +1608,16 @@ function wireEvents() {
 
   // Mobile burger + backdrop
   const sideEl = $('side'), backdrop = $('side-backdrop');
+  const isMobile = () => window.innerWidth <= 780;
   const setSide = open => {
     sideEl.classList.toggle('open', open);
     backdrop.classList.toggle('show', open);
+    document.body.classList.toggle('side-open', open); // prevent body scroll behind drawer
   };
   $('burger').addEventListener('click', () => setSide(!sideEl.classList.contains('open')));
   backdrop.addEventListener('click', () => setSide(false));
+  // Close drawer on Escape key
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && isMobile()) setSide(false); });
 
   // Desktop collapse — slide sidebar away, map reflows to full width
   const appEl = $('app');
@@ -1636,6 +1640,7 @@ function wireEvents() {
       tab.classList.add('active');
       const panel = document.getElementById(tab.dataset.tab);
       if (panel) panel.classList.add('active');
+      // On mobile: don't auto-close — let user see the panel they just opened
     });
   });
 
