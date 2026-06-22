@@ -74,6 +74,9 @@
         <h1>Тепловая карта · BR</h1>
         <p>Сигареты + Стики · Аналитика</p>
       </div>
+      <button class="side-collapse" id="side-collapse" title="Свернуть панель">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
     </div>
     <div class="scroll">
 
@@ -132,25 +135,25 @@
 
       <!-- 3. НАШИ ТОЧКИ -->
       <div class="acc-section">
-        <div class="acc-hdr open" data-acc="pts">
+        <div class="acc-hdr" data-acc="pts">
           <span class="acc-icon">📍</span>
           <span class="acc-title">Наши точки · IQOS</span>
           <span class="acc-chevron">▾</span>
         </div>
-        <div class="acc-body open" id="acc-body-pts">
+        <div class="acc-body" id="acc-body-pts">
           <div id="pt-list"></div>
         </div>
       </div>
 
       <!-- 4. СВОИ ТОЧКИ -->
       <div class="acc-section">
-        <div class="acc-hdr open" data-acc="cpt">
+        <div class="acc-hdr" data-acc="cpt">
           <span class="acc-icon">📌</span>
           <span class="acc-title">Свои точки</span>
           <span class="acc-badge" id="acc-badge-cpt"></span>
           <span class="acc-chevron">▾</span>
         </div>
-        <div class="acc-body open" id="acc-body-cpt">
+        <div class="acc-body" id="acc-body-cpt">
           <div id="custom-pt-list"></div>
           <button class="add-layer-btn" id="add-custom-pt-btn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -162,13 +165,13 @@
 
       <!-- 5. РЕКОМЕНДАЦИИ -->
       <div class="acc-section">
-        <div class="acc-hdr open" data-acc="rec">
+        <div class="acc-hdr" data-acc="rec">
           <span class="acc-icon">🎯</span>
           <span class="acc-title">Рекомендации</span>
           <span class="acc-badge acc-badge-green" id="acc-badge-rec"></span>
           <span class="acc-chevron">▾</span>
         </div>
-        <div class="acc-body open" id="acc-body-rec">
+        <div class="acc-body" id="acc-body-rec">
           <div class="rec-basis" id="rec-basis">
             <button class="on" data-b="cig">Сигареты</button>
             <button data-b="sticks">Стики</button>
@@ -249,7 +252,7 @@
               </select>
             </div>
             <input type="number" id="vol-custom-val" min="0" step="1" value="0"
-              style="display:none;width:100%;margin-top:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:var(--ink);padding:6px 10px;border-radius:8px;font-size:12px"/>
+              style="display:none;width:100%;margin-top:8px;background:var(--card2);border:1px solid var(--line2);color:var(--ink);padding:6px 10px;border-radius:8px;font-size:12px"/>
           </div>
 
           <!-- Step 4: Exclusions (shipment mode only) -->
@@ -340,6 +343,9 @@
     </button>
   </aside>
   <button id="burger" aria-label="Меню">☰</button>
+  <button id="side-reopen" title="Показать панель" aria-label="Показать панель">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
   <div id="side-backdrop"></div>
   <div id="map"></div>
   <div class="badge">Точек на карте: <b id="b-count">—</b></div>

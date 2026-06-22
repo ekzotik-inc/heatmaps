@@ -321,7 +321,7 @@ function renderPoints() {
                   <div class="pp-row"><span>Город</span><b>${o.cityRu}</b></div>
                   ${o.addr  ? `<div class="pp-row"><span>Адрес</span><b style="font-family:Manrope;font-weight:500;text-align:right">${o.addr}</b></div>` : ''}
                   ${o.hours ? `<div class="pp-row"><span>Часы</span><b>${o.hours}</b></div>` : ''}
-                  <span class="pp-tag" style="background:rgba(136,169,209,.14);color:#bcd6ef;border:1px solid rgba(136,169,209,.35)">ТОЧКА IQOS</span>`)
+                  <span class="pp-tag" style="background:rgba(91,124,250,.12);color:#3a56c4;border:1px solid rgba(91,124,250,.35)">ТОЧКА IQOS</span>`)
       .addTo(pointsGroup);
     });
   });
@@ -1589,6 +1589,19 @@ function wireEvents() {
   };
   $('burger').addEventListener('click', () => setSide(!sideEl.classList.contains('open')));
   backdrop.addEventListener('click', () => setSide(false));
+
+  // Desktop collapse — slide sidebar away, map reflows to full width
+  const appEl = $('app');
+  const SIDE_HIDDEN_KEY = 'hm_side_hidden';
+  const setDesktopSide = hidden => {
+    appEl.classList.toggle('side-hidden', hidden);
+    try { localStorage.setItem(SIDE_HIDDEN_KEY, hidden ? '1' : '0'); } catch (e) {}
+    // Let Leaflet re-measure after the slide transition completes
+    setTimeout(() => { if (typeof map !== 'undefined' && map.invalidateSize) map.invalidateSize(); }, 360);
+  };
+  if (localStorage.getItem(SIDE_HIDDEN_KEY) === '1') appEl.classList.add('side-hidden');
+  $('side-collapse').addEventListener('click', () => setDesktopSide(true));
+  $('side-reopen').addEventListener('click', () => setDesktopSide(false));
 
   // Accordion toggle — HTML uses .acc-hdr.open + .acc-body.open siblings
   document.querySelectorAll('.acc-hdr[data-acc]').forEach(hdr => {
