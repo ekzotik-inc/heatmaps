@@ -1385,11 +1385,15 @@ async function pushToServer(snapshot, isRetry = false) {
 
 async function fetchFromServer() {
   if (!SERVER_URL) return null;
+  // Render free tier wakes up on first request and can take ~45s to respond.
+  // We show a "waking up" hint after 5s so the user knows it's not frozen.
   setSyncBadge('syncing', 'Загрузка…');
+  const wakeHint = setTimeout(() => setSyncBadge('syncing', 'Сервер пробуждается…'), 5000);
   try {
     const res = await fetch(SERVER_URL + '/state?map=' + encodeURIComponent(currentMap), {
-      signal: AbortSignal.timeout(12000),
+      signal: AbortSignal.timeout(55000),
     });
+    clearTimeout(wakeHint);
     if (!res.ok) { setSyncBadge('err', 'Ошибка загрузки'); return null; }
     const data = await res.json();
     if (!data || data.empty || data._app !== 'hm-br') {
@@ -1398,7 +1402,8 @@ async function fetchFromServer() {
     }
     return data;
   } catch (e) {
-    const msg = e.name === 'TimeoutError' ? 'Сервер не отвечает' : 'Сервер недоступен';
+    clearTimeout(wakeHint);
+    const msg = e.name === 'TimeoutError' ? 'Сервер не отвечает (перезагрузите)' : 'Сервер недоступен';
     setSyncBadge('err', msg);
     console.warn('Could not load from server, using local state:', e.message);
     return null;
