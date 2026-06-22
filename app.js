@@ -219,7 +219,7 @@ function renderIncome() {
                     { className: 'tt', direction: 'top', offset: [0, -12] })
        .bindPopup(`<div class="pp-title">${z.n}. ${z.name}</div>
                    <div class="pp-row"><span>Уровень</span><b>${TIER_NAME[z.tier]}</b></div>
-                   <div class="pp-row"><span>Ориентиры</span><b style="font-family:Manrope;font-weight:500;text-align:right">${z.pl}</b></div>
+                   <div class="pp-row"><span>Ориентиры</span><b style="font-family:IQOS;font-weight:500;text-align:right">${z.pl}</b></div>
                    <div class="pp-why">${CX[z.tier]}</div>`)
        .addTo(coresGroup);
     });
@@ -319,7 +319,7 @@ function renderPoints() {
       .bindPopup(`<div class="pp-title">${o.name}</div>
                   <div class="pp-row"><span>Канал</span><b>${o.ch}</b></div>
                   <div class="pp-row"><span>Город</span><b>${o.cityRu}</b></div>
-                  ${o.addr  ? `<div class="pp-row"><span>Адрес</span><b style="font-family:Manrope;font-weight:500;text-align:right">${o.addr}</b></div>` : ''}
+                  ${o.addr  ? `<div class="pp-row"><span>Адрес</span><b style="font-family:IQOS;font-weight:500;text-align:right">${o.addr}</b></div>` : ''}
                   ${o.hours ? `<div class="pp-row"><span>Часы</span><b>${o.hours}</b></div>` : ''}
                   <span class="pp-tag" style="background:rgba(91,124,250,.12);color:#3a56c4;border:1px solid rgba(91,124,250,.35)">ТОЧКА IQOS</span>`)
       .addTo(pointsGroup);

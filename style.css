@@ -1,3 +1,17 @@
+/* ── IQOS FONT ───────────────────────────────────────────────────────── */
+@font-face {
+  font-family: "IQOS";
+  src: url("fonts/IQOS-Regular.ttf") format("truetype");
+  font-weight: 400 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IQOS";
+  src: url("fonts/IQOS-Bold.otf") format("opentype");
+  font-weight: 700 900;
+  font-display: swap;
+}
+
 /* ── RESET & BASE ────────────────────────────────────────────────────── */
 :root {
   /* Light matte palette */
@@ -33,10 +47,13 @@
 html, body {
   margin: 0; height: 100%;
   background: var(--bg); color: var(--ink);
-  font-family: "Manrope", system-ui, sans-serif;
+  font-family: "IQOS", system-ui, sans-serif;
+  text-transform: uppercase;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
+/* keep raw user input readable while typing (display still uppercases on render) */
+input, textarea { text-transform: uppercase; }
 
 /* ── LAYOUT ──────────────────────────────────────────────────────────── */
 #app { display: flex; height: 100vh; width: 100vw; }
@@ -57,7 +74,7 @@ html, body {
 }
 
 #map { flex: 1; height: 100%; background: #e8e4db; }
-.leaflet-container { font-family: "Manrope"; }
+.leaflet-container { font-family: "IQOS"; }
 
 /* ── BRAND ───────────────────────────────────────────────────────────── */
 .brand {
@@ -78,11 +95,11 @@ html, body {
 }
 .brand-text { flex: 1; min-width: 0; }
 .brand-text h1 {
-  font-family: "Archivo"; font-weight: 800; font-size: 15px;
+  font-family: "IQOS"; font-weight: 800; font-size: 15px;
   margin: 0; line-height: 1.2; color: var(--ink); letter-spacing: -.3px;
 }
 .brand-text p {
-  font-family: "IBM Plex Mono"; font-size: 10px;
+  font-family: "IQOS"; font-size: 10px;
   color: var(--dim); margin: 3px 0 0;
 }
 /* Sidebar collapse button (desktop) */
@@ -121,7 +138,7 @@ html, body {
 /* ── SECTION HEADERS (inner labels) ──────────────────────────────────── */
 .sec {
   margin: 6px 0 11px;
-  font-family: "IBM Plex Mono"; font-size: 10px;
+  font-family: "IQOS"; font-size: 10px;
   letter-spacing: 1.2px; text-transform: uppercase;
   color: var(--dim);
   display: flex; align-items: center; gap: 9px;
@@ -134,7 +151,7 @@ html, body {
 /* ── CITY BUTTONS ────────────────────────────────────────────────────── */
 .cities { display: flex; flex-wrap: wrap; gap: 7px; }
 .cities button {
-  font-family: "Manrope"; font-size: 12px; font-weight: 600;
+  font-family: "IQOS"; font-size: 12px; font-weight: 600;
   color: var(--mut); background: var(--card);
   border: 1px solid var(--line2); border-radius: 100px;
   padding: 7px 14px; cursor: pointer;
@@ -162,7 +179,7 @@ html, body {
 .lyr-top .nm { flex: 1; font-size: 13px; font-weight: 700; color: var(--ink); }
 .lyr-top .nm small {
   display: block; font-weight: 500; font-size: 9.5px;
-  color: var(--dim); font-family: "IBM Plex Mono"; margin-top: 3px;
+  color: var(--dim); font-family: "IQOS"; margin-top: 3px;
 }
 .lyr-ctl {
   display: flex; align-items: center; gap: 10px;
@@ -221,7 +238,7 @@ input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
 input[type=color]::-webkit-color-swatch { border: none; border-radius: 5px; }
 
 select {
-  font-family: "Manrope"; font-size: 12px;
+  font-family: "IQOS"; font-size: 12px;
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line2); border-radius: 9px;
   padding: 7px 9px; cursor: pointer;
@@ -259,7 +276,7 @@ input[type=range].full { width: 100%; }
   gap: 7px; margin-bottom: 12px;
 }
 .rec-basis button {
-  font-family: "Manrope"; font-size: 12px; font-weight: 600;
+  font-family: "IQOS"; font-size: 12px; font-weight: 600;
   color: var(--mut); background: var(--card);
   border: 1px solid var(--line2); border-radius: 100px;
   padding: 9px 4px; cursor: pointer; transition: .2s var(--ease);
@@ -284,7 +301,7 @@ input[type=range].full { width: 100%; }
   font-size: 19px; box-shadow: 0 4px 14px rgba(20,164,116,.3);
 }
 .rec-summary .big {
-  font-family: "Archivo"; font-weight: 800;
+  font-family: "IQOS"; font-weight: 800;
   font-size: 24px; color: var(--rec-ink); line-height: 1;
 }
 .rec-summary .lbl {
@@ -308,7 +325,7 @@ input[type=range].full { width: 100%; }
 }
 .ctrl label { font-size: 12.5px; color: var(--mut); }
 .ctrl .val {
-  font-family: "IBM Plex Mono"; font-size: 12px;
+  font-family: "IQOS"; font-size: 12px;
   color: var(--rec); font-weight: 700;
 }
 .ctrl .val.blue { color: var(--acc); }
@@ -332,7 +349,7 @@ input[type=range].full { width: 100%; }
 .rec-rank {
   width: 28px; height: 28px; border-radius: 50%; flex: 0 0 auto;
   background: linear-gradient(135deg, #1bc488, var(--rec-d));
-  color: #fff; font-family: "Archivo"; font-weight: 800; font-size: 12px;
+  color: #fff; font-family: "IQOS"; font-weight: 800; font-size: 12px;
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 3px 10px rgba(20,164,116,.3);
 }
@@ -343,15 +360,15 @@ input[type=range].full { width: 100%; }
 }
 .rec-main .meta {
   font-size: 9.5px; color: var(--mut);
-  font-family: "IBM Plex Mono"; margin-top: 3px;
+  font-family: "IQOS"; margin-top: 3px;
 }
 .rec-main .meta .hi { color: var(--rec-ink); }
 .rec-demand { text-align: right; flex: 0 0 auto; }
 .rec-demand .dv {
-  font-family: "Archivo"; font-weight: 800;
+  font-family: "IQOS"; font-weight: 800;
   font-size: 15px; color: var(--rec-ink); line-height: 1;
 }
-.rec-demand .dl { font-size: 9px; color: var(--dim); font-family: "IBM Plex Mono"; margin-top: 3px; }
+.rec-demand .dl { font-size: 9px; color: var(--dim); font-family: "IQOS"; margin-top: 3px; }
 
 /* expand/collapse */
 .rec-expand-wrap {
@@ -365,7 +382,7 @@ input[type=range].full { width: 100%; }
 .rec-toggle {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   width: 100%; margin-top: 10px; padding: 11px 14px;
-  font-family: "Manrope"; font-weight: 700; font-size: 12px;
+  font-family: "IQOS"; font-weight: 700; font-size: 12px;
   color: var(--rec-ink);
   background: var(--rec-l);
   border: 1px solid rgba(20,164,116,.22); border-radius: 12px;
@@ -379,7 +396,7 @@ input[type=range].full { width: 100%; }
 .btn {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   width: 100%;
-  font-family: "Manrope"; font-weight: 700; font-size: 13px; letter-spacing: .2px;
+  font-family: "IQOS"; font-weight: 700; font-size: 13px; letter-spacing: .2px;
   color: #fff;
   background: linear-gradient(135deg, #1bc488, var(--rec-d));
   border: none; border-radius: 12px; padding: 12px 16px;
@@ -406,7 +423,7 @@ input[type=range].full { width: 100%; }
 .share-btn {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   padding: 11px 8px; border-radius: 11px;
-  font-family: "Manrope"; font-weight: 700; font-size: 11.5px;
+  font-family: "IQOS"; font-weight: 700; font-size: 11.5px;
   cursor: pointer; transition: .2s var(--ease); border: 1px solid;
 }
 .share-btn.export {
@@ -437,7 +454,7 @@ input[type=range].full { width: 100%; }
 }
 .filebox:hover { border-color: var(--acc); color: var(--ink); background: var(--acc-l); }
 .filebox b { color: var(--acc); }
-.fname { font-size: 11px; color: var(--rec-ink); margin: -4px 2px 10px; font-family: "IBM Plex Mono"; }
+.fname { font-size: 11px; color: var(--rec-ink); margin: -4px 2px 10px; font-family: "IQOS"; }
 
 /* ── FOOTER ──────────────────────────────────────────────────────────── */
 .foot {
@@ -449,7 +466,7 @@ input[type=range].full { width: 100%; }
 .logout-btn {
   position: absolute; bottom: 16px; right: 14px; z-index: 1200;
   display: flex; align-items: center; gap: 7px;
-  font-family: "Manrope"; font-size: 11px; font-weight: 600;
+  font-family: "IQOS"; font-size: 11px; font-weight: 600;
   color: var(--mut); background: var(--card);
   border: 1px solid var(--line2); border-radius: 10px;
   padding: 8px 13px; cursor: pointer; transition: .2s var(--ease);
@@ -463,7 +480,7 @@ input[type=range].full { width: 100%; }
   position: absolute; top: 14px; right: 14px; z-index: 1100;
   background: rgba(255,255,255,.95); backdrop-filter: blur(8px);
   border: 1px solid var(--line2); border-radius: 12px;
-  padding: 8px 13px; font-family: "IBM Plex Mono";
+  padding: 8px 13px; font-family: "IQOS";
   font-size: 11px; color: var(--mut);
   box-shadow: var(--shadow-sm);
 }
@@ -474,7 +491,7 @@ input[type=range].full { width: 100%; }
   position: absolute; top: 54px; right: 14px; z-index: 1100;
   background: rgba(255,255,255,.95); backdrop-filter: blur(10px);
   border: 1px solid var(--line2); border-radius: 12px;
-  padding: 8px 13px; font-family: "IBM Plex Mono";
+  padding: 8px 13px; font-family: "IQOS";
   font-size: 10.5px; color: var(--mut);
   box-shadow: var(--shadow-sm);
   display: flex; align-items: center; gap: 7px;
@@ -508,14 +525,14 @@ input[type=range].full { width: 100%; }
 }
 .leaflet-popup-tip { background: var(--card); }
 .leaflet-popup-content { margin: 14px 16px; font-size: 12.5px; line-height: 1.55; max-width: 250px; }
-.pp-title { font-family: "Archivo"; font-weight: 700; font-size: 13.5px; margin-bottom: 8px; color: var(--ink); }
+.pp-title { font-family: "IQOS"; font-weight: 700; font-size: 13.5px; margin-bottom: 8px; color: var(--ink); }
 .pp-row {
   display: flex; justify-content: space-between; gap: 18px;
   color: var(--mut); margin-top: 3px;
 }
-.pp-row b { color: var(--ink); font-family: "IBM Plex Mono"; font-weight: 600; }
+.pp-row b { color: var(--ink); font-family: "IQOS"; font-weight: 600; }
 .pp-tag {
-  display: inline-block; font-family: "IBM Plex Mono"; font-size: 10px;
+  display: inline-block; font-family: "IQOS"; font-size: 10px;
   padding: 3px 8px; border-radius: 7px; margin-top: 9px; letter-spacing: .4px;
 }
 .pp-why { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); color: var(--rec-ink); font-size: 11.5px; line-height: 1.5; }
@@ -542,7 +559,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 .core-pin {
   width: 26px; height: 26px; border-radius: 50%;
   border: 2.5px solid #fff; box-shadow: 0 3px 8px rgba(0,0,0,.45);
-  color: #fff; font-family: "Archivo"; font-weight: 800; font-size: 12px;
+  color: #fff; font-family: "IQOS"; font-weight: 800; font-size: 12px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: transform .15s;
 }
@@ -559,7 +576,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 .rec-pin span {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  color: #fff; font-family: "Archivo"; font-weight: 800; font-size: 13px; z-index: 2;
+  color: #fff; font-family: "IQOS"; font-weight: 800; font-size: 13px; z-index: 2;
 }
 .rec-pin .ring {
   position: absolute; inset: -6px; border-radius: 50%;
@@ -575,7 +592,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 /* ── ADD-LAYER BUTTON ────────────────────────────────────────────────── */
 .add-layer-btn {
   width: 100%; margin-top: 8px; height: 42px;
-  font-family: "Manrope"; font-weight: 700; font-size: 12px;
+  font-family: "IQOS"; font-weight: 700; font-size: 12px;
   color: var(--acc); background: var(--acc-l);
   border: 1.5px dashed rgba(91,124,250,.4); border-radius: 12px;
   padding: 10px; cursor: pointer; transition: .2s var(--ease);
@@ -622,14 +639,14 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 }
 #layer-modal-overlay.open .layer-modal { transform: scale(1); }
 .layer-modal h3 {
-  font-family: "Archivo"; font-weight: 800; font-size: 17px;
+  font-family: "IQOS"; font-weight: 800; font-size: 17px;
   margin: 0 0 6px; color: var(--ink);
 }
 .layer-modal p { font-size: 12.5px; color: var(--mut); margin: 0 0 20px; line-height: 1.5; }
 .layer-modal input[type=text] {
   width: 100%; background: var(--card2);
   border: 1.5px solid var(--line2); border-radius: 11px;
-  padding: 12px 14px; font-family: "Manrope";
+  padding: 12px 14px; font-family: "IQOS";
   font-size: 14px; color: var(--ink); outline: none;
   transition: .2s; margin-bottom: 16px;
 }
@@ -637,7 +654,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 .modal-actions { display: flex; gap: 10px; }
 .modal-btn {
   flex: 1; padding: 12px; border-radius: 11px;
-  font-family: "Manrope"; font-weight: 700; font-size: 13px;
+  font-family: "IQOS"; font-weight: 700; font-size: 13px;
   cursor: pointer; transition: .2s var(--ease); border: none;
 }
 .modal-btn.primary { background: linear-gradient(135deg, #6b8afd, var(--acc-d)); color:#fff; }
@@ -675,20 +692,20 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
   content: ""; position: absolute; inset: 0; margin: auto;
   width: 13px; height: 13px; border-radius: 50%; background: #fff;
 }
-.auth-logo-text h2 { font-family: "Archivo"; font-weight: 800; font-size: 17px; margin: 0; color: var(--ink); }
-.auth-logo-text p { font-size: 11px; color: var(--dim); margin: 3px 0 0; font-family: "IBM Plex Mono"; }
-.auth-title { font-family: "Archivo"; font-weight: 700; font-size: 22px; color: var(--ink); margin: 0 0 6px; letter-spacing: -.3px; }
+.auth-logo-text h2 { font-family: "IQOS"; font-weight: 800; font-size: 17px; margin: 0; color: var(--ink); }
+.auth-logo-text p { font-size: 11px; color: var(--dim); margin: 3px 0 0; font-family: "IQOS"; }
+.auth-title { font-family: "IQOS"; font-weight: 700; font-size: 22px; color: var(--ink); margin: 0 0 6px; letter-spacing: -.3px; }
 .auth-sub { font-size: 13px; color: var(--mut); margin: 0 0 28px; line-height: 1.5; }
 .auth-field { margin-bottom: 16px; }
 .auth-field label {
   display: block; font-size: 10.5px; font-weight: 600;
   color: var(--mut); letter-spacing: .6px; text-transform: uppercase;
-  font-family: "IBM Plex Mono"; margin-bottom: 7px;
+  font-family: "IQOS"; margin-bottom: 7px;
 }
 .auth-field input {
   width: 100%; background: var(--card2);
   border: 1.5px solid var(--line2); border-radius: 12px;
-  padding: 13px 16px; font-family: "Manrope";
+  padding: 13px 16px; font-family: "IQOS";
   font-size: 14px; color: var(--ink); outline: none; transition: .2s;
 }
 .auth-field input:focus { border-color: var(--acc); background: var(--card); box-shadow: 0 0 0 3px var(--acc-l); }
@@ -696,7 +713,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 .auth-field input::placeholder { color: var(--dim); }
 .auth-btn {
   width: 100%; margin-top: 8px; padding: 14px;
-  font-family: "Archivo"; font-weight: 800; font-size: 14px; letter-spacing: .3px;
+  font-family: "IQOS"; font-weight: 800; font-size: 14px; letter-spacing: .3px;
   color: #fff; background: linear-gradient(135deg, #6b8afd, var(--acc-d));
   border: none; border-radius: 13px; cursor: pointer; transition: .2s var(--ease);
   position: relative; overflow: hidden;
@@ -712,7 +729,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
   display: none; line-height: 1.5;
 }
 .auth-err.show { display: block; }
-.auth-footer { margin-top: 24px; text-align: center; font-size: 11px; color: var(--dim); font-family: "IBM Plex Mono"; }
+.auth-footer { margin-top: 24px; text-align: center; font-size: 11px; color: var(--dim); font-family: "IQOS"; }
 
 /* ── MOBILE ──────────────────────────────────────────────────────────── */
 @media (max-width: 780px) {
@@ -745,7 +762,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
   padding: 18px 20px; border-radius: 16px; cursor: pointer; text-align: left;
   background: var(--card2); border: 1.5px solid var(--line2);
   transition: border-color .2s, background .2s, transform .18s, box-shadow .2s;
-  color: var(--ink); font-family: "Manrope"; width: 100%;
+  color: var(--ink); font-family: "IQOS"; width: 100%;
 }
 .mode-card:hover {
   border-color: var(--acc); background: var(--acc-l);
@@ -755,14 +772,14 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 .mode-card-edit { border-color: rgba(20,164,116,.25); background: var(--rec-l); }
 .mode-card-edit:hover { border-color: var(--rec); background: rgba(20,164,116,.12); }
 .mode-icon { font-size: 24px; line-height: 1; flex-shrink: 0; margin-top: 2px; }
-.mode-name { font-family: "Archivo"; font-weight: 700; font-size: 15px; margin-bottom: 5px; }
+.mode-name { font-family: "IQOS"; font-weight: 700; font-size: 15px; margin-bottom: 5px; }
 .mode-desc { font-size: 12.5px; color: var(--mut); line-height: 1.55; }
 
 /* ── MODE BADGE ──────────────────────────────────────────────────────── */
 .mode-badge {
   position: absolute; bottom: 50px; right: 16px; z-index: 900;
   padding: 6px 12px 6px 10px; border-radius: 20px;
-  font-size: 11.5px; font-family: "Manrope"; font-weight: 600;
+  font-size: 11.5px; font-family: "IQOS"; font-weight: 600;
   display: flex; align-items: center; gap: 6px;
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   box-shadow: var(--shadow-sm);
@@ -847,7 +864,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 .rt-excl-block { margin: 4px 0 12px; }
 .rt-excl-title {
   font-size: 11px; color: var(--mut); font-weight: 600;
-  margin-bottom: 8px; font-family: "Manrope";
+  margin-bottom: 8px; font-family: "IQOS";
 }
 .rt-excl-item { padding: 5px 4px; }
 .rt-excl-empty {
@@ -862,7 +879,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 .settings-group-label {
   font-size: 10.5px; font-weight: 700; letter-spacing: .5px;
   text-transform: uppercase; color: var(--acc);
-  font-family: "IBM Plex Mono"; margin-bottom: 10px;
+  font-family: "IQOS"; margin-bottom: 10px;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -893,7 +910,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
   flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .cpt-count {
-  font-size: 10px; font-family: "IBM Plex Mono"; color: var(--mut);
+  font-size: 10px; font-family: "IQOS"; color: var(--mut);
   background: var(--side-bg2); padding: 2px 7px; border-radius: 100px;
 }
 .cpt-del {
@@ -911,7 +928,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
   padding: 2px; background: none; flex-shrink: 0;
 }
 .cpt-upload {
-  flex: 1; padding: 8px 10px; font-size: 11.5px; font-family: "Manrope";
+  flex: 1; padding: 8px 10px; font-size: 11.5px; font-family: "IQOS";
   font-weight: 600; color: var(--acc);
   background: var(--acc-l); border: 1px solid rgba(91,124,250,.25);
   border-radius: 10px; cursor: pointer; transition: .18s var(--ease);
@@ -953,13 +970,13 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 .acc-hdr.open .acc-icon { background: var(--acc-l); }
 
 .acc-title {
-  flex: 1; font-family: "Archivo"; font-size: 12.5px; font-weight: 700;
+  flex: 1; font-family: "IQOS"; font-size: 12.5px; font-weight: 700;
   letter-spacing: .2px;
   color: var(--ink);
 }
 
 .acc-badge {
-  font-family: "IBM Plex Mono"; font-size: 10px;
+  font-family: "IQOS"; font-size: 10px;
   color: var(--acc); background: var(--acc-l);
   border: 1px solid rgba(91,124,250,.25);
   border-radius: 100px; padding: 2px 8px; flex: 0 0 auto;
@@ -1002,7 +1019,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
   transform: translateX(-50%);
   background: var(--ink); color: #eef1f8;
   border-radius: 9px;
-  padding: 7px 11px; font-size: 10.5px; font-family: "Manrope";
+  padding: 7px 11px; font-size: 10.5px; font-family: "IQOS";
   line-height: 1.5; white-space: normal; width: 180px;
   box-shadow: var(--shadow);
   pointer-events: none; opacity: 0;
