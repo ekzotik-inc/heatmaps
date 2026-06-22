@@ -652,7 +652,12 @@ function buildCityUI() {
       city = val;
       renderHeat(); renderPoints(); renderRecs();
       const pts = DS.combined.recs.filter(s => !city || s.fil === city).map(s => [s.lat, s.lon]);
-      if (pts.length) map.flyToBounds(L.latLngBounds(pts).pad(.12), { duration: .7 });
+      if (pts.length) {
+        map.flyToBounds(L.latLngBounds(pts).pad(.12), { duration: .7 });
+      } else if (city && CC[city]) {
+        // No data for this city yet — just centre the map on it
+        map.flyTo(CC[city], 12, { duration: .7 });
+      }
     });
     el.appendChild(b);
   };
