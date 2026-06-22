@@ -612,7 +612,7 @@ function buildHeatUI() {
         if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
         delete DS[k];
         heatKeys = heatKeys.filter(x => x !== k);
-        buildHeatUI(); buildAddrSrcSel(); rebuildUpTarget(); renderHeat(); renderRecs();
+        buildHeatUI(); buildAddrSrcSel(); rebuildUpTarget(); renderHeat(); renderRecs(); saveState();
       });
     }
     el.appendChild(card);
@@ -655,8 +655,10 @@ function buildCityUI() {
       city = val;
       renderHeat(); renderPoints(); renderRecs();
       const pts = DS.combined.recs.filter(s => !city || s.fil === city).map(s => [s.lat, s.lon]);
-      if (pts.length) {
-        map.flyToBounds(L.latLngBounds(pts).pad(.12), { duration: .7 });
+      const ownPts = own.filter(o => !city || o.cityRu === city).map(o => [o.lat, o.lon]);
+      const allPts = pts.concat(ownPts);
+      if (allPts.length) {
+        map.flyToBounds(L.latLngBounds(allPts).pad(.12), { duration: .7 });
       } else if (city && CC[city]) {
         // No data for this city yet — just centre the map on it
         map.flyTo(CC[city], 12, { duration: .7 });
@@ -1531,7 +1533,7 @@ function wireEvents() {
       const fn = $('fname'); fn.style.display = 'block';
       fn.textContent = '✓ ' + f.name + ' — ' + recs.length + ' точек';
       $('btn-update').disabled = false;
-      toast(`Загружено ${recs.length} точек`, 'ok');
+      toast(`Загружено ${recs.length} точек — нажмите «Обновить карту»`, 'ok');
     };
     if (ext === 'csv') {
       Papa.parse(f, { header: true, skipEmptyLines: true, complete: r => done(toRecs(r.data)) });

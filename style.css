@@ -763,7 +763,14 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
   font-size: 14px; color: var(--ink); outline: none; transition: .2s;
 }
 .auth-field input:focus { border-color: var(--acc); background: var(--card); box-shadow: 0 0 0 3px var(--acc-l); }
-.auth-field input.err { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(232,98,95,.12); }
+.auth-field input.err { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(232,98,95,.12); animation: shake .4s var(--ease); }
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-6px); }
+  40%       { transform: translateX(5px); }
+  60%       { transform: translateX(-4px); }
+  80%       { transform: translateX(3px); }
+}
 .auth-field input::placeholder { color: var(--dim); }
 .auth-btn {
   width: 100%; margin-top: 8px; padding: 14px;
