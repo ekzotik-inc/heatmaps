@@ -257,21 +257,6 @@
         <div class="fname" id="fname" style="display:none"></div>
         <button class="btn" id="btn-update" disabled>Обновить карту</button>
         <div class="foot">Сигареты и стики — независимые тепловые слои. Рекомендации по открытию BR считаются по выбранной основе. Маркеры IQOS: BR и 2nd SE различаются цветом и формой.</div>
-
-        <div class="tab-section-divider"></div>
-        <p class="tab-section-title">Доход Ташкента</p>
-        <div class="lyr">
-          <div style="display:flex;flex-direction:column;gap:9px">
-            <label style="display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink);cursor:pointer"><input type="color" id="d-high" value="#C0392B"> 🔴 Высокий доход <span style="margin-left:auto;font-size:9.5px;color:var(--dim);font-family:IQOS">ядра 1–6</span></label>
-            <label style="display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink);cursor:pointer"><input type="color" id="d-mid" value="#F39C12"> 🟠 Средний <span style="margin-left:auto;font-size:9.5px;color:var(--dim);font-family:IQOS">7–11</span></label>
-            <label style="display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink);cursor:pointer"><input type="color" id="d-low" value="#1F9E5A"> 🟢 Ниже / растущий <span style="margin-left:auto;font-size:9.5px;color:var(--dim);font-family:IQOS">12–15</span></label>
-          </div>
-          <div style="height:1px;background:var(--line);margin:12px 0"></div>
-          <label class="chk" style="padding:6px 4px"><div class="cbx" id="inc-heat-cbx"></div><span>Тепловая карта дохода</span></label>
-          <label class="chk" style="padding:6px 4px"><div class="cbx" id="inc-core-cbx"></div><span>Ядра дохода (метки 1–15)</span></label>
-          <label class="chk" style="padding:6px 4px"><div class="cbx" id="dist-cbx"></div><span>Границы 12 районов</span></label>
-          <p style="font-size:10px;color:var(--dim);line-height:1.5;margin:10px 0 0">Координаты ядер — приближённые центры; классификация по предоставленным данным. Микро-слой относится к Ташкенту.</p>
-        </div>
       </div>
 
     </div>
@@ -314,6 +299,8 @@
   <div id="map"></div>
   <div id="city-bar">
     <div class="cities" id="seg-city"></div>
+    <div class="city-bar-sep"></div>
+    <button id="districts-toggle" class="city-extra-btn" title="Границы 12 районов Ташкента">🗺 Районы</button>
   </div>
   <div class="badge">Точек на карте: <b id="b-count">—</b></div>
   <div id="layer-legend" style="display:none"></div>

@@ -181,6 +181,15 @@ input, textarea { text-transform: uppercase; }
   font-size: 11px; padding: 5px 13px;
   border-radius: 100px; white-space: nowrap;
 }
+.city-bar-sep { width: 1px; height: 20px; background: var(--line2); margin: 0 5px; flex: 0 0 auto; }
+.city-extra-btn {
+  font-family: "IQOS"; font-size: 11px; font-weight: 700; white-space: nowrap;
+  color: var(--mut); background: var(--card); border: 1px solid var(--line2);
+  border-radius: 100px; padding: 5px 13px; cursor: pointer;
+  transition: .2s var(--ease); flex: 0 0 auto;
+}
+.city-extra-btn:hover { color: var(--acc); border-color: var(--acc); transform: translateY(-1px); }
+.city-extra-btn.on { background: var(--acc); border-color: var(--acc); color: #fff; box-shadow: 0 3px 10px rgba(91,124,250,.3); }
 
 /* ── SECTION HEADERS (inner labels) ──────────────────────────────────── */
 .sec {

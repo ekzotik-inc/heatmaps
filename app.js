@@ -142,7 +142,7 @@ const addrLayer     = L.layerGroup().addTo(map); // address-program preview mark
 
 /* ── INCOME / DISTRICTS ──────────────────────────────────────────────── */
 const incCol = { high: '#C0392B', mid: '#F39C12', low: '#1F9E5A' };
-let districtsOn = false, incomeHeatOn = true, coresOn = true;
+let districtsOn = false, incomeHeatOn = false, coresOn = false;
 let fieldOverlay = null;
 
 const TIER_NAME = { high: 'High income', mid: 'Middle income', low: 'Lower / emerging' };
@@ -1421,10 +1421,7 @@ function syncControls() {
   $('heat-blend').value    = heatBlend;
   $('rec-show').classList.toggle('on', recShow);
   document.querySelectorAll('#rec-basis button').forEach(b => b.classList.toggle('on', b.dataset.b === recBasis));
-  $('dist-cbx').classList.toggle('on', districtsOn);
-  $('inc-heat-cbx').classList.toggle('on', incomeHeatOn);
-  $('inc-core-cbx').classList.toggle('on', coresOn);
-  ['high', 'mid', 'low'].forEach(t => { const el = $('d-' + t); if (el) el.value = incCol[t]; });
+  const distBtn = $('districts-toggle'); if (distBtn) distBtn.classList.toggle('on', districtsOn);
   $('s-rt-radius').value  = rtRadius;     $('v-rt-radius').textContent = fmtD(rtRadius);
   $('op-rt-radius').value = rtRadiusOp;
   $('s-rt-excl').value    = rtExclRadius; $('v-rt-excl').textContent   = fmtD(rtExclRadius);
@@ -1541,12 +1538,11 @@ function wireEvents() {
     toast(`Слой «${d.name}» обновлён (${d.stats.n} точек)`, 'ok');
   });
 
-  // Income + districts
-  $('dist-cbx').addEventListener('click',     e => { districtsOn  = !districtsOn;  e.target.classList.toggle('on', districtsOn);  renderDistricts(); });
-  $('inc-heat-cbx').addEventListener('click', e => { incomeHeatOn = !incomeHeatOn; e.target.classList.toggle('on', incomeHeatOn); renderIncome(); });
-  $('inc-core-cbx').addEventListener('click', e => { coresOn      = !coresOn;      e.target.classList.toggle('on', coresOn);      renderIncome(); });
-  ['high', 'mid', 'low'].forEach(t => {
-    $('d-' + t).addEventListener('input', e => { incCol[t] = e.target.value; renderIncome(); renderDistricts(); });
+  // Districts borders toggle (next to cities on the map)
+  $('districts-toggle').addEventListener('click', e => {
+    districtsOn = !districtsOn;
+    e.currentTarget.classList.toggle('on', districtsOn);
+    renderDistricts(); saveState();
   });
 
   // Export recs
