@@ -1387,7 +1387,9 @@ async function fetchFromServer() {
   if (!SERVER_URL) return null;
   setSyncBadge('syncing', 'Загрузка…');
   try {
-    const res = await fetch(SERVER_URL + '/state?map=' + encodeURIComponent(currentMap));
+    const res = await fetch(SERVER_URL + '/state?map=' + encodeURIComponent(currentMap), {
+      signal: AbortSignal.timeout(12000),
+    });
     if (!res.ok) { setSyncBadge('err', 'Ошибка загрузки'); return null; }
     const data = await res.json();
     if (!data || data.empty || data._app !== 'hm-br') {
@@ -1396,7 +1398,8 @@ async function fetchFromServer() {
     }
     return data;
   } catch (e) {
-    setSyncBadge('err', 'Сервер недоступен');
+    const msg = e.name === 'TimeoutError' ? 'Сервер не отвечает' : 'Сервер недоступен';
+    setSyncBadge('err', msg);
     console.warn('Could not load from server, using local state:', e.message);
     return null;
   }
@@ -1748,6 +1751,9 @@ async function startApp() {
         : '';
       setSyncBadge('ok', 'Обновлено' + (savedAt ? ' ' + savedAt : ''));
       toast('Настройки загружены с сервера', 'ok');
+    } else {
+      // local data was used (server unavailable or newer local edit) — update badge
+      setSyncBadge('ok', 'Локальные данные');
     }
   } else if (SERVER_URL && local && isAdmin()) {
     // Server is empty (e.g. restarted) but admin has a local copy — restore it
