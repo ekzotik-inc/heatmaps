@@ -352,7 +352,10 @@ function renderHeat() {
     if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
     if (!d.visible) return;
     const recs  = d.recs.filter(r => !city || r.fil === city);
-    const scale = Math.max(d.stats.p90, 0.01);
+    const sorted = recs.map(r => r.vol).sort((a, b) => a - b);
+    const p90idx = Math.max(0, Math.floor(sorted.length * 0.9) - 1);
+    const p90    = sorted.length ? (sorted[p90idx] || 0.01) : (d.stats.p90 || 0.01);
+    const scale  = Math.max(p90, 0.01);
     const boost = Math.max(d.intensity || 1, 0.1);
     const pts   = recs.map(r => [r.lat, r.lon, Math.min(r.vol / scale * boost, 1)]);
     total += recs.length;
