@@ -1320,8 +1320,15 @@ function exportRetraffic() {
   toast(`Скачано ${points.length} точек` + (excluded ? ` (исключено: ${excluded})` : ''), 'ok');
 }
 
+/* ── ROLE / MAP ──────────────────────────────────────────────────────── */
+// currentMap: 'comdep' | 'other'  ·  currentRole: 'admin' | 'comdep' | 'other'
+let currentMap  = sessionStorage.getItem('hm_map')  || null;
+let currentRole = sessionStorage.getItem('hm_role') || null;
+const isAdmin = () => currentRole === 'admin';
+
 /* ── PERSISTENCE ─────────────────────────────────────────────────────── */
-const STORE_KEY = 'hm_state_v1';
+// State is stored per-map so the two departments never overwrite each other.
+const storeKey = () => 'hm_state_' + (currentMap || 'main');
 
 // ── Server sync config ───────────────────────────────────────────────────
 // Set SERVER_URL to your VPS API root, e.g. 'https://api.example.com'
@@ -1344,10 +1351,10 @@ function setSyncBadge(state, label) {
 
 async function pushToServer(snapshot, isRetry = false) {
   if (!SERVER_URL) return;
-  if (workMode !== 'edit') return;
+  if (!isAdmin()) return; // only the admin writes the shared map
   setSyncBadge('syncing', isRetry ? 'Повтор…' : 'Сохранение…');
   try {
-    const res = await fetch(SERVER_URL + '/state', {
+    const res = await fetch(SERVER_URL + '/state?map=' + encodeURIComponent(currentMap), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Key': SERVER_KEY },
       body: JSON.stringify(snapshot),
@@ -1380,7 +1387,7 @@ async function fetchFromServer() {
   if (!SERVER_URL) return null;
   setSyncBadge('syncing', 'Загрузка…');
   try {
-    const res = await fetch(SERVER_URL + '/state');
+    const res = await fetch(SERVER_URL + '/state?map=' + encodeURIComponent(currentMap));
     if (!res.ok) { setSyncBadge('err', 'Ошибка загрузки'); return null; }
     const data = await res.json();
     if (!data || data.empty || data._app !== 'hm-br') {
@@ -1397,8 +1404,9 @@ async function fetchFromServer() {
 
 function doSave() {
   const snapshot = buildStateSnapshot();
+  snapshot._clientTs = Date.now(); // local edit timestamp (used to resolve vs server)
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(snapshot));
+    localStorage.setItem(storeKey(), JSON.stringify(snapshot));
   } catch (e) { /* quota exceeded or private mode */ }
   pushToServer(snapshot);
 }
@@ -1411,7 +1419,7 @@ function saveState() {
 
 function loadState() {
   let st;
-  try { const raw = localStorage.getItem(STORE_KEY); if (!raw) return; st = JSON.parse(raw); } catch (e) { return; }
+  try { const raw = localStorage.getItem(storeKey()); if (!raw) return; st = JSON.parse(raw); } catch (e) { return; }
   applySnapshot(st);
 }
 
@@ -1677,39 +1685,90 @@ function wireEvents() {
 /* ── PENDING UPLOAD ──────────────────────────────────────────────────── */
 let pendingUpload = null;
 
-/* ── WORK MODE ───────────────────────────────────────────────────────── */
-let workMode = sessionStorage.getItem('hm_work_mode') || null; // 'view' | 'edit'
+/* ── ROLE UI ─────────────────────────────────────────────────────────── */
+const MAP_LABEL = { comdep: 'Com Dep', other: 'Другая' };
 
-function setWorkMode(mode) {
-  workMode = mode;
-  sessionStorage.setItem('hm_work_mode', mode);
+function showRoleBadge() {
   const badge = document.getElementById('mode-badge');
-  if (badge) {
-    badge.style.display = '';
-    if (mode === 'edit') {
-      badge.textContent = '✏ Режим редактирования';
-      badge.className = 'mode-badge mode-edit';
-    } else {
-      badge.textContent = '👁 Просмотр';
-      badge.className = 'mode-badge mode-view';
-    }
+  if (!badge) return;
+  badge.style.display = '';
+  const mapName = MAP_LABEL[currentMap] || '';
+  if (isAdmin()) {
+    badge.textContent = '✏ Админ · ' + mapName;
+    badge.className = 'mode-badge mode-edit';
+  } else {
+    badge.textContent = '👁 ' + mapName;
+    badge.className = 'mode-badge mode-view';
   }
 }
 
-function clearWorkMode() {
-  workMode = null;
-  sessionStorage.removeItem('hm_work_mode');
-  const badge = document.getElementById('mode-badge');
-  if (badge) badge.style.display = 'none';
+// Viewers may freely tune the view (colours, layers, cities) but cannot
+// upload, create or delete data — those controls are hidden via `body.viewer`.
+function applyRoleUI() { document.body.classList.toggle('viewer', !isAdmin()); }
+
+/* ── START APP (runs once a map is chosen) ───────────────────────────── */
+let _appStarted = false;
+async function startApp() {
+  applyRoleUI();
+  showRoleBadge();
+  if (_appStarted) return;
+  _appStarted = true;
+
+  // Load local state first so UI is immediately responsive
+  loadState();
+  buildCityUI(); buildHeatUI(); buildPtUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
+  renderHeat(); renderPoints(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
+  wireEvents();
+  stateReady = true;
+  setTimeout(() => { if (map && map.invalidateSize) map.invalidateSize(); }, 60);
+
+  // Only fit bounds on first load (no saved city)
+  if (!city) {
+    map.fitBounds(
+      L.latLngBounds(DS.combined.recs.map(s => [s.lat, s.lon]).concat(own.map(o => [o.lat, o.lon]))).pad(.05)
+    );
+  }
+
+  // Hydrate from server. Newer local edits (by timestamp) win over the server.
+  const serverState = await fetchFromServer();
+  let local = null;
+  try { local = JSON.parse(localStorage.getItem(storeKey())); } catch (e) {}
+  const serverTs = serverState && serverState._savedAt ? Date.parse(serverState._savedAt) : 0;
+  const localTs  = local && local._clientTs ? local._clientTs : 0;
+  const chosen   = (localTs > serverTs && local) ? local : (serverState || null);
+
+  if (chosen) {
+    applySnapshot(chosen);
+    try { localStorage.setItem(storeKey(), JSON.stringify(chosen)); } catch (e) {}
+    buildCityUI(); buildHeatUI(); buildPtUI(); rebuildUpTarget(); syncControls();
+    renderHeat(); renderPoints(); renderRecs(); renderDistricts(); renderIncome();
+    if (chosen === serverState) {
+      const savedAt = serverState._savedAt
+        ? new Date(serverState._savedAt).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
+        : '';
+      setSyncBadge('ok', 'Обновлено' + (savedAt ? ' ' + savedAt : ''));
+      toast('Настройки загружены с сервера', 'ok');
+    }
+  } else if (SERVER_URL && local && isAdmin()) {
+    // Server is empty (e.g. restarted) but admin has a local copy — restore it
+    pushToServer(buildStateSnapshot());
+  }
 }
 
 /* ── AUTH ────────────────────────────────────────────────────────────── */
 (function initAuth() {
-  const CREDS = [{ u: 'br', p: 'heatmap2024' }, { u: 'admin', p: 'admin123' }];
-  const SK    = 'hm_auth_ok';
+  // NOTE: client-side credentials are a light gate, not real security — they
+  // are visible in the bundle. The server API key protects writes to the map.
+  const CREDS = [
+    { u: 'hm_root', p: 'Zx7$Kp9-Lm2@Rt',   role: 'admin'  },
+    { u: 'comdep',  p: 'ComDep-2026!view',  role: 'comdep' },
+    { u: 'otdel',   p: 'Otdel-2026!view',   role: 'other'  },
+  ];
+  const SK = 'hm_auth_ok';
+
   const screen    = document.getElementById('auth-screen');
   const stepLogin = document.getElementById('auth-step-login');
-  const stepMode  = document.getElementById('auth-step-mode');
+  const stepMap   = document.getElementById('auth-step-map');
   const form      = document.getElementById('auth-form');
   const errEl     = document.getElementById('auth-err');
   const submitBtn = document.getElementById('auth-submit');
@@ -1720,34 +1779,49 @@ function clearWorkMode() {
     screen.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
     stepLogin.style.display = '';
-    stepMode.style.display = 'none';
+    stepMap.style.display = 'none';
   };
 
-  const showModeStep = () => {
+  const mapCards = () => Array.from(document.querySelectorAll('#auth-step-map .map-card'));
+
+  // Show the map picker; enable only the cards this role may open (admin = both)
+  const showMapStep = () => {
     stepLogin.style.display = 'none';
-    stepMode.style.display = '';
+    stepMap.style.display = '';
+    mapCards().forEach(card => {
+      const allowed = isAdmin() || currentRole === card.dataset.map;
+      card.classList.toggle('locked', !allowed);
+      card.disabled = !allowed;
+    });
   };
 
-  // If already authed and mode chosen, go straight to map
-  if (sessionStorage.getItem(SK) === '1' && workMode) {
-    setWorkMode(workMode);
+  const enterMap = m => {
+    currentMap = m;
+    sessionStorage.setItem('hm_map', m);
     unlock();
-  } else if (sessionStorage.getItem(SK) === '1') {
-    // Authed but mode not chosen (e.g. after refresh before choosing)
-    showModeStep();
+    startApp();
+  };
+
+  // Restore session
+  if (sessionStorage.getItem(SK) === '1' && currentRole) {
+    if (currentMap) { unlock(); startApp(); }
+    else showMapStep();
   } else {
+    currentRole = null; currentMap = null;
     lock();
   }
 
   form.addEventListener('submit', e => {
     e.preventDefault();
-    const u  = document.getElementById('auth-user').value.trim().toLowerCase();
-    const p  = document.getElementById('auth-pass').value;
-    const ok = CREDS.some(c => c.u === u && c.p === p);
-    if (ok) {
+    const u   = document.getElementById('auth-user').value.trim().toLowerCase();
+    const p   = document.getElementById('auth-pass').value;
+    const hit = CREDS.find(c => c.u === u && c.p === p);
+    if (hit) {
+      currentRole = hit.role;
       sessionStorage.setItem(SK, '1');
+      sessionStorage.setItem('hm_role', hit.role);
       submitBtn.disabled = true; submitBtn.textContent = 'Входим…';
-      setTimeout(showModeStep, 320);
+      setTimeout(showMapStep, 320);
     } else {
       errEl.classList.add('show');
       ['auth-user', 'auth-pass'].forEach(id => document.getElementById(id).classList.add('err'));
@@ -1766,56 +1840,15 @@ function clearWorkMode() {
     });
   });
 
-  document.getElementById('mode-view').addEventListener('click', () => {
-    setWorkMode('view');
-    unlock();
-  });
-
-  document.getElementById('mode-edit').addEventListener('click', () => {
-    setWorkMode('edit');
-    unlock();
+  mapCards().forEach(card => {
+    card.addEventListener('click', () => { if (!card.disabled) enterMap(card.dataset.map); });
   });
 
   logoutBtn.addEventListener('click', () => {
     sessionStorage.removeItem(SK);
-    clearWorkMode();
-    document.getElementById('auth-user').value = '';
-    document.getElementById('auth-pass').value = '';
-    submitBtn.disabled = false; submitBtn.textContent = 'Войти';
-    lock();
+    sessionStorage.removeItem('hm_role');
+    sessionStorage.removeItem('hm_map');
+    currentRole = null; currentMap = null;
+    location.reload(); // cleanest full reset of in-memory state
   });
-})();
-
-/* ── INIT ────────────────────────────────────────────────────────────── */
-(async function init() {
-  // Load local state first so UI is immediately responsive
-  loadState();
-  buildCityUI(); buildHeatUI(); buildPtUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
-  renderHeat(); renderPoints(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
-  wireEvents();
-  stateReady = true;
-
-  // Only fit bounds on first load (no saved city)
-  if (!city) {
-    map.fitBounds(
-      L.latLngBounds(DS.combined.recs.map(s => [s.lat, s.lon]).concat(own.map(o => [o.lat, o.lon]))).pad(.05)
-    );
-  }
-
-  // Then try to hydrate from server (shared state wins over local)
-  const serverState = await fetchFromServer();
-  if (serverState) {
-    applySnapshot(serverState);
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(serverState)); } catch (e) {}
-    buildCityUI(); buildHeatUI(); buildPtUI(); rebuildUpTarget(); syncControls();
-    renderHeat(); renderPoints(); renderRecs(); renderDistricts(); renderIncome();
-    const savedAt = serverState._savedAt
-      ? new Date(serverState._savedAt).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
-      : '';
-    setSyncBadge('ok', 'Обновлено' + (savedAt ? ' ' + savedAt : ''));
-    toast('Настройки загружены с сервера', 'ok');
-  } else if (SERVER_URL && localStorage.getItem(STORE_KEY)) {
-    // Server is empty (e.g. restarted) but we have a local copy — restore it
-    pushToServer(buildStateSnapshot());
-  }
 })();

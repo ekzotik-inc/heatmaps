@@ -828,6 +828,21 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 .mode-icon { font-size: 24px; line-height: 1; flex-shrink: 0; margin-top: 2px; }
 .mode-name { font-family: "IQOS"; font-weight: 700; font-size: 15px; margin-bottom: 5px; }
 .mode-desc { font-size: 12.5px; color: var(--mut); line-height: 1.55; }
+.map-card.locked {
+  opacity: .4; cursor: not-allowed; filter: grayscale(.6);
+}
+.map-card.locked:hover {
+  border-color: var(--line2); background: var(--card2);
+  transform: none; box-shadow: none;
+}
+
+/* ── VIEWER ROLE — hide all upload / create / delete / data controls ───── */
+body.viewer #add-layer-btn,
+body.viewer #add-custom-pt-btn,
+body.viewer .lyr-del,
+body.viewer .cpt-del,
+body.viewer #tab-data,
+body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
 
 /* ── MODE BADGE ──────────────────────────────────────────────────────── */
 .mode-badge {

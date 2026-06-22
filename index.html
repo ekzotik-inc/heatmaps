@@ -34,29 +34,29 @@
     </form>
     <div class="auth-footer">Аналитика торговых точек · 2025</div>
   </div>
-  <div class="auth-card auth-card-mode" id="auth-step-mode" style="display:none">
+  <div class="auth-card auth-card-mode" id="auth-step-map" style="display:none">
     <div class="auth-logo">
       <div class="mk"></div>
       <div class="auth-logo-text">
         <h2>Heat Map · BR</h2>
-        <p>Выберите режим работы</p>
+        <p>Выберите карту</p>
       </div>
     </div>
-    <h1 class="auth-title">Как вы будете работать?</h1>
-    <p class="auth-sub">Режим можно сменить только после повторного входа</p>
+    <h1 class="auth-title">Какую карту открыть?</h1>
+    <p class="auth-sub">У каждого отдела своя независимая карта</p>
     <div class="mode-cards">
-      <button class="mode-card" id="mode-view">
-        <div class="mode-icon">👁</div>
+      <button class="mode-card map-card" data-map="comdep">
+        <div class="mode-icon">🗂</div>
         <div class="mode-body">
-          <div class="mode-name">Просто посмотреть</div>
-          <div class="mode-desc">Все функции доступны. Ваши изменения сохраняются локально и не влияют на карту команды.</div>
+          <div class="mode-name">Com Dep</div>
+          <div class="mode-desc">Карта коммерческого отдела</div>
         </div>
       </button>
-      <button class="mode-card mode-card-edit" id="mode-edit">
-        <div class="mode-icon">✏️</div>
+      <button class="mode-card map-card" data-map="other">
+        <div class="mode-icon">🗺</div>
         <div class="mode-body">
-          <div class="mode-name">Редактировать</div>
-          <div class="mode-desc">Изменения отправляются на сервер — карта обновится у всей команды.</div>
+          <div class="mode-name">Другая</div>
+          <div class="mode-desc">Карта второго отдела</div>
         </div>
       </button>
     </div>

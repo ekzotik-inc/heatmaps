@@ -56,10 +56,20 @@ async function initDb() {
   console.log('✅  PostgreSQL connected — state will persist across restarts');
 }
 
-async function readState() {
+// Each department keeps its own independent map state, stored under its own key.
+const MAPS = ['comdep', 'other'];
+function mapKey(req) {
+  const m = (req.query.map || '').toString();
+  return MAPS.includes(m) ? m : 'main'; // 'main' = legacy/default
+}
+function stateFileFor(key) {
+  return key === 'main' ? STATE_FILE : path.join(__dirname, `state.${key}.json`);
+}
+
+async function readState(key) {
   if (db) {
     try {
-      const r = await db.query("SELECT json FROM app_state WHERE key = 'main'");
+      const r = await db.query('SELECT json FROM app_state WHERE key = $1', [key]);
       if (r.rows.length === 0) return null;
       return JSON.parse(r.rows[0].json);
     } catch (e) {
@@ -69,28 +79,30 @@ async function readState() {
   }
   // Fallback: file-based (ephemeral on Render free tier)
   try {
-    if (fs.existsSync(STATE_FILE)) return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    const f = stateFileFor(key);
+    if (fs.existsSync(f)) return JSON.parse(fs.readFileSync(f, 'utf8'));
   } catch (e) {
-    console.error('Failed to read state.json:', e.message);
+    console.error('Failed to read state file:', e.message);
   }
   return null;
 }
 
-async function writeState(data) {
+async function writeState(key, data) {
   const json = JSON.stringify(data);
   if (db) {
     await db.query(
       `INSERT INTO app_state (key, json, updated_at)
-       VALUES ('main', $1, $2)
-       ON CONFLICT (key) DO UPDATE SET json = $1, updated_at = $2`,
-      [json, new Date().toISOString()]
+       VALUES ($1, $2, $3)
+       ON CONFLICT (key) DO UPDATE SET json = $2, updated_at = $3`,
+      [key, json, new Date().toISOString()]
     );
     return;
   }
   // Fallback: atomic file write
-  const tmp = STATE_FILE + '.tmp';
+  const f = stateFileFor(key);
+  const tmp = f + '.tmp';
   fs.writeFileSync(tmp, json, 'utf8');
-  fs.renameSync(tmp, STATE_FILE);
+  fs.renameSync(tmp, f);
 }
 
 function verifyKey(req) {
@@ -123,14 +135,14 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, ts: new Date().toISOString(), storage: db ? 'postgresql' : 'file' });
 });
 
-// GET /state — returns current shared state (no auth required to read)
-app.get('/state', async (_req, res) => {
-  const state = await readState();
+// GET /state?map=comdep|other — returns that map's shared state (read = open)
+app.get('/state', async (req, res) => {
+  const state = await readState(mapKey(req));
   if (!state) return res.json({ empty: true });
   res.json(state);
 });
 
-// POST /state — saves new state (auth required)
+// POST /state?map=comdep|other — saves that map's state (auth required)
 app.post('/state', async (req, res) => {
   if (!verifyKey(req)) {
     return res.status(401).json({ error: 'Invalid or missing X-API-Key header' });
@@ -141,7 +153,7 @@ app.post('/state', async (req, res) => {
   }
   body._savedAt = new Date().toISOString();
   try {
-    await writeState(body);
+    await writeState(mapKey(req), body);
     res.json({ ok: true, savedAt: body._savedAt });
   } catch (e) {
     console.error('Write error:', e.message);
