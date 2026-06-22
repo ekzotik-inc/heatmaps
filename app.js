@@ -74,6 +74,9 @@ CITIES.forEach(c => {
   const a = DATA.cig.recs.filter(s => s.fil === c);
   if (a.length) CC[c] = [a.reduce((x, s) => x + s.lat, 0) / a.length, a.reduce((x, s) => x + s.lon, 0) / a.length];
 });
+// Навои — approximate city centre coordinates
+if (!CC['Навои']) CC['Навои'] = [40.0833, 65.3833];
+if (!CITIES.includes('Навои')) CITIES.push('Навои');
 function cityOf(lat, lon) {
   let best = CITIES[0], bd = 1e9;
   for (const c in CC) {
@@ -1603,13 +1606,14 @@ function wireEvents() {
   $('side-collapse').addEventListener('click', () => setDesktopSide(true));
   $('side-reopen').addEventListener('click', () => setDesktopSide(false));
 
-  // Accordion toggle — HTML uses .acc-hdr.open + .acc-body.open siblings
-  document.querySelectorAll('.acc-hdr[data-acc]').forEach(hdr => {
-    hdr.addEventListener('click', () => {
-      const body = document.getElementById('acc-body-' + hdr.dataset.acc);
-      const isOpen = hdr.classList.contains('open');
-      hdr.classList.toggle('open', !isOpen);
-      if (body) body.classList.toggle('open', !isOpen);
+  // Tab navigation
+  document.querySelectorAll('.side-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.side-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      const panel = document.getElementById(tab.dataset.tab);
+      if (panel) panel.classList.add('active');
     });
   });
 

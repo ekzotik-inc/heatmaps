@@ -126,14 +126,61 @@ input, textarea { text-transform: uppercase; }
 #side-reopen:hover { background: var(--acc-l); border-color: var(--acc); transform: translateY(-1px); }
 @media (min-width: 781px) { #app.side-hidden #side-reopen { display: flex; } }
 
-/* ── SCROLLABLE CONTENT ──────────────────────────────────────────────── */
-.scroll {
-  overflow-y: auto; padding: 8px 0 100px; flex: 1;
+/* ── TAB PANELS ──────────────────────────────────────────────────────── */
+.tab-panels { flex: 1; overflow: hidden; position: relative; }
+.tab-panel {
+  position: absolute; inset: 0; overflow-y: auto;
+  padding: 14px 14px 20px;
+  opacity: 0; pointer-events: none; transition: opacity .18s;
 }
-.scroll::-webkit-scrollbar { width: 6px; }
-.scroll::-webkit-scrollbar-track { background: transparent; }
-.scroll::-webkit-scrollbar-thumb { background: rgba(80,95,130,.18); border-radius: 4px; }
-.scroll::-webkit-scrollbar-thumb:hover { background: rgba(80,95,130,.32); }
+.tab-panel.active { opacity: 1; pointer-events: auto; }
+.tab-panel::-webkit-scrollbar { width: 5px; }
+.tab-panel::-webkit-scrollbar-thumb { background: rgba(80,95,130,.18); border-radius: 4px; }
+
+/* ── SIDE TABS NAV ───────────────────────────────────────────────────── */
+.side-tabs {
+  display: flex; flex: 0 0 auto;
+  border-top: 1px solid var(--line);
+  background: var(--side-bg);
+}
+.side-tab {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  gap: 3px; padding: 10px 4px 12px;
+  font-family: "IQOS"; font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .5px;
+  color: var(--dim); background: none; border: none; cursor: pointer;
+  transition: color .18s, background .18s;
+}
+.tab-icon-wrap { position: relative; display: inline-flex; }
+.side-tab .tab-icon { font-size: 18px; line-height: 1; }
+.side-tab:hover { color: var(--acc); background: var(--acc-l); }
+.side-tab.active { color: var(--acc); border-top: 2px solid var(--acc); padding-top: 8px; }
+
+/* ── TAB SECTION LABELS ──────────────────────────────────────────────── */
+.tab-section-title {
+  font-family: "IQOS"; font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1.2px;
+  color: var(--dim); margin: 0 0 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+.tab-section-title::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.tab-section-divider { height: 1px; background: var(--line); margin: 18px 0; }
+
+/* ── CITY BAR (floating on map) ──────────────────────────────────────── */
+#city-bar {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+  z-index: 1100;
+  background: rgba(255,255,255,.95); backdrop-filter: blur(10px);
+  border: 1px solid var(--line2); border-radius: 100px;
+  padding: 5px 8px;
+  box-shadow: var(--shadow-sm);
+  display: flex; align-items: center; gap: 0;
+}
+#city-bar .cities { display: flex; flex-wrap: nowrap; gap: 4px; }
+#city-bar .cities button {
+  font-size: 11px; padding: 5px 13px;
+  border-radius: 100px; white-space: nowrap;
+}
 
 /* ── SECTION HEADERS (inner labels) ──────────────────────────────────── */
 .sec {
@@ -462,15 +509,13 @@ input[type=range].full { width: 100%; }
   line-height: 1.6; border-top: 1px solid var(--line); padding-top: 14px;
 }
 
-/* ── LOGOUT BUTTON ───────────────────────────────────────────────────── */
+/* ── LOGOUT BUTTON (in brand header) ────────────────────────────────── */
 .logout-btn {
-  position: absolute; bottom: 16px; right: 14px; z-index: 1200;
-  display: flex; align-items: center; gap: 7px;
-  font-family: "IQOS"; font-size: 11px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center;
+  flex: 0 0 auto; width: 30px; height: 30px;
   color: var(--mut); background: var(--card);
-  border: 1px solid var(--line2); border-radius: 10px;
-  padding: 8px 13px; cursor: pointer; transition: .2s var(--ease);
-  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--line2); border-radius: 9px;
+  cursor: pointer; transition: .2s var(--ease);
 }
 .logout-btn:hover { color: var(--danger); border-color: var(--danger); }
 .logout-btn svg { opacity: .7; }
@@ -938,72 +983,19 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 /* badges pushed right */
 #acc-iqos-badge, #acc-cpt-badge { margin-left: auto; }
 
-/* ── ACCORDION NAVIGATION ────────────────────────────────────────────── */
-.acc-section {
-  margin: 0 12px 6px;
-  border-radius: 14px;
-  overflow: hidden;
-  background: var(--side-bg2);
-  border: 1px solid transparent;
-  transition: border-color .18s, background .18s, box-shadow .18s;
-}
-.acc-section:has(.acc-hdr.open) {
-  background: var(--card);
-  border-color: var(--line);
-  box-shadow: var(--shadow-card);
-}
-
-.acc-hdr {
-  display: flex; align-items: center; gap: 11px;
-  padding: 13px 15px; min-height: 48px; cursor: pointer;
-  user-select: none;
-  transition: background .16s;
-}
-.acc-hdr:hover { background: var(--acc-l); }
-
-.acc-icon {
-  font-size: 15px; flex: 0 0 auto;
-  width: 30px; height: 30px; border-radius: 9px;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--side-bg2); transition: background .18s;
-}
-.acc-hdr.open .acc-icon { background: var(--acc-l); }
-
-.acc-title {
-  flex: 1; font-family: "IQOS"; font-size: 12.5px; font-weight: 700;
-  letter-spacing: .2px;
-  color: var(--ink);
-}
-
+/* ── ACC BADGE (used in tab buttons) ─────────────────────────────────── */
 .acc-badge {
-  font-family: "IQOS"; font-size: 10px;
+  font-family: "IQOS"; font-size: 9px;
   color: var(--acc); background: var(--acc-l);
   border: 1px solid rgba(91,124,250,.25);
-  border-radius: 100px; padding: 2px 8px; flex: 0 0 auto;
+  border-radius: 100px; padding: 1px 5px; flex: 0 0 auto;
+  position: absolute; top: -4px; right: -6px;
   transition: opacity .2s;
 }
 .acc-badge:empty { display: none; }
 .acc-badge.acc-badge-green {
   color: var(--rec-ink); background: var(--rec-l);
   border-color: rgba(20,164,116,.25);
-}
-
-.acc-chevron {
-  font-size: 12px; color: var(--dim); flex: 0 0 auto;
-  display: inline-block;
-  transition: transform .28s var(--ease-io), color .18s;
-}
-.acc-hdr.open .acc-chevron { transform: rotate(180deg); color: var(--acc); }
-
-.acc-body {
-  overflow: hidden;
-  max-height: 0;
-  transition: max-height .34s var(--ease-io);
-  padding: 0 15px;
-}
-.acc-body.open {
-  max-height: 3000px;
-  padding-bottom: 15px;
 }
 
 /* ── CSS TOOLTIPS ────────────────────────────────────────────────────── */

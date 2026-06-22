@@ -72,273 +72,239 @@
         <h1>Тепловая карта · BR</h1>
         <p>Сигареты + Стики · Аналитика</p>
       </div>
+      <button class="logout-btn" id="logout-btn" title="Выйти">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
       <button class="side-collapse" id="side-collapse" title="Свернуть панель">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
       </button>
     </div>
-    <div class="scroll">
 
-      <!-- 1. ГОРОД -->
-      <div class="acc-section">
-        <div class="acc-hdr open" data-acc="city">
-          <span class="acc-icon">🏙</span>
-          <span class="acc-title">Город</span>
-          <span class="acc-chevron">▾</span>
+    <div class="tab-panels">
+
+      <!-- TAB: КАРТА -->
+      <div class="tab-panel active" id="tab-map">
+        <p class="tab-section-title">Тепловые слои</p>
+        <div id="heat-list"></div>
+        <div class="ctrl" style="margin-top:6px">
+          <div class="row">
+            <label>Общая яркость тепла <span class="tip-icon" data-tip="Усиливает или ослабляет яркость всех тепловых слоёв одновременно">ⓘ</span></label>
+            <span class="val blue" id="v-heat-boost">100%</span>
+          </div>
+          <input type="range" class="full" id="s-heat-boost" min="0.3" max="3" step="0.1" value="1"/>
         </div>
-        <div class="acc-body open" id="acc-body-city">
-          <div class="cities" id="seg-city"></div>
+        <div class="ctrl">
+          <div class="row">
+            <label>Размер пятна <span class="tip-icon" data-tip="Радиус размытия каждой точки на тепловой карте в пикселях">ⓘ</span></label>
+            <span class="val blue" id="v-heat-radius">28 px</span>
+          </div>
+          <input type="range" class="full" id="s-heat-radius" min="14" max="48" step="2" value="28"/>
+        </div>
+        <div class="ctrl">
+          <div class="row" style="align-items:center">
+            <label>Наложение слоёв</label>
+            <select id="heat-blend">
+              <option value="multiply">Умножение (смешивание)</option>
+              <option value="normal">Обычное (верхний поверх)</option>
+              <option value="darken">Затемнение</option>
+            </select>
+          </div>
+        </div>
+        <button class="add-layer-btn" id="add-layer-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Создать новый слой
+        </button>
+      </div>
+
+      <!-- TAB: ТОЧКИ -->
+      <div class="tab-panel" id="tab-points">
+        <p class="tab-section-title">Наши точки · IQOS</p>
+        <div id="pt-list"></div>
+        <div class="tab-section-divider"></div>
+        <p class="tab-section-title">Свои точки</p>
+        <div id="custom-pt-list"></div>
+        <button class="add-layer-btn" id="add-custom-pt-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Добавить слой точек
+        </button>
+        <input type="file" id="cpt-file" accept=".csv,.xlsx,.xls" style="display:none"/>
+      </div>
+
+      <!-- TAB: АНАЛИЗ -->
+      <div class="tab-panel" id="tab-analysis">
+        <p class="tab-section-title">Рекомендации</p>
+        <div class="rec-basis" id="rec-basis">
+          <button class="on" data-b="cig">Сигареты</button>
+          <button data-b="sticks">Стики</button>
+          <button data-b="combined">Оба</button>
+        </div>
+        <div class="rec-summary">
+          <div class="rec-summary-icon">📍</div>
+          <div class="rec-summary-body">
+            <div class="big" id="rec-count">—</div>
+            <div class="lbl" id="rec-lbl"></div>
+          </div>
+        </div>
+        <label class="chk"><div class="cbx green on" id="rec-show"></div><span>Показывать на карте</span></label>
+        <div class="ctrl">
+          <div class="row">
+            <label>Радиус покрытия наших ТТ <span class="tip-icon" data-tip="Зоны ближе этого расстояния от BR/IQOS исключаются из рекомендаций">ⓘ</span></label>
+            <span class="val" id="v-cov">600 м</span>
+          </div>
+          <input type="range" class="full green" id="s-cov" min="200" max="3000" step="50" value="600"/>
+        </div>
+        <div class="ctrl">
+          <div class="row">
+            <label>Сколько зон показать <span class="tip-icon" data-tip="Максимальное число рекомендованных зон в списке и на карте">ⓘ</span></label>
+            <span class="val" id="v-top">12</span>
+          </div>
+          <input type="range" class="full green" id="s-top" min="5" max="30" step="1" value="12"/>
+        </div>
+        <div class="rec-list" id="rec-list"></div>
+        <button class="rec-toggle" id="rec-toggle" style="display:none"></button>
+        <button class="btn" id="rec-export" style="margin-top:8px">⬇ Экспорт рекомендаций (Excel)</button>
+
+        <div class="tab-section-divider"></div>
+        <p class="tab-section-title">Адресная программа</p>
+
+        <!-- Step 1: Source -->
+        <div class="addr-step">
+          <div class="addr-step-label"><span class="addr-num">1</span> Что анализируем?</div>
+          <select id="addr-src-sel" class="addr-sel"></select>
+        </div>
+
+        <!-- Step 2: Distance -->
+        <div class="addr-step">
+          <div class="addr-step-label"><span class="addr-num">2</span> Расстояние до</div>
+          <select id="addr-ref-sel" class="addr-sel"></select>
+          <div class="addr-dist-row">
+            <select id="op-rt-radius" class="op-sel">
+              <option value="lte">≤</option>
+              <option value="lt">&lt;</option>
+              <option value="gte">≥</option>
+              <option value="gt">&gt;</option>
+            </select>
+            <span class="val" id="v-rt-radius">1.0 км</span>
+          </div>
+          <input type="range" class="full" id="s-rt-radius" min="200" max="10000" step="100" value="1000"/>
+        </div>
+
+        <!-- Step 3: Volume (hidden for custom point layers) -->
+        <div class="addr-step" id="addr-vol-block">
+          <div class="addr-step-label"><span class="addr-num">3</span> Объём точки</div>
+          <div class="addr-dist-row" style="margin-bottom:0">
+            <select id="op-rt-vol" class="op-sel">
+              <option value="gte">≥</option>
+              <option value="gt">&gt;</option>
+              <option value="lte">≤</option>
+              <option value="lt">&lt;</option>
+            </select>
+            <select id="vol-mode" class="op-sel" style="color:var(--ink);flex:1">
+              <option value="avg">среднего по выборке</option>
+              <option value="custom">задать вручную</option>
+            </select>
+          </div>
+          <input type="number" id="vol-custom-val" min="0" step="1" value="0"
+            style="display:none;width:100%;margin-top:8px;background:var(--card2);border:1px solid var(--line2);color:var(--ink);padding:6px 10px;border-radius:8px;font-size:12px"/>
+        </div>
+
+        <!-- Step 4: Exclusions (shipment mode only) -->
+        <div class="addr-step" id="addr-excl-block">
+          <div class="addr-step-label"><span class="addr-num">4</span> Исключить точки, которые уже рядом с</div>
+          <div id="rt-excl-list"></div>
+          <div class="addr-dist-row" style="margin-top:8px">
+            <span style="font-size:11px;color:var(--dim)">ближе чем</span>
+            <select id="op-rt-excl" class="op-sel">
+              <option value="lt">&lt;</option>
+              <option value="lte">≤</option>
+              <option value="gt">&gt;</option>
+              <option value="gte">≥</option>
+            </select>
+            <span class="val" id="v-rt-excl">150 м</span>
+          </div>
+          <input type="range" class="full" id="s-rt-excl" min="50" max="1000" step="50" value="150"/>
+        </div>
+
+        <!-- Actions -->
+        <div class="addr-actions">
+          <button class="btn addr-btn-map" id="btn-addr-preview">👁 На карте</button>
+          <button class="btn addr-btn-xls btn-retraffic" id="btn-retraffic-export">⬇ Excel</button>
         </div>
       </div>
 
-      <!-- 2. ТЕПЛОВЫЕ СЛОИ -->
-      <div class="acc-section">
-        <div class="acc-hdr open" data-acc="heat">
-          <span class="acc-icon">🔥</span>
-          <span class="acc-title">Тепловые слои</span>
-          <span class="acc-badge" id="acc-badge-heat"></span>
-          <span class="acc-chevron">▾</span>
-        </div>
-        <div class="acc-body open" id="acc-body-heat">
-          <div id="heat-list"></div>
-          <div class="ctrl" style="margin-top:6px">
-            <div class="row">
-              <label>Общая яркость тепла <span class="tip-icon" data-tip="Усиливает или ослабляет яркость всех тепловых слоёв одновременно">ⓘ</span></label>
-              <span class="val blue" id="v-heat-boost">100%</span>
-            </div>
-            <input type="range" class="full" id="s-heat-boost" min="0.3" max="3" step="0.1" value="1"/>
-          </div>
-          <div class="ctrl">
-            <div class="row">
-              <label>Размер пятна <span class="tip-icon" data-tip="Радиус размытия каждой точки на тепловой карте в пикселях">ⓘ</span></label>
-              <span class="val blue" id="v-heat-radius">28 px</span>
-            </div>
-            <input type="range" class="full" id="s-heat-radius" min="14" max="48" step="2" value="28"/>
-          </div>
-          <div class="ctrl">
-            <div class="row" style="align-items:center">
-              <label>Наложение слоёв</label>
-              <select id="heat-blend">
-                <option value="multiply">Умножение (смешивание)</option>
-                <option value="normal">Обычное (верхний поверх)</option>
-                <option value="darken">Затемнение</option>
-              </select>
-            </div>
-          </div>
-          <button class="add-layer-btn" id="add-layer-btn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Создать новый слой
+      <!-- TAB: ДАННЫЕ -->
+      <div class="tab-panel" id="tab-data">
+        <p class="tab-section-title">Поделиться настройками</p>
+        <div class="share-row">
+          <button class="share-btn export" id="btn-export-state">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Экспорт настроек
+          </button>
+          <button class="share-btn import" id="btn-import-state">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Импорт настроек
           </button>
         </div>
-      </div>
+        <input type="file" id="state-file" accept=".json" style="display:none"/>
+        <p class="share-hint">Экспортируй настройки в файл и отправь коллегам — они загрузят и увидят всё то же самое</p>
 
-      <!-- 3. НАШИ ТОЧКИ -->
-      <div class="acc-section">
-        <div class="acc-hdr" data-acc="pts">
-          <span class="acc-icon">📍</span>
-          <span class="acc-title">Наши точки · IQOS</span>
-          <span class="acc-chevron">▾</span>
-        </div>
-        <div class="acc-body" id="acc-body-pts">
-          <div id="pt-list"></div>
-        </div>
-      </div>
+        <div class="tab-section-divider"></div>
+        <p class="tab-section-title">Загрузка данных по шаблону</p>
+        <a class="lnk" id="dl-tpl">⬇ Скачать шаблон (Excel)</a>
+        <div class="up-row">Слой для загрузки:&nbsp;<select id="up-target"><option value="cig">Сигареты</option><option value="sticks">Стики</option></select></div>
+        <div class="filebox" id="filebox">Выберите файл <b>CSV / XLSX</b></div>
+        <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none"/>
+        <div class="fname" id="fname" style="display:none"></div>
+        <button class="btn" id="btn-update" disabled>Обновить карту</button>
+        <div class="foot">Сигареты и стики — независимые тепловые слои. Рекомендации по открытию BR считаются по выбранной основе. Маркеры IQOS: BR и 2nd SE различаются цветом и формой.</div>
 
-      <!-- 4. СВОИ ТОЧКИ -->
-      <div class="acc-section">
-        <div class="acc-hdr" data-acc="cpt">
-          <span class="acc-icon">📌</span>
-          <span class="acc-title">Свои точки</span>
-          <span class="acc-badge" id="acc-badge-cpt"></span>
-          <span class="acc-chevron">▾</span>
-        </div>
-        <div class="acc-body" id="acc-body-cpt">
-          <div id="custom-pt-list"></div>
-          <button class="add-layer-btn" id="add-custom-pt-btn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Добавить слой точек
-          </button>
-          <input type="file" id="cpt-file" accept=".csv,.xlsx,.xls" style="display:none"/>
-        </div>
-      </div>
-
-      <!-- 5. РЕКОМЕНДАЦИИ -->
-      <div class="acc-section">
-        <div class="acc-hdr" data-acc="rec">
-          <span class="acc-icon">🎯</span>
-          <span class="acc-title">Рекомендации</span>
-          <span class="acc-badge acc-badge-green" id="acc-badge-rec"></span>
-          <span class="acc-chevron">▾</span>
-        </div>
-        <div class="acc-body" id="acc-body-rec">
-          <div class="rec-basis" id="rec-basis">
-            <button class="on" data-b="cig">Сигареты</button>
-            <button data-b="sticks">Стики</button>
-            <button data-b="combined">Оба</button>
+        <div class="tab-section-divider"></div>
+        <p class="tab-section-title">Доход Ташкента</p>
+        <div class="lyr">
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <label style="display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink);cursor:pointer"><input type="color" id="d-high" value="#C0392B"> 🔴 Высокий доход <span style="margin-left:auto;font-size:9.5px;color:var(--dim);font-family:IQOS">ядра 1–6</span></label>
+            <label style="display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink);cursor:pointer"><input type="color" id="d-mid" value="#F39C12"> 🟠 Средний <span style="margin-left:auto;font-size:9.5px;color:var(--dim);font-family:IQOS">7–11</span></label>
+            <label style="display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink);cursor:pointer"><input type="color" id="d-low" value="#1F9E5A"> 🟢 Ниже / растущий <span style="margin-left:auto;font-size:9.5px;color:var(--dim);font-family:IQOS">12–15</span></label>
           </div>
-          <div class="rec-summary">
-            <div class="rec-summary-icon">📍</div>
-            <div class="rec-summary-body">
-              <div class="big" id="rec-count">—</div>
-              <div class="lbl" id="rec-lbl"></div>
-            </div>
-          </div>
-          <label class="chk"><div class="cbx green on" id="rec-show"></div><span>Показывать на карте</span></label>
-          <div class="ctrl">
-            <div class="row">
-              <label>Радиус покрытия наших ТТ <span class="tip-icon" data-tip="Зоны ближе этого расстояния от BR/IQOS исключаются из рекомендаций">ⓘ</span></label>
-              <span class="val" id="v-cov">600 м</span>
-            </div>
-            <input type="range" class="full green" id="s-cov" min="200" max="3000" step="50" value="600"/>
-          </div>
-          <div class="ctrl">
-            <div class="row">
-              <label>Сколько зон показать <span class="tip-icon" data-tip="Максимальное число рекомендованных зон в списке и на карте">ⓘ</span></label>
-              <span class="val" id="v-top">12</span>
-            </div>
-            <input type="range" class="full green" id="s-top" min="5" max="30" step="1" value="12"/>
-          </div>
-          <div class="rec-list" id="rec-list"></div>
-          <button class="rec-toggle" id="rec-toggle" style="display:none"></button>
-          <button class="btn" id="rec-export" style="margin-top:8px">⬇ Экспорт рекомендаций (Excel)</button>
-        </div>
-      </div>
-
-      <!-- 6. АДРЕСНАЯ ПРОГРАММА -->
-      <div class="acc-section">
-        <div class="acc-hdr" data-acc="addr">
-          <span class="acc-icon">📊</span>
-          <span class="acc-title">Адресная программа</span>
-          <span class="acc-chevron">▾</span>
-        </div>
-        <div class="acc-body" id="acc-body-addr">
-
-          <!-- Step 1: Source -->
-          <div class="addr-step">
-            <div class="addr-step-label"><span class="addr-num">1</span> Что анализируем?</div>
-            <select id="addr-src-sel" class="addr-sel"></select>
-          </div>
-
-          <!-- Step 2: Distance -->
-          <div class="addr-step">
-            <div class="addr-step-label"><span class="addr-num">2</span> Расстояние до</div>
-            <select id="addr-ref-sel" class="addr-sel"></select>
-            <div class="addr-dist-row">
-              <select id="op-rt-radius" class="op-sel">
-                <option value="lte">≤</option>
-                <option value="lt">&lt;</option>
-                <option value="gte">≥</option>
-                <option value="gt">&gt;</option>
-              </select>
-              <span class="val" id="v-rt-radius">1.0 км</span>
-            </div>
-            <input type="range" class="full" id="s-rt-radius" min="200" max="10000" step="100" value="1000"/>
-          </div>
-
-          <!-- Step 3: Volume (hidden for custom point layers) -->
-          <div class="addr-step" id="addr-vol-block">
-            <div class="addr-step-label"><span class="addr-num">3</span> Объём точки</div>
-            <div class="addr-dist-row" style="margin-bottom:0">
-              <select id="op-rt-vol" class="op-sel">
-                <option value="gte">≥</option>
-                <option value="gt">&gt;</option>
-                <option value="lte">≤</option>
-                <option value="lt">&lt;</option>
-              </select>
-              <select id="vol-mode" class="op-sel" style="color:var(--ink);flex:1">
-                <option value="avg">среднего по выборке</option>
-                <option value="custom">задать вручную</option>
-              </select>
-            </div>
-            <input type="number" id="vol-custom-val" min="0" step="1" value="0"
-              style="display:none;width:100%;margin-top:8px;background:var(--card2);border:1px solid var(--line2);color:var(--ink);padding:6px 10px;border-radius:8px;font-size:12px"/>
-          </div>
-
-          <!-- Step 4: Exclusions (shipment mode only) -->
-          <div class="addr-step" id="addr-excl-block">
-            <div class="addr-step-label"><span class="addr-num">4</span> Исключить точки, которые уже рядом с</div>
-            <div id="rt-excl-list"></div>
-            <div class="addr-dist-row" style="margin-top:8px">
-              <span style="font-size:11px;color:var(--dim)">ближе чем</span>
-              <select id="op-rt-excl" class="op-sel">
-                <option value="lt">&lt;</option>
-                <option value="lte">≤</option>
-                <option value="gt">&gt;</option>
-                <option value="gte">≥</option>
-              </select>
-              <span class="val" id="v-rt-excl">150 м</span>
-            </div>
-            <input type="range" class="full" id="s-rt-excl" min="50" max="1000" step="50" value="150"/>
-          </div>
-
-          <!-- Actions -->
-          <div class="addr-actions">
-            <button class="btn addr-btn-map" id="btn-addr-preview">👁 На карте</button>
-            <button class="btn addr-btn-xls btn-retraffic" id="btn-retraffic-export">⬇ Excel</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- 7. ДОХОД ТАШКЕНТА -->
-      <div class="acc-section">
-        <div class="acc-hdr" data-acc="income">
-          <span class="acc-icon">💰</span>
-          <span class="acc-title">Доход Ташкента</span>
-          <span class="acc-chevron">▾</span>
-        </div>
-        <div class="acc-body" id="acc-body-income">
-          <div class="lyr">
-            <div style="display:flex;flex-direction:column;gap:9px">
-              <label style="display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink);cursor:pointer"><input type="color" id="d-high" value="#C0392B"> 🔴 Высокий доход <span style="margin-left:auto;font-size:9.5px;color:var(--dim);font-family:IQOS">ядра 1–6</span></label>
-              <label style="display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink);cursor:pointer"><input type="color" id="d-mid" value="#F39C12"> 🟠 Средний <span style="margin-left:auto;font-size:9.5px;color:var(--dim);font-family:IQOS">7–11</span></label>
-              <label style="display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink);cursor:pointer"><input type="color" id="d-low" value="#1F9E5A"> 🟢 Ниже / растущий <span style="margin-left:auto;font-size:9.5px;color:var(--dim);font-family:IQOS">12–15</span></label>
-            </div>
-            <div style="height:1px;background:var(--line);margin:12px 0"></div>
-            <label class="chk" style="padding:6px 4px"><div class="cbx" id="inc-heat-cbx"></div><span>Тепловая карта дохода</span></label>
-            <label class="chk" style="padding:6px 4px"><div class="cbx" id="inc-core-cbx"></div><span>Ядра дохода (метки 1–15)</span></label>
-            <label class="chk" style="padding:6px 4px"><div class="cbx" id="dist-cbx"></div><span>Границы 12 районов</span></label>
-            <p style="font-size:10px;color:var(--dim);line-height:1.5;margin:10px 0 0">Координаты ядер — приближённые центры; классификация по предоставленным данным. Микро-слой относится к Ташкенту.</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- 8. ДАННЫЕ И НАСТРОЙКИ -->
-      <div class="acc-section">
-        <div class="acc-hdr" data-acc="settings">
-          <span class="acc-icon">⚙️</span>
-          <span class="acc-title">Данные и настройки</span>
-          <span class="acc-chevron">▾</span>
-        </div>
-        <div class="acc-body" id="acc-body-settings">
-          <div class="sec" style="margin-top:4px">Поделиться настройками</div>
-          <div class="share-row">
-            <button class="share-btn export" id="btn-export-state">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              Экспорт настроек
-            </button>
-            <button class="share-btn import" id="btn-import-state">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Импорт настроек
-            </button>
-          </div>
-          <input type="file" id="state-file" accept=".json" style="display:none"/>
-          <p class="share-hint">Экспортируй настройки в файл и отправь коллегам — они загрузят и увидят всё то же самое</p>
-
-          <div class="sec">Загрузка данных по шаблону</div>
-          <a class="lnk" id="dl-tpl">⬇ Скачать шаблон (Excel)</a>
-          <div class="up-row">Слой для загрузки:&nbsp;<select id="up-target"><option value="cig">Сигареты</option><option value="sticks">Стики</option></select></div>
-          <div class="filebox" id="filebox">Выберите файл <b>CSV / XLSX</b></div>
-          <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none"/>
-          <div class="fname" id="fname" style="display:none"></div>
-          <button class="btn" id="btn-update" disabled>Обновить карту</button>
-          <div class="foot">Сигареты и стики — независимые тепловые слои. Рекомендации по открытию BR считаются по выбранной основе. Маркеры IQOS: BR и 2nd SE различаются цветом и формой.</div>
+          <div style="height:1px;background:var(--line);margin:12px 0"></div>
+          <label class="chk" style="padding:6px 4px"><div class="cbx" id="inc-heat-cbx"></div><span>Тепловая карта дохода</span></label>
+          <label class="chk" style="padding:6px 4px"><div class="cbx" id="inc-core-cbx"></div><span>Ядра дохода (метки 1–15)</span></label>
+          <label class="chk" style="padding:6px 4px"><div class="cbx" id="dist-cbx"></div><span>Границы 12 районов</span></label>
+          <p style="font-size:10px;color:var(--dim);line-height:1.5;margin:10px 0 0">Координаты ядер — приближённые центры; классификация по предоставленным данным. Микро-слой относится к Ташкенту.</p>
         </div>
       </div>
 
     </div>
-    <button class="logout-btn" id="logout-btn" title="Выйти">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      Выйти
-    </button>
+
+    <nav class="side-tabs">
+      <button class="side-tab active" data-tab="tab-map">
+        <div class="tab-icon-wrap">
+          <span class="tab-icon">🗺</span>
+          <span class="acc-badge" id="acc-badge-heat"></span>
+        </div>
+        <span class="tab-label">Карта</span>
+      </button>
+      <button class="side-tab" data-tab="tab-points">
+        <div class="tab-icon-wrap">
+          <span class="tab-icon">📍</span>
+          <span class="acc-badge" id="acc-badge-cpt"></span>
+        </div>
+        <span class="tab-label">Точки</span>
+      </button>
+      <button class="side-tab" data-tab="tab-analysis">
+        <div class="tab-icon-wrap">
+          <span class="tab-icon">🎯</span>
+          <span class="acc-badge acc-badge-green" id="acc-badge-rec"></span>
+        </div>
+        <span class="tab-label">Анализ</span>
+      </button>
+      <button class="side-tab" data-tab="tab-data">
+        <div class="tab-icon-wrap">
+          <span class="tab-icon">⚙️</span>
+        </div>
+        <span class="tab-label">Данные</span>
+      </button>
+    </nav>
   </aside>
   <button id="burger" aria-label="Меню">☰</button>
   <button id="side-reopen" title="Показать панель" aria-label="Показать панель">
@@ -346,6 +312,9 @@
   </button>
   <div id="side-backdrop"></div>
   <div id="map"></div>
+  <div id="city-bar">
+    <div class="cities" id="seg-city"></div>
+  </div>
   <div class="badge">Точек на карте: <b id="b-count">—</b></div>
   <div id="layer-legend" style="display:none"></div>
   <div class="sync-badge" id="sync-badge" style="display:none">
