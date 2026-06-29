@@ -142,6 +142,7 @@ const radiusGroup   = L.layerGroup().addTo(map); // coverage radius around own p
 const pointsGroup   = L.layerGroup().addTo(map);
 const recLayer      = L.layerGroup().addTo(map);
 const addrLayer     = L.layerGroup().addTo(map); // address-program preview markers
+const cptRoot       = L.layerGroup().addTo(map); // parent for ALL custom-point layer groups
 
 /* ── INCOME / DISTRICTS ──────────────────────────────────────────────── */
 const incCol = { high: '#C0392B', mid: '#F39C12', low: '#1F9E5A' };
@@ -750,9 +751,13 @@ function buildCityUI() {
 
 /* ── CUSTOM POINT LAYERS ─────────────────────────────────────────────── */
 function renderCustomPoints() {
+  // Wipe EVERYTHING under the parent group — including any groups whose layer
+  // object was replaced (e.g. by applySnapshot). Prevents orphaned markers that
+  // can't be toggled off because nothing references their old group anymore.
+  cptRoot.clearLayers();
   customPtLayers.forEach(l => {
-    if (!l._group) { l._group = L.layerGroup().addTo(map); }
-    l._group.clearLayers();
+    l._group = L.layerGroup();
+    cptRoot.addLayer(l._group);
     if (!l.visible || !l.recs.length) return;
     const shape = l.shape || 'teardrop';
     const ic = shp(shape, l.color, 30);
@@ -909,10 +914,9 @@ function buildCustomPtUI() {
     el.addEventListener('click', () => {
       const id = el.dataset.cpdel;
       const l  = customPtLayers.find(x => x.id === id); if (!l) return;
-      if (l._group) { l._group.clearLayers(); l._group.remove(); }
       customPtLayers = customPtLayers.filter(x => x.id !== id);
       addrLayer.clearLayers();
-      buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); saveState();
+      renderCustomPoints(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); saveState();
       toast(`Слой «${l.name}» удалён`, 'info');
     });
   });
@@ -1161,9 +1165,9 @@ function applySnapshot(st) {
   if (typeof st.rtExclOp     === 'string')  rtExclOp     = st.rtExclOp;
   if (Array.isArray(st.rtExclKeys))         rtExclKeys   = st.rtExclKeys.slice();
   if (Array.isArray(st.customPtLayers)) {
-    // Tear down existing Leaflet groups first — otherwise the old markers stay
-    // orphaned on the map and overlap the freshly-rendered new ones.
-    customPtLayers.forEach(l => { if (l._group) { l._group.clearLayers(); l._group.remove(); l._group = null; } });
+    // Wipe all existing custom-point markers — otherwise old groups stay
+    // orphaned on the map (overlapping new ones / impossible to toggle off).
+    cptRoot.clearLayers();
     // Restore custom point layers without their Leaflet groups (re-created on render)
     customPtLayers = st.customPtLayers.map(l => ({ ...l, _group: null }));
   }
