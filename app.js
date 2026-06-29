@@ -122,7 +122,7 @@ let customPtLayers = [];      // [{ id, name, color, visible, recs: [], _group: 
 let _cptUploadTarget = null;  // id of layer awaiting file upload
 
 /* ── MAP INIT ────────────────────────────────────────────────────────── */
-const map = L.map('map', { preferCanvas: true, zoomControl: true, minZoom: 5, zoomSnap: .5 })
+const map = L.map('map', { preferCanvas: true, zoomControl: false, minZoom: 5, zoomSnap: .5 })
               .setView([41, 67], 6);
 
 L.tileLayer('https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1', {
@@ -733,20 +733,24 @@ function buildCityUI() {
       b.classList.add('on');
       city = val;
       renderHeat(); renderPoints(); renderRecs();
-      const pts = DS.combined.recs.filter(s => !city || s.fil === city).map(s => [s.lat, s.lon]);
-      const ownPts = own.filter(o => !city || o.cityRu === city).map(o => [o.lat, o.lon]);
-      const allPts = pts.concat(ownPts);
-      if (allPts.length) {
-        map.flyToBounds(L.latLngBounds(allPts).pad(.12), { duration: .7 });
-      } else if (city && CC[city]) {
-        // No data for this city yet — just centre the map on it
-        map.flyTo(CC[city], 12, { duration: .7 });
-      }
+      fitView();
     });
     el.appendChild(b);
   };
   mk('', 'Все', !city);
   CITIES.forEach(c => mk(c, c, city === c));
+}
+
+/* Fit the map to the current city's data (or all data / city centre). */
+function fitView() {
+  const pts    = DS.combined.recs.filter(s => !city || s.fil === city).map(s => [s.lat, s.lon]);
+  const ownPts = own.filter(o => !city || o.cityRu === city).map(o => [o.lat, o.lon]);
+  const allPts = pts.concat(ownPts);
+  if (allPts.length) {
+    map.flyToBounds(L.latLngBounds(allPts).pad(.12), { duration: .6 });
+  } else if (city && CC[city]) {
+    map.flyTo(CC[city], 12, { duration: .6 });   // no data yet — centre on city
+  }
 }
 
 /* ── CUSTOM POINT LAYERS ─────────────────────────────────────────────── */
@@ -1825,6 +1829,22 @@ function wireEvents() {
     e.currentTarget.classList.toggle('on', districtsOn);
     renderDistricts(); saveState();
   });
+
+  // Custom zoom controls
+  const zc = $('zoom-ctl');
+  if (zc) {
+    L.DomEvent.disableClickPropagation(zc);
+    L.DomEvent.disableScrollPropagation(zc);
+    $('zoom-in').addEventListener('click',  () => map.zoomIn());
+    $('zoom-out').addEventListener('click', () => map.zoomOut());
+    $('zoom-fit').addEventListener('click', fitView);
+    const syncZoomBtns = () => {
+      $('zoom-in').classList.toggle('disabled',  map.getZoom() >= map.getMaxZoom());
+      $('zoom-out').classList.toggle('disabled', map.getZoom() <= map.getMinZoom());
+    };
+    map.on('zoomend', syncZoomBtns);
+    syncZoomBtns();
+  }
 
   // Export recs
   $('rec-export').addEventListener('click', exportRecs);

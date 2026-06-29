@@ -189,6 +189,35 @@ input, textarea { text-transform: uppercase; }
 .adv-group > .adv-body { padding: 2px 0 6px; animation: adv-in .22s var(--ease); }
 @keyframes adv-in { from { opacity:0; transform: translateY(-5px); } to { opacity:1; transform:none; } }
 
+/* ── ZOOM CONTROLS (custom, replaces default Leaflet) ────────────────── */
+#zoom-ctl {
+  position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+  z-index: 1100;
+  display: flex; flex-direction: column;
+  background: rgba(255,255,255,.95); backdrop-filter: blur(10px);
+  border: 1px solid var(--line2); border-radius: 14px;
+  box-shadow: var(--shadow-sm); overflow: hidden;
+}
+.zbtn {
+  width: 42px; height: 42px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; cursor: pointer; color: var(--mut);
+  transition: background .15s var(--ease), color .15s;
+}
+.zbtn svg { width: 19px; height: 19px; display: block; }
+.zbtn + .zbtn { border-top: 1px solid var(--line); }
+.zbtn:hover  { background: var(--acc-l);  color: var(--acc); }
+.zbtn:active { background: var(--acc-l2); }
+.zbtn.disabled { color: var(--dim); opacity: .45; pointer-events: none; }
+.zbtn-fit { color: var(--acc); }
+.zbtn-fit:active { transform: scale(.92); }
+
+@media (max-width: 780px) {
+  #zoom-ctl { right: 12px; }
+  .zbtn { width: 46px; height: 46px; }   /* bigger touch targets */
+  .zbtn svg { width: 21px; height: 21px; }
+}
+
 /* ── CITY BAR (floating on map) ──────────────────────────────────────── */
 #city-bar {
   position: absolute; top: 14px; left: 50%; transform: translateX(-50%);

@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
   <title>Heat Map · Сигареты + Стики · BR</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260629g"/>
+  <link rel="stylesheet" href="style.css?v=20260629h"/>
 </head>
 <body>
 
@@ -329,6 +329,19 @@
     <span id="sync-label"></span>
   </div>
   <div class="mode-badge" id="mode-badge" style="display:none"></div>
+
+  <!-- Custom zoom controls (default Leaflet control disabled) -->
+  <div id="zoom-ctl">
+    <button id="zoom-in" class="zbtn" title="Приблизить" aria-label="Приблизить">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="6" x2="12" y2="18"/><line x1="6" y1="12" x2="18" y2="12"/></svg>
+    </button>
+    <button id="zoom-out" class="zbtn" title="Отдалить" aria-label="Отдалить">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="6" y1="12" x2="18" y2="12"/></svg>
+    </button>
+    <button id="zoom-fit" class="zbtn zbtn-fit" title="Показать всё / выбранный город" aria-label="По размеру">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M20 9V5a1 1 0 0 0-1-1h-4"/><path d="M4 15v4a1 1 0 0 0 1 1h4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/></svg>
+    </button>
+  </div>
 </div>
 
 <!-- Heat layer modal -->
@@ -392,7 +405,7 @@
     started = true;
     window.DATA = d;
     var s = document.createElement('script');
-    s.src = 'app.js?v=20260629g'; // bump to bust cache when app.js changes
+    s.src = 'app.js?v=20260629h'; // bump to bust cache when app.js changes
     s.onload = function () { var b = document.getElementById('boot-overlay'); if (b) b.remove(); };
     document.body.appendChild(s);
   }
