@@ -856,8 +856,40 @@ function toCustomPtRecs(rows) {
 function rebuildUpTarget() {
   const sel = document.getElementById('up-target');
   const cur = sel.value;
-  sel.innerHTML = heatKeys.map(k => `<option value="${k}">${DS[k] ? DS[k].name : k}</option>`).join('');
-  if (heatKeys.includes(cur)) sel.value = cur;
+  const heatOpts = heatKeys.map(k => `<option value="${k}">${DS[k] ? DS[k].name : k}</option>`).join('');
+  sel.innerHTML = heatOpts + '<option value="__own__">Наши точки · IQOS (BR / SE)</option>';
+  if (cur && (heatKeys.includes(cur) || cur === '__own__')) sel.value = cur;
+}
+
+// Parse uploaded rows into the "own" point format. Channel from a ch/канал
+// column (BR/SE); rows default to SE when unspecified.
+function toOwnRecs(rows) {
+  const out = [];
+  for (const r of rows) {
+    const la = parseFloat(('' + pick(r, ['lat', 'широт'])).replace(',', '.'));
+    const lo = parseFloat(('' + pick(r, ['lon', 'lng', 'долгот'])).replace(',', '.'));
+    if (!isFinite(la) || !isFinite(lo)) continue;
+    const chRaw = ('' + (pick(r, ['ch', 'channel', 'канал', 'тип']) || '')).toUpperCase();
+    const ch = chRaw.indexOf('BR') >= 0 ? 'BR' : 'SE';
+    const city = '' + (pick(r, ['city', 'город']) || '');
+    out.push({
+      ch, name: '' + (pick(r, ['name', 'назв', 'точк', 'title']) || ''),
+      city, code: '' + (pick(r, ['code', 'код', 'id']) || ''),
+      addr: '' + (pick(r, ['addr', 'address', 'адрес']) || ''),
+      hours: '' + (pick(r, ['hours', 'часы', 'время']) || ''),
+      lat: la, lon: lo,
+    });
+  }
+  return out;
+}
+
+// Replace the global own-points dataset in place and refresh derived state.
+function setOwn(newArr) {
+  own.length = 0; newArr.forEach(o => own.push(o));
+  own.forEach(o => { o.cityRu = OWN_RU[o.city] || o.city; o.chk = o.ch === 'BR' ? 'BR' : 'SE'; });
+  ownC.length = 0; own.forEach(o => ownC.push([o.lat, o.lon]));
+  pointLayers[0].data = own.filter(o => o.chk === 'BR');
+  pointLayers[1].data = own.filter(o => o.chk === 'SE');
 }
 
 /* ── TOAST NOTIFICATIONS ─────────────────────────────────────────────── */
@@ -1610,12 +1642,17 @@ function wireEvents() {
 
   // Template download
   $('dl-tpl').addEventListener('click', () => {
-    const rows = [['name', 'lat', 'lon', 'value'], ['Пример ТТ', 41.311100, 69.279700, 12.5], ['Пример ТТ 2', 41.299000, 69.240000, 8]];
+    const own = $('up-target').value === '__own__';
+    const rows = own
+      ? [['ch', 'name', 'city', 'code', 'addr', 'hours', 'lat', 'lon'],
+         ['BR', 'Пример BR', 'Tashkent', '1137', 'г.Ташкент, ул. Пример 1', '10:00-22:00', 41.311100, 69.279700],
+         ['SE', 'Пример SE', 'Samarkand', '2201', 'г.Самарканд, ул. Пример 2', '09:00-21:00', 39.654000, 66.959700]]
+      : [['name', 'lat', 'lon', 'value'], ['Пример ТТ', 41.311100, 69.279700, 12.5], ['Пример ТТ 2', 41.299000, 69.240000, 8]];
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 10 }];
+    ws['!cols'] = (own ? [6, 20, 14, 8, 30, 14, 12, 12] : [22, 12, 12, 10]).map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Данные');
-    XLSX.writeFile(wb, 'shablon_dannye.xlsx');
+    XLSX.writeFile(wb, own ? 'shablon_nashi_tochki.xlsx' : 'shablon_dannye.xlsx');
   });
 
   // File upload (click + drag&drop)
@@ -1635,19 +1672,22 @@ function wireEvents() {
   });
   function handleDataFile(f) {
     const ext = f.name.split('.').pop().toLowerCase();
-    const done = recs => {
-      if (!recs.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
-      pendingUpload = recs;
+    const done = rows => {
+      // Keep raw rows; final parse happens at "Обновить карту" once the
+      // target layer is known (heat layers vs own IQOS points differ).
+      const probe = toRecs(rows);
+      if (!probe.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
+      pendingUpload = rows;
       const fn = $('fname'); fn.style.display = 'block';
-      fn.textContent = '✓ ' + f.name + ' — ' + recs.length + ' точек';
+      fn.textContent = '✓ ' + f.name + ' — ' + probe.length + ' точек';
       $('btn-update').disabled = false;
-      toast(`Загружено ${recs.length} точек — нажмите «Обновить карту»`, 'ok');
+      toast(`Загружено ${probe.length} точек — нажмите «Обновить карту»`, 'ok');
     };
     if (ext === 'csv') {
-      Papa.parse(f, { header: true, skipEmptyLines: true, complete: r => done(toRecs(r.data)) });
+      Papa.parse(f, { header: true, skipEmptyLines: true, complete: r => done(r.data) });
     } else {
       const rd = new FileReader();
-      rd.onload = e => { const wb = XLSX.read(e.target.result, { type: 'array' }); done(toRecs(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]))); };
+      rd.onload = e => { const wb = XLSX.read(e.target.result, { type: 'array' }); done(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]])); };
       rd.readAsArrayBuffer(f);
     }
   }
@@ -1656,12 +1696,28 @@ function wireEvents() {
     e.stopPropagation(); // prevent sidebar's saveState() from firing before recs are set
     if (!pendingUpload) return;
     const tk = $('up-target').value;
-    const d  = DS[tk]; if (!d) return;
-    d.recs = enrich(pendingUpload); d.stats = statsOf(d.recs); d.visible = true; d._userData = true;
-    pendingUpload = null;
-    $('btn-update').disabled = true;
-    $('fname').style.display = 'none';
-    fileInp.value = '';
+    const reset = () => {
+      pendingUpload = null;
+      $('btn-update').disabled = true;
+      $('fname').style.display = 'none';
+      fileInp.value = '';
+    };
+
+    if (tk === '__own__') {
+      const arr = toOwnRecs(pendingUpload);
+      if (!arr.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
+      setOwn(arr);
+      reset();
+      buildPtUI(); renderPoints(); renderRecs();
+      saveState();
+      const br = own.filter(o => o.chk === 'BR').length, se = own.length - br;
+      toast(`Наши точки обновлены: ${own.length} (BR ${br}, SE ${se}) — нажмите «Сохранить базу на сервере»`, 'ok', 4500);
+      return;
+    }
+
+    const d = DS[tk]; if (!d) return;
+    d.recs = enrich(toRecs(pendingUpload)); d.stats = statsOf(d.recs); d.visible = true; d._userData = true;
+    reset();
     buildHeatUI(); renderHeat(); renderRecs(); buildRtExclUI();
     saveState();
     toast(`Слой «${d.name}» обновлён (${d.stats.n} точек)`, 'ok');
