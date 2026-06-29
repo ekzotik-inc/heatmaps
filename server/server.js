@@ -132,7 +132,34 @@ app.use(express.json({ limit: '50mb' })); // state can include uploaded layer da
 
 // Health check
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, ts: new Date().toISOString(), storage: db ? 'postgresql' : 'file' });
+  res.json({ ok: true, ts: new Date().toISOString(), storage: db ? 'postgresql' : 'file', api: 2 });
+});
+
+// GET /data — base dataset (own points, cig/sticks/combined layers, districts, field).
+// Stored once under key 'dataset'; served to all clients at boot. Read = open.
+app.get('/data', async (req, res) => {
+  const data = await readState('dataset');
+  if (!data) return res.json({ empty: true });
+  res.json(data);
+});
+
+// POST /data — replace the base dataset (admin only, requires X-API-Key).
+app.post('/data', async (req, res) => {
+  if (!verifyKey(req)) {
+    return res.status(401).json({ error: 'Invalid or missing X-API-Key header' });
+  }
+  const body = req.body;
+  if (!body || body._app !== 'hm-data') {
+    return res.status(400).json({ error: 'Invalid dataset object (missing _app: hm-data marker)' });
+  }
+  body._savedAt = new Date().toISOString();
+  try {
+    await writeState('dataset', body);
+    res.json({ ok: true, savedAt: body._savedAt });
+  } catch (e) {
+    console.error('Dataset write error:', e.message);
+    res.status(500).json({ error: 'Failed to write dataset' });
+  }
 });
 
 // GET /state?map=comdep|other — returns that map's shared state (read = open)
