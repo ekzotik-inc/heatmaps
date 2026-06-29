@@ -1429,6 +1429,36 @@ function setSyncBadge(state, label) {
   lbl.textContent = label;
 }
 
+// Build the full base dataset from the current in-memory layers and POST it
+// to the server. This becomes the new base for every user on next load.
+async function pushDataset(btn) {
+  if (!SERVER_URL) { toast('Сервер не настроен', 'err'); return; }
+  const dataset = {
+    _app: 'hm-data', _v: 1,
+    own: DATA.own, cities: DATA.cities,
+    cig:      { recs: DS.cig.recs,      stats: DS.cig.stats },
+    sticks:   { recs: DS.sticks.recs,   stats: DS.sticks.stats },
+    combined: { recs: DS.combined.recs, stats: DS.combined.stats },
+    districts: DATA.districts, field: DATA.field,
+  };
+  const old = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Сохранение…'; }
+  try {
+    const res = await fetch(SERVER_URL + '/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': SERVER_KEY },
+      body: JSON.stringify(dataset),
+      signal: AbortSignal.timeout(60000),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    toast('База данных сохранена на сервере', 'ok');
+  } catch (e) {
+    toast('Не удалось сохранить базу: ' + (e.name === 'TimeoutError' ? 'таймаут' : e.message), 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = old; }
+  }
+}
+
 async function pushToServer(snapshot, isRetry = false) {
   if (!SERVER_URL) return;
   if (!isAdmin()) return; // only the admin writes the shared map
@@ -1635,6 +1665,13 @@ function wireEvents() {
     buildHeatUI(); renderHeat(); renderRecs(); buildRtExclUI();
     saveState();
     toast(`Слой «${d.name}» обновлён (${d.stats.n} точек)`, 'ok');
+  });
+
+  // Save current layers back to the server as the new base dataset (admin)
+  const saveDsBtn = $('btn-save-dataset');
+  if (saveDsBtn) saveDsBtn.addEventListener('click', () => {
+    if (!isAdmin()) { toast('Только администратор может менять базу', 'err'); return; }
+    pushDataset(saveDsBtn);
   });
 
   // Districts borders toggle (next to cities on the map)

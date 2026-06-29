@@ -961,6 +961,7 @@ body.viewer #add-custom-pt-btn,
 body.viewer .lyr-del,
 body.viewer .cpt-del,
 body.viewer #tab-data,
+body.viewer #btn-save-dataset,
 body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
 
 /* ── MODE BADGE ──────────────────────────────────────────────────────── */
