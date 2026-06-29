@@ -148,15 +148,6 @@ const cptRoot       = L.layerGroup().addTo(map); // parent for ALL custom-point 
 const incCol = { high: '#C0392B', mid: '#F39C12', low: '#1F9E5A' };
 let districtsOn = false, incomeHeatOn = false, coresOn = false;
 let fieldOverlay = null;
-let wealthOverlay = null;
-
-// Per-city wealth grid (Meta Relative Wealth Index) for regional cities that
-// have no curated district breakdown like Tashkent. Loaded lazily at boot.
-let RWI_CITIES = {};
-fetch('rwi_cities.json?v=20260629f')
-  .then(r => r.ok ? r.json() : {})
-  .then(d => { RWI_CITIES = d || {}; if (districtsOn) renderDistricts(); })
-  .catch(() => {});
 
 const TIER_NAME = { high: 'High income', mid: 'Middle income', low: 'Lower / emerging' };
 const CX = {
@@ -193,13 +184,7 @@ function coreIcon(z) {
 
 function renderDistricts() {
   districtGroup.clearLayers();
-  if (wealthOverlay) { map.removeLayer(wealthOverlay); wealthOverlay = null; }
-  setWealthLegend(false);
   if (!districtsOn) return;
-  // Regional cities (no curated districts) → smooth wealth heat from RWI.
-  const rwi = RWI_CITIES[city];
-  if (rwi && rwi.pts && rwi.pts.length) { renderWealthHeat(rwi); setWealthLegend(true); return; }
-  // Tashkent (and "Все") → curated district polygons coloured by income tier.
   const tn = { high: 'Высокий доход', mid: 'Средний доход', low: 'Ниже / растущий' };
   (DATA.districts || []).forEach(f => {
     const fill = incCol[f.tier];
@@ -212,52 +197,6 @@ function renderDistricts() {
   });
 }
 function llswap(mp) { return mp.map(poly => poly.map(ring => ring.map(c => [c[1], c[0]]))); }
-
-// Smooth per-city wealth map: inverse-distance interpolation of RWI points
-// onto a small raster, coloured low→high with the income ramp (green→red).
-function renderWealthHeat(rwi) {
-  const pts = rwi.pts; // [lat, lon, rwi]
-  let s = 90, n = -90, w = 180, e = -180, mn = 1e9, mx = -1e9;
-  for (const p of pts) {
-    if (p[0] < s) s = p[0]; if (p[0] > n) n = p[0];
-    if (p[1] < w) w = p[1]; if (p[1] > e) e = p[1];
-    if (p[2] < mn) mn = p[2]; if (p[2] > mx) mx = p[2];
-  }
-  const rng = Math.max(mx - mn, 0.1);
-  const NX = 96, NY = 96;
-  const sig = 0.025, twoSig2 = 2 * sig * sig;   // Gaussian smoothing kernel (~2.7 km)
-  const infl2 = 0.05 * 0.05;                    // mask cells with no nearby sample
-  const cv = document.createElement('canvas');
-  cv.width = NX; cv.height = NY;
-  const ctx = cv.getContext('2d'), img = ctx.createImageData(NX, NY);
-  for (let yi = 0; yi < NY; yi++) {
-    const lat = n - (n - s) * (yi + 0.5) / NY;          // row 0 = north edge
-    const kx = Math.cos(lat * Math.PI / 180);
-    for (let xi = 0; xi < NX; xi++) {
-      const lon = w + (e - w) * (xi + 0.5) / NX;
-      let num = 0, den = 0, near = Infinity;
-      for (const p of pts) {
-        const dy = p[0] - lat, dx = (p[1] - lon) * kx;
-        const d2 = dy * dy + dx * dx;
-        if (d2 < near) near = d2;
-        const wt = Math.exp(-d2 / twoSig2);
-        num += wt * p[2]; den += wt;
-      }
-      const o = (yi * NX + xi) * 4;
-      if (near > infl2 || den < 1e-6) { img.data[o + 3] = 0; continue; }  // outside coverage
-      const col = h2r(rampColor((num / den - mn) / rng));
-      img.data[o] = col.r; img.data[o + 1] = col.g; img.data[o + 2] = col.b; img.data[o + 3] = 200;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  wealthOverlay = L.imageOverlay(cv.toDataURL(), [[s, w], [n, e]],
-    { opacity: 0.6, interactive: false, pane: 'income' }).addTo(map);
-}
-
-function setWealthLegend(on) {
-  const el = document.getElementById('wealth-legend');
-  if (el) el.style.display = on ? '' : 'none';
-}
 
 function renderIncome() {
   if (fieldOverlay) { map.removeLayer(fieldOverlay); fieldOverlay = null; }
@@ -793,7 +732,7 @@ function buildCityUI() {
       el.querySelectorAll('button').forEach(x => x.classList.remove('on'));
       b.classList.add('on');
       city = val;
-      renderHeat(); renderPoints(); renderRecs(); renderDistricts();
+      renderHeat(); renderPoints(); renderRecs();
       const pts = DS.combined.recs.filter(s => !city || s.fil === city).map(s => [s.lat, s.lon]);
       const ownPts = own.filter(o => !city || o.cityRu === city).map(o => [o.lat, o.lon]);
       const allPts = pts.concat(ownPts);
