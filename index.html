@@ -384,23 +384,46 @@
 <script>
 (function bootData() {
   var URL = window._HM_SERVER_URL, msg = document.getElementById('boot-msg');
-  var wake = setTimeout(function () { if (msg) msg.textContent = 'Сервер пробуждается… (до 1 минуты)'; }, 5000);
+  var CACHE_KEY = 'hm_dataset_cache_v1';
+  var started = false;
+
+  function start(d) {
+    if (started) return;        // app boots exactly once (cache OR network)
+    started = true;
+    window.DATA = d;
+    var s = document.createElement('script');
+    s.src = 'app.js?v=20260629g'; // bump to bust cache when app.js changes
+    s.onload = function () { var b = document.getElementById('boot-overlay'); if (b) b.remove(); };
+    document.body.appendChild(s);
+  }
+
+  // 1) Instant boot from the locally cached dataset, if we have one. The fresh
+  //    copy is still fetched below and stored for next time (stale-while-revalidate).
+  try {
+    var cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+    if (cached && cached.own) { if (msg) msg.textContent = 'Загрузка карты…'; start(cached); }
+  } catch (e) {}
+
+  var wake = setTimeout(function () {
+    if (!started && msg) msg.textContent = 'Сервер пробуждается… (до 1 минуты)';
+  }, 5000);
   function fail(text) {
     clearTimeout(wake);
+    if (started) return;        // already running from cache — ignore network hiccup
     if (msg) {
       msg.innerHTML = text + '<br><button onclick="location.reload()" style="margin-top:14px;padding:9px 18px;border:none;border-radius:10px;background:#5b7cfa;color:#fff;font-size:13px;cursor:pointer">Повторить</button>';
     }
   }
+
+  // 2) Always revalidate against the server. First load: boots from this. Repeat
+  //    load: just refreshes the cache silently so the next open is up to date.
   fetch(URL + '/data', { signal: AbortSignal.timeout(60000) })
     .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function (d) {
       clearTimeout(wake);
-      if (!d || d.empty || !d.own) { fail('На сервере нет базовых данных.'); return; }
-      window.DATA = d;
-      var s = document.createElement('script');
-      s.src = 'app.js?v=20260629g'; // bump to bust cache when app.js changes
-      s.onload = function () { var b = document.getElementById('boot-overlay'); if (b) b.remove(); };
-      document.body.appendChild(s);
+      if (!d || d.empty || !d.own) { if (!started) fail('На сервере нет базовых данных.'); return; }
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(d)); } catch (e) { /* quota — skip cache */ }
+      start(d);                 // no-op if already booted from cache
     })
     .catch(function (e) {
       fail(e.name === 'TimeoutError' ? 'Сервер не отвечает. Попробуйте позже.' : 'Не удалось загрузить данные с сервера.');
