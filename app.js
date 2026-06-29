@@ -1116,8 +1116,8 @@ function importState(file) {
     if (st._app !== 'hm-br') { toast('Это не файл настроек Heat Map', 'err'); return; }
     // Apply — reuse loadState logic
     applySnapshot(st);
-    buildCityUI(); buildHeatUI(); buildPtUI(); rebuildUpTarget(); syncControls();
-    renderHeat(); renderPoints(); renderRecs(); renderDistricts(); renderIncome();
+    buildCityUI(); buildHeatUI(); buildPtUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
+    renderHeat(); renderPoints(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
     doSave(); // persist locally too
     toast('Настройки загружены', 'ok');
   };
@@ -1161,6 +1161,9 @@ function applySnapshot(st) {
   if (typeof st.rtExclOp     === 'string')  rtExclOp     = st.rtExclOp;
   if (Array.isArray(st.rtExclKeys))         rtExclKeys   = st.rtExclKeys.slice();
   if (Array.isArray(st.customPtLayers)) {
+    // Tear down existing Leaflet groups first — otherwise the old markers stay
+    // orphaned on the map and overlap the freshly-rendered new ones.
+    customPtLayers.forEach(l => { if (l._group) { l._group.clearLayers(); l._group.remove(); l._group = null; } });
     // Restore custom point layers without their Leaflet groups (re-created on render)
     customPtLayers = st.customPtLayers.map(l => ({ ...l, _group: null }));
   }
@@ -2017,8 +2020,8 @@ async function startApp() {
   if (chosen) {
     applySnapshot(chosen);
     try { localStorage.setItem(storeKey(), JSON.stringify(chosen)); } catch (e) {}
-    buildCityUI(); buildHeatUI(); buildPtUI(); rebuildUpTarget(); syncControls();
-    renderHeat(); renderPoints(); renderRecs(); renderDistricts(); renderIncome();
+    buildCityUI(); buildHeatUI(); buildPtUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
+    renderHeat(); renderPoints(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
     if (chosen === serverState) {
       const savedAt = serverState._savedAt
         ? new Date(serverState._savedAt).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
