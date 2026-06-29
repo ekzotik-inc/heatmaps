@@ -132,10 +132,13 @@ L.tileLayer('https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1', {
 map.createPane('districts'); map.getPane('districts').style.zIndex = 460;
 map.createPane('income');    map.getPane('income').style.zIndex = 445;
 map.getPane('income').style.pointerEvents = 'none';
+map.createPane('ptradius');  map.getPane('ptradius').style.zIndex = 448; // coverage circles under markers
 
 const distRenderer  = L.svg({ pane: 'districts' });
+const radiusRenderer = L.svg({ pane: 'ptradius' });
 const districtGroup = L.layerGroup().addTo(map);
 const coresGroup    = L.layerGroup().addTo(map);
+const radiusGroup   = L.layerGroup().addTo(map); // coverage radius around own points
 const pointsGroup   = L.layerGroup().addTo(map);
 const recLayer      = L.layerGroup().addTo(map);
 const addrLayer     = L.layerGroup().addTo(map); // address-program preview markers
@@ -237,8 +240,8 @@ const SHAPES = [
 ];
 
 const pointLayers = [
-  { id: 'br', name: 'IQOS — BR',          color: '#3FA9F5', shape: 'teardrop', visible: true, data: own.filter(o => o.chk === 'BR') },
-  { id: 'se', name: 'IQOS — IP with 2nd SE', color: '#13B074', shape: 'hex',      visible: true, data: own.filter(o => o.chk === 'SE') },
+  { id: 'br', name: 'IQOS — BR',          color: '#3FA9F5', shape: 'teardrop', visible: true, radiusOn: false, radiusM: 1500, radiusColor: '#3FA9F5', radiusOpacity: 0.15, data: own.filter(o => o.chk === 'BR') },
+  { id: 'se', name: 'IQOS — IP with 2nd SE', color: '#13B074', shape: 'hex',      visible: true, radiusOn: false, radiusM: 1500, radiusColor: '#13B074', radiusOpacity: 0.15, data: own.filter(o => o.chk === 'SE') },
 ];
 
 function starPath(h, s) {
@@ -307,7 +310,25 @@ function shp(shape, color, s) {
   return { html: `<svg class="pt-pin" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}">${defs}${body}</svg>`, anchor };
 }
 
+function renderRadii() {
+  radiusGroup.clearLayers();
+  pointLayers.forEach(L0 => {
+    if (!L0.visible || !L0.radiusOn) return;
+    const col = L0.radiusColor || L0.color;
+    const op  = L0.radiusOpacity == null ? 0.15 : L0.radiusOpacity;
+    L0.data.filter(o => !city || o.cityRu === city).forEach(o => {
+      L.circle([o.lat, o.lon], {
+        renderer: radiusRenderer, pane: 'ptradius',
+        radius: L0.radiusM, color: col, weight: 1.2,
+        opacity: Math.min(op + 0.35, 0.9), fillColor: col, fillOpacity: op,
+        interactive: false,
+      }).addTo(radiusGroup);
+    });
+  });
+}
+
 function renderPoints() {
+  renderRadii();
   pointsGroup.clearLayers();
   pointLayers.forEach(L0 => {
     if (!L0.visible) return;
@@ -539,6 +560,21 @@ function updateAccBadges() {
   if (recBadge && lastRecs.length) recBadge.textContent = lastRecs.length;
 }
 
+/* Solo / isolate a single heat layer to fix the "overlap mush" problem */
+let _soloKey = null, _preSolo = null;
+function toggleSolo(k) {
+  if (_soloKey === k) {
+    // restore previous visibility
+    if (_preSolo) heatKeys.forEach(kk => { if (DS[kk] && _preSolo[kk] != null) DS[kk].visible = _preSolo[kk]; });
+    _soloKey = null; _preSolo = null;
+  } else {
+    if (!_preSolo) { _preSolo = {}; heatKeys.forEach(kk => { if (DS[kk]) _preSolo[kk] = DS[kk].visible; }); }
+    heatKeys.forEach(kk => { if (DS[kk]) DS[kk].visible = (kk === k); });
+    _soloKey = k;
+  }
+  buildHeatUI(); renderHeat(); updateAccBadges();
+}
+
 /* ── UI BUILDERS ─────────────────────────────────────────────────────── */
 function buildHeatUI() {
   const el = document.getElementById('heat-list');
@@ -556,6 +592,7 @@ function buildHeatUI() {
         <div class="nm">${d.name}
           <small>${d.stats.n.toLocaleString('ru-RU')} точек · объём ${Math.round(d.stats.sum).toLocaleString('ru-RU')}</small>
         </div>
+        <div class="lyr-solo${_soloKey === k ? ' on' : ''}" title="Показать только этот слой">◉</div>
         ${custom ? `<div class="lyr-del" title="Удалить слой" style="cursor:pointer;color:var(--dim);font-size:18px;line-height:1;padding:0 4px;transition:.15s">&times;</div>` : ''}
       </div>
       <div class="lyr-ctl">
@@ -585,6 +622,7 @@ function buildHeatUI() {
     card.querySelector('.cbx').addEventListener('click', e => {
       d.visible = !d.visible; e.target.classList.toggle('on', d.visible); renderHeat(); updateAccBadges();
     });
+    card.querySelector('.lyr-solo').addEventListener('click', () => toggleSolo(k));
     rampSel.addEventListener('change', e => {
       d.ramp = e.target.value;
       colorInp.style.display = d.ramp === 'custom' ? '' : 'none';
@@ -626,18 +664,58 @@ function buildPtUI() {
     const card = document.createElement('div');
     card.className = 'lyr';
     const opts = SHAPES.map(s => `<option value="${s[0]}"${s[0] === L0.shape ? ' selected' : ''}>${s[1]}</option>`).join('');
+    const rPct = (L0.radiusM - 200) / (5000 - 200) * 100;
+    const oPct = (L0.radiusOpacity || .15) / .5 * 100;
     card.innerHTML = `
       <div class="lyr-top">
         <div class="cbx${L0.visible ? ' on' : ''}"></div>
         <div class="nm">${L0.name}</div>
       </div>
       <div class="lyr-ctl">
-        <div class="grp">Цвет <input type="color" value="${L0.color}"></div>
-        <div class="grp">Иконка <select>${opts}</select></div>
+        <div class="grp">Цвет <input type="color" class="pt-col" value="${L0.color}"></div>
+        <div class="grp">Иконка <select class="pt-shape">${opts}</select></div>
+      </div>
+      <div class="pt-radius-block">
+        <div class="lyr-top" style="margin-top:10px">
+          <div class="cbx green pt-rad-cbx${L0.radiusOn ? ' on' : ''}" style="width:34px;height:19px"></div>
+          <div class="nm" style="font-size:11.5px;color:var(--mut)">Радиус охвата</div>
+        </div>
+        <div class="pt-radius-ctl" style="${L0.radiusOn ? '' : 'display:none'}">
+          <div class="grp full">
+            <span>Радиус</span>
+            <input type="range" class="full pt-rad-r" min="200" max="5000" step="100" value="${L0.radiusM}" style="--pct:${rPct}%">
+            <span class="sl-val pt-rad-rv">${fmtD(L0.radiusM)}</span>
+          </div>
+          <div class="grp full" style="margin-top:7px">
+            <span>Заливка</span>
+            <input type="range" class="full green pt-rad-o" min="0.03" max="0.5" step="0.01" value="${L0.radiusOpacity || .15}" style="--pct:${oPct}%">
+            <span class="sl-val pt-rad-ov">${Math.round((L0.radiusOpacity || .15) * 100)}%</span>
+          </div>
+          <div class="grp" style="margin-top:7px">Цвет радиуса <input type="color" class="pt-rad-col" value="${L0.radiusColor || L0.color}"></div>
+        </div>
       </div>`;
-    card.querySelector('.cbx').addEventListener('click', e => { L0.visible = !L0.visible; e.target.classList.toggle('on', L0.visible); renderPoints(); });
-    card.querySelector('input[type=color]').addEventListener('input', e => { L0.color = e.target.value; renderPoints(); });
-    card.querySelector('select').addEventListener('change', e => { L0.shape = e.target.value; renderPoints(); });
+    card.querySelector('.cbx:not(.pt-rad-cbx)').addEventListener('click', e => { L0.visible = !L0.visible; e.target.classList.toggle('on', L0.visible); renderPoints(); saveState(); });
+    card.querySelector('.pt-col').addEventListener('input', e => { L0.color = e.target.value; renderPoints(); saveState(); });
+    card.querySelector('.pt-shape').addEventListener('change', e => { L0.shape = e.target.value; renderPoints(); saveState(); });
+    const radCtl = card.querySelector('.pt-radius-ctl');
+    card.querySelector('.pt-rad-cbx').addEventListener('click', e => {
+      L0.radiusOn = !L0.radiusOn; e.target.classList.toggle('on', L0.radiusOn);
+      radCtl.style.display = L0.radiusOn ? '' : 'none';
+      renderRadii(); saveState();
+    });
+    const rr = card.querySelector('.pt-rad-r'), rv = card.querySelector('.pt-rad-rv');
+    rr.addEventListener('input', e => {
+      L0.radiusM = +e.target.value; rv.textContent = fmtD(L0.radiusM);
+      e.target.style.setProperty('--pct', (L0.radiusM - 200) / (5000 - 200) * 100 + '%');
+      renderRadii(); saveState();
+    });
+    const ro = card.querySelector('.pt-rad-o'), ov = card.querySelector('.pt-rad-ov');
+    ro.addEventListener('input', e => {
+      L0.radiusOpacity = +e.target.value; ov.textContent = Math.round(L0.radiusOpacity * 100) + '%';
+      e.target.style.setProperty('--pct', L0.radiusOpacity / .5 * 100 + '%');
+      renderRadii(); saveState();
+    });
+    card.querySelector('.pt-rad-col').addEventListener('input', e => { L0.radiusColor = e.target.value; renderRadii(); saveState(); });
     el.appendChild(card);
   });
 }
@@ -894,7 +972,7 @@ function buildStateSnapshot() {
     layers[k] = o;
   });
   const pts = {};
-  pointLayers.forEach(p => pts[p.id] = { color: p.color, shape: p.shape, visible: p.visible });
+  pointLayers.forEach(p => pts[p.id] = { color: p.color, shape: p.shape, visible: p.visible, radiusOn: p.radiusOn, radiusM: p.radiusM, radiusColor: p.radiusColor, radiusOpacity: p.radiusOpacity });
   return {
     _v: 1, _app: 'hm-br', _savedAt: new Date().toISOString(), _date: new Date().toISOString().slice(0, 10),
     heatKeys, layers, pts, incCol: { ...incCol },
@@ -1616,8 +1694,17 @@ function wireEvents() {
   };
   $('burger').addEventListener('click', () => setSide(!sideEl.classList.contains('open')));
   backdrop.addEventListener('click', () => setSide(false));
-  // Close drawer on Escape key
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && isMobile()) setSide(false); });
+  // Keyboard shortcuts: Esc closes drawer; 1-4 switch tabs (when not typing)
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && isMobile()) { setSide(false); return; }
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'select' || tag === 'textarea' || e.metaKey || e.ctrlKey || e.altKey) return;
+    const tabs = ['tab-map', 'tab-points', 'tab-analysis', 'tab-data'];
+    if (e.key >= '1' && e.key <= '4') {
+      const t = document.querySelector(`.side-tab[data-tab="${tabs[+e.key - 1]}"]`);
+      if (t && t.offsetParent !== null) t.click(); // skip if hidden (e.g. data tab for viewers)
+    }
+  });
 
   // Desktop collapse — slide sidebar away, map reflows to full width
   const appEl = $('app');

@@ -327,6 +327,23 @@ input[type=range].green::-webkit-slider-thumb:hover { box-shadow: 0 2px 8px rgba
 .lyr-ctl input[type=range] { width: 92px; }
 input[type=range].full { width: 100%; }
 
+/* ── SOLO (isolate) layer button ─────────────────────────────────────── */
+.lyr-solo {
+  cursor: pointer; color: var(--dim); font-size: 15px; line-height: 1;
+  padding: 0 5px; flex: 0 0 auto; transition: color .15s, transform .15s;
+  user-select: none;
+}
+.lyr-solo:hover { color: var(--acc); transform: scale(1.15); }
+.lyr-solo.on { color: var(--acc); text-shadow: 0 0 8px var(--acc-l2); }
+
+/* ── POINT COVERAGE RADIUS CONTROLS ──────────────────────────────────── */
+.pt-radius-block { border-top: 1px dashed var(--line2); margin-top: 8px; padding-top: 2px; }
+.pt-radius-ctl { margin-top: 8px; }
+.pt-radius-ctl .grp.full { display: flex; align-items: center; gap: 8px; }
+.pt-radius-ctl .grp.full > span:first-child { font-size: 11px; color: var(--mut); min-width: 52px; flex: 0 0 auto; }
+.pt-radius-ctl .grp.full input[type=range] { flex: 1; }
+.pt-radius-ctl .grp { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--mut); }
+
 /* ── REC BASIS BUTTONS (pill group) ──────────────────────────────────── */
 .rec-basis {
   display: grid; grid-template-columns: 1fr 1fr 1fr;
