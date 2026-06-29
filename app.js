@@ -239,10 +239,10 @@ const SHAPES = [
   ['diamond', 'Ромб'], ['triangle', 'Треугольник'], ['star', 'Звезда'], ['ring', 'Кольцо'],
 ];
 
-const pointLayers = [
-  { id: 'br', name: 'IQOS — BR',          color: '#3FA9F5', shape: 'teardrop', visible: true, radiusOn: false, radiusM: 1500, radiusColor: '#3FA9F5', radiusOpacity: 0.15, data: own.filter(o => o.chk === 'BR') },
-  { id: 'se', name: 'IQOS — IP with 2nd SE', color: '#13B074', shape: 'hex',      visible: true, radiusOn: false, radiusM: 1500, radiusColor: '#13B074', radiusOpacity: 0.15, data: own.filter(o => o.chk === 'SE') },
-];
+// Built-in IQOS BR/SE display layers removed — users create their own custom
+// point layers (Points tab). `own` data is still used for recommendation
+// distance calc and the address-program "наши точки" reference.
+const pointLayers = [];
 
 function starPath(h, s) {
   let p = '';
@@ -888,8 +888,8 @@ function setOwn(newArr) {
   own.length = 0; newArr.forEach(o => own.push(o));
   own.forEach(o => { o.cityRu = OWN_RU[o.city] || o.city; o.chk = o.ch === 'BR' ? 'BR' : 'SE'; });
   ownC.length = 0; own.forEach(o => ownC.push([o.lat, o.lon]));
-  pointLayers[0].data = own.filter(o => o.chk === 'BR');
-  pointLayers[1].data = own.filter(o => o.chk === 'SE');
+  const br = pointLayers.find(p => p.id === 'br'); if (br) br.data = own.filter(o => o.chk === 'BR');
+  const se = pointLayers.find(p => p.id === 'se'); if (se) se.data = own.filter(o => o.chk === 'SE');
 }
 
 /* ── TOAST NOTIFICATIONS ─────────────────────────────────────────────── */
