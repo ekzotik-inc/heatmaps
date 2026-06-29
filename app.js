@@ -1929,7 +1929,11 @@ async function startApp() {
       setTimeout(showMapStep, 320);
     } else {
       errEl.classList.add('show');
-      ['auth-user', 'auth-pass'].forEach(id => document.getElementById(id).classList.add('err'));
+      ['auth-user', 'auth-pass'].forEach(id => {
+        const inp = document.getElementById(id);
+        inp.classList.remove('err'); void inp.offsetWidth; // force reflow so shake re-fires on repeat attempts
+        inp.classList.add('err');
+      });
       document.getElementById('auth-pass').value = '';
       document.getElementById('auth-pass').focus();
       setTimeout(() => {

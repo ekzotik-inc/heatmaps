@@ -1,7 +1,43 @@
 # Heatmap App — Feature Tracking Spreadsheet
 
 > **Legend** — Status: ✅ OK · ❌ Bug · ⚠️ UX issue · 🔲 Not tested  
-> Last updated: 2026-06-22
+> Last updated: 2026-06-29
+
+---
+
+## QA CYCLE LOG
+
+**Phase 1 — Stories authored:** 90+ user stories across 9 categories (below).
+
+**Phase 2 — Tested + documented (5 issues found):**
+| ID | Type | Issue |
+|---|---|---|
+| A2 | ❌ Bug | Wrong-creds error had no shake animation |
+| A11 | ⚠️ UX | Address-program export visible to viewers (decided: intentional, like rec export) |
+| D1 | ⚠️ UX | Upload toast didn't tell user to press «Обновить карту» |
+| D4 | ❌ Bug | Custom heat-layer delete didn't call saveState() |
+| M3 | ⚠️ UX | "Все" didn't refit when combined data empty |
+
+**Phase 3 — Fixed:**
+- A2: added `@keyframes shake` + `animation: shake` on `.auth-field input.err`; reflow-retrigger so it re-fires on consecutive attempts
+- D1: toast now reads "Загружено N точек — нажмите «Обновить карту»"
+- D4: `saveState()` appended to delete handler
+- M3: bounds now include own-points + `CC[city]` fallback
+- A11: documented as intentional exception
+
+**Phase 4 — Retested post-fix:** all 5 ✅ FIXED (verified by line). New features (coverage radius, solo isolate, keyboard shortcuts) ✅ correctly wired, no defects.
+
+---
+
+## NEW FEATURES (post-QA)
+
+| # | User Story | Expected Behaviour | Role | Status | Notes |
+|---|---|---|---|---|---|
+| N1 | Toggle "Радиус охвата" on own-point layer | Semi-transparent circle (default 1.5 km) drawn around each marker in `ptradius` pane | All | ✅ | |
+| N2 | Adjust radius / fill opacity / radius color | Circles re-render live; persisted to server+localStorage | All | ✅ | |
+| N3 | Click solo (◉) on heat layer | Isolates that layer; re-click restores prior visibility | All | ✅ | Fixes 2-3 layer overlap mush |
+| N4 | Press keys 1-4 | Switches sidebar tabs; ignored while typing; skips hidden tabs | All | ✅ | |
+| N5 | Mobile adaptation | Drawer width capped, larger touch targets, repositioned badges, safe-area, landscape | All | ✅ | |
 
 ---
 
