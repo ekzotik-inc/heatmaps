@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
   <title>Heat Map · Сигареты + Стики · BR</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260629e"/>
+  <link rel="stylesheet" href="style.css?v=20260629f"/>
 </head>
 <body>
 
@@ -320,10 +320,16 @@
   <div id="city-bar">
     <div class="cities" id="seg-city"></div>
     <div class="city-bar-sep"></div>
-    <button id="districts-toggle" class="city-extra-btn" title="Границы 12 районов Ташкента">🗺 Районы</button>
+    <button id="districts-toggle" class="city-extra-btn" title="Достаток районов: Ташкент — 12 районов, остальные города — карта достатка по RWI">🗺 Районы</button>
   </div>
   <div class="badge">Точек на карте: <b id="b-count">—</b></div>
   <div id="layer-legend" style="display:none"></div>
+  <div id="wealth-legend" style="display:none">
+    <div class="wl-title">Достаток района</div>
+    <div class="wl-bar"></div>
+    <div class="wl-scale"><span>Беднее</span><span>Богаче</span></div>
+    <div class="wl-src">Источник: Meta RWI</div>
+  </div>
   <div class="sync-badge" id="sync-badge" style="display:none">
     <span class="sync-dot" id="sync-dot"></span>
     <span id="sync-label"></span>
@@ -398,7 +404,7 @@
       if (!d || d.empty || !d.own) { fail('На сервере нет базовых данных.'); return; }
       window.DATA = d;
       var s = document.createElement('script');
-      s.src = 'app.js?v=20260629e'; // bump to bust cache when app.js changes
+      s.src = 'app.js?v=20260629f'; // bump to bust cache when app.js changes
       s.onload = function () { var b = document.getElementById('boot-overlay'); if (b) b.remove(); };
       document.body.appendChild(s);
     })
