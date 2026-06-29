@@ -754,14 +754,31 @@ function renderCustomPoints() {
     if (!l._group) { l._group = L.layerGroup().addTo(map); }
     l._group.clearLayers();
     if (!l.visible || !l.recs.length) return;
-    l.recs.forEach(r => {
-      const m = L.circleMarker([r.lat, r.lon], {
-        radius: 7, fillColor: l.color, color: '#fff', weight: 1.8, fillOpacity: 0.9,
+    const shape = l.shape || 'teardrop';
+    const ic = shp(shape, l.color, 30);
+    // coverage radius circles (under markers)
+    if (l.radiusOn) {
+      const rc = l.radiusColor || l.color, rop = l.radiusOpacity == null ? 0.15 : l.radiusOpacity;
+      l.recs.forEach(r => {
+        L.circle([r.lat, r.lon], {
+          renderer: radiusRenderer, pane: 'ptradius',
+          radius: l.radiusM || 1500, color: rc, weight: 1.2,
+          opacity: Math.min(rop + 0.35, 0.9), fillColor: rc, fillOpacity: rop,
+          interactive: false,
+        }).addTo(l._group);
       });
-      const parts = [r.name ? `<b>${r.name}</b>` : ''];
-      if (r.addr) parts.push(r.addr);
-      if (r.code) parts.push(`<code style="font-size:10px;color:#7a9ab8">${r.code}</code>`);
-      m.bindPopup(parts.filter(Boolean).join('<br>'));
+    }
+    l.recs.forEach(r => {
+      const m = L.marker([r.lat, r.lon], {
+        icon: L.divIcon({ className: '', html: ic.html, iconSize: [30, 30], iconAnchor: ic.anchor }),
+        zIndexOffset: 1500,
+      });
+      const parts = [r.name ? `<div class="pp-title">${r.name}</div>` : ''];
+      if (r.addr)  parts.push(`<div class="pp-row"><span>Адрес</span><b style="font-family:IQOS;font-weight:500;text-align:right">${r.addr}</b></div>`);
+      if (r.hours) parts.push(`<div class="pp-row"><span>Часы</span><b>${r.hours}</b></div>`);
+      if (r.code)  parts.push(`<div class="pp-row"><span>Код</span><b>${r.code}</b></div>`);
+      m.bindPopup(parts.filter(Boolean).join(''));
+      if (r.name) m.bindTooltip(`<b style="font-weight:700">${r.name}</b><br>${l.name}`, { className: 'tt', direction: 'top', offset: [0, -ic.anchor[1] + 4] });
       m.addTo(l._group);
     });
   });
@@ -776,11 +793,16 @@ function buildCustomPtUI() {
   if (badge) badge.textContent = customPtLayers.length ? `${vis}/${customPtLayers.length}` : '';
 
   if (!customPtLayers.length) {
-    box.innerHTML = '<div class="cpt-empty">Добавьте слой и загрузите CSV/XLSX с колонками name, lat, lon</div>';
+    box.innerHTML = '<div class="cpt-empty">Добавьте слой и загрузите CSV/XLSX с колонками name, lat, lon (опц.: addr, hours, code)</div>';
     return;
   }
 
-  box.innerHTML = customPtLayers.map(l => `
+  box.innerHTML = customPtLayers.map(l => {
+    const shape = l.shape || 'teardrop';
+    const opts = SHAPES.map(s => `<option value="${s[0]}"${s[0] === shape ? ' selected' : ''}>${s[1]}</option>`).join('');
+    const rPct = ((l.radiusM || 1500) - 200) / (5000 - 200) * 100;
+    const oPct = (l.radiusOpacity == null ? .15 : l.radiusOpacity) / .5 * 100;
+    return `
     <div class="cpt-layer" data-cpid="${l.id}">
       <div class="cpt-top">
         <div class="cbx${l.visible ? ' on' : ''}" style="border-color:${l.color};${l.visible ? 'background:' + l.color : ''}" data-cpvis="${l.id}"></div>
@@ -788,11 +810,70 @@ function buildCustomPtUI() {
         <span class="cpt-count">${l.recs.length}</span>
         <button class="cpt-del" data-cpdel="${l.id}" title="Удалить слой">✕</button>
       </div>
-      <div class="cpt-row">
-        <input type="color" class="cpt-color" value="${l.color}" data-cpcol="${l.id}" title="Цвет маркеров"/>
+      <div class="lyr-ctl">
+        <div class="grp">Цвет <input type="color" class="cpt-color" value="${l.color}" data-cpcol="${l.id}" title="Цвет маркеров"/></div>
+        <div class="grp">Иконка <select class="cpt-shape" data-cpshape="${l.id}">${opts}</select></div>
+      </div>
+      <div class="cpt-row" style="margin-top:8px">
         <button class="cpt-upload" data-cpup="${l.id}">⬆ Загрузить данные</button>
       </div>
-    </div>`).join('');
+      <div class="pt-radius-block">
+        <div class="lyr-top" style="margin-top:10px">
+          <div class="cbx green cpt-rad-cbx${l.radiusOn ? ' on' : ''}" style="width:34px;height:19px" data-cprad="${l.id}"></div>
+          <div class="nm" style="font-size:11.5px;color:var(--mut)">Радиус охвата</div>
+        </div>
+        <div class="pt-radius-ctl" data-cpradctl="${l.id}" style="${l.radiusOn ? '' : 'display:none'}">
+          <div class="grp full"><span>Радиус</span>
+            <input type="range" class="full cpt-rad-r" data-cpradr="${l.id}" min="200" max="5000" step="100" value="${l.radiusM || 1500}" style="--pct:${rPct}%">
+            <span class="sl-val cpt-rad-rv">${fmtD(l.radiusM || 1500)}</span></div>
+          <div class="grp full" style="margin-top:7px"><span>Заливка</span>
+            <input type="range" class="full green cpt-rad-o" data-cprado="${l.id}" min="0.03" max="0.5" step="0.01" value="${l.radiusOpacity == null ? .15 : l.radiusOpacity}" style="--pct:${oPct}%">
+            <span class="sl-val cpt-rad-ov">${Math.round((l.radiusOpacity == null ? .15 : l.radiusOpacity) * 100)}%</span></div>
+          <div class="grp" style="margin-top:7px">Цвет радиуса <input type="color" class="cpt-rad-col" data-cpradcol="${l.id}" value="${l.radiusColor || l.color}"></div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Shape selector
+  box.querySelectorAll('[data-cpshape]').forEach(el => {
+    el.addEventListener('change', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cpshape); if (!l) return;
+      l.shape = el.value; renderCustomPoints(); saveState();
+    });
+  });
+
+  // Radius toggle + sliders + color
+  box.querySelectorAll('[data-cprad]').forEach(el => {
+    el.addEventListener('click', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cprad); if (!l) return;
+      l.radiusOn = !l.radiusOn; el.classList.toggle('on', l.radiusOn);
+      const ctl = box.querySelector(`[data-cpradctl="${l.id}"]`); if (ctl) ctl.style.display = l.radiusOn ? '' : 'none';
+      renderCustomPoints(); saveState();
+    });
+  });
+  box.querySelectorAll('[data-cpradr]').forEach(el => {
+    el.addEventListener('input', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cpradr); if (!l) return;
+      l.radiusM = +el.value; el.style.setProperty('--pct', (l.radiusM - 200) / (5000 - 200) * 100 + '%');
+      const v = el.parentElement.querySelector('.cpt-rad-rv'); if (v) v.textContent = fmtD(l.radiusM);
+      renderCustomPoints(); saveState();
+    });
+  });
+  box.querySelectorAll('[data-cprado]').forEach(el => {
+    el.addEventListener('input', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cprado); if (!l) return;
+      l.radiusOpacity = +el.value; el.style.setProperty('--pct', l.radiusOpacity / .5 * 100 + '%');
+      const v = el.parentElement.querySelector('.cpt-rad-ov'); if (v) v.textContent = Math.round(l.radiusOpacity * 100) + '%';
+      renderCustomPoints(); saveState();
+    });
+  });
+  box.querySelectorAll('[data-cpradcol]').forEach(el => {
+    el.addEventListener('input', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cpradcol); if (!l) return;
+      l.radiusColor = el.value; renderCustomPoints(); saveState();
+    });
+  });
 
   // Toggle visibility
   box.querySelectorAll('[data-cpvis]').forEach(el => {
@@ -847,6 +928,7 @@ function toCustomPtRecs(rows) {
       name: '' + (pick(r, ['name', 'назв', 'точк', 'title']) || ''),
       addr: '' + (pick(r, ['addr', 'address', 'адрес']) || ''),
       code: '' + (pick(r, ['code', 'код', 'id']) || ''),
+      hours: '' + (pick(r, ['hours', 'часы', 'время', 'график']) || ''),
       lat: la, lon: lo,
     });
   }
@@ -1010,7 +1092,7 @@ function buildStateSnapshot() {
     heatKeys, layers, pts, incCol: { ...incCol },
     city, covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
     addrSrcKey, addrRefKey, rtRadius, rtRadiusOp, rtVolOp, rtVolMode, rtVolCustom, rtExclRadius, rtExclOp, rtExclKeys,
-    customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, recs: l.recs })),
+    customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, shape: l.shape, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, recs: l.recs })),
   };
 }
 
@@ -1840,7 +1922,7 @@ function wireEvents() {
     const color = $('cpt-modal-color').value;
     $('cpt-modal-overlay').classList.remove('open');
     const id = 'cpt_' + Date.now();
-    customPtLayers.push({ id, name, color, visible: true, recs: [], _group: null });
+    customPtLayers.push({ id, name, color, visible: true, shape: 'teardrop', radiusOn: false, radiusM: 1500, radiusColor: color, radiusOpacity: 0.15, recs: [], _group: null });
     buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); saveState();
     toast(`Слой «${name}» создан — загрузите данные`, 'ok');
   });
