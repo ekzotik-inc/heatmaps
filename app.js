@@ -1811,7 +1811,13 @@ function wireEvents() {
     const d = DS[tk]; if (!d) return;
     d.recs = enrich(toRecs(pendingUpload)); d.stats = statsOf(d.recs); d.visible = true; d._userData = true;
     reset();
+    // The selected-city filter would otherwise silently hide points that fall
+    // in other cities — reset to "Все" so the freshly uploaded layer is visible.
+    if (city && !d.recs.some(r => r.fil === city)) { city = ''; buildCityUI(); }
     buildHeatUI(); renderHeat(); renderRecs(); buildRtExclUI();
+    // Frame the map on the new data so it's obvious it loaded.
+    const bpts = d.recs.filter(r => !city || r.fil === city).map(r => [r.lat, r.lon]);
+    if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6 });
     saveState();
     toast(`Слой «${d.name}» обновлён (${d.stats.n} точек)`, 'ok');
   });
