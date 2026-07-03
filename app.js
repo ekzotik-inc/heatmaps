@@ -68,15 +68,30 @@ const OWN_RU = { Tashkent: 'Ташкент', Samarkand: 'Самарканд', An
 own.forEach(o => { o.cityRu = OWN_RU[o.city] || o.city; o.chk = o.ch === 'BR' ? 'BR' : 'SE'; });
 const ownC = own.map(o => [o.lat, o.lon]);
 
-// City centroid cache for fast nearest-city lookup
+// Known city centres — fallback so nearest-city lookup covers every city in the
+// top bar even if the base dataset has no shipment data for that city.
+const CITY_CENTERS = {
+  'Ташкент':   [41.311, 69.280],
+  'Андижан':   [40.783, 72.344],
+  'Бухара':    [39.768, 64.421],
+  'Самарканд': [39.654, 66.975],
+  'Коканд':    [40.529, 70.943],
+  'Фергана':   [40.389, 71.783],
+  'Навои':     [40.104, 65.373],
+};
+// City centroid cache for fast nearest-city lookup. Prefer a data-derived
+// centroid; fall back to the known centre so every city resolves correctly.
 const CC = {};
 CITIES.forEach(c => {
   const a = DATA.cig.recs.filter(s => s.fil === c);
   if (a.length) CC[c] = [a.reduce((x, s) => x + s.lat, 0) / a.length, a.reduce((x, s) => x + s.lon, 0) / a.length];
+  else if (CITY_CENTERS[c]) CC[c] = CITY_CENTERS[c];
 });
-// Навои — approximate city centre coordinates
-if (!CC['Навои']) CC['Навои'] = [40.0833, 65.3833];
-if (!CITIES.includes('Навои')) CITIES.push('Навои');
+// Ensure all known cities exist in CC + CITIES even if absent from the dataset.
+Object.keys(CITY_CENTERS).forEach(c => {
+  if (!CC[c]) CC[c] = CITY_CENTERS[c];
+  if (!CITIES.includes(c)) CITIES.push(c);
+});
 function cityOf(lat, lon) {
   let best = CITIES[0], bd = 1e9;
   for (const c in CC) {
@@ -381,7 +396,15 @@ function renderHeat() {
     const p90    = sorted.length ? (sorted[p90idx] || 0.01) : (d.stats.p90 || 0.01);
     const scale  = Math.max(p90, 0.01);
     const boost = Math.max(d.intensity || 1, 0.1);
-    const pts   = recs.map(r => [r.lat, r.lon, Math.min(r.vol / scale * boost, 1)]);
+    // Auto per-layer normalisation: each layer is scaled to its own p90 so the
+    // absolute magnitude of `value` doesn't matter — a layer of tiny values
+    // looks as strong as one of huge values. A gamma lift + floor keep the
+    // faintest points visible instead of washing out to nothing.
+    const pts = recs.map(r => {
+      const t = Math.min(r.vol / scale, 1);          // relative within layer (p90 → 1)
+      const g = Math.pow(t, 0.55);                    // lift low values
+      return [r.lat, r.lon, Math.min(Math.max(g, 0.18) * boost, 1)];
+    });
     total += recs.length;
     d._leaf = L.heatLayer(pts, {
       radius: heatRadius, blur: Math.round(heatRadius * .8), minOpacity: .22,
@@ -1223,6 +1246,9 @@ function applySnapshot(st) {
       if (typeof sv.opacity === 'number') DS[k].opacity = sv.opacity;
       if (sv.recs) { DS[k].recs = sv.recs; DS[k].stats = sv.stats || statsOf(sv.recs); DS[k]._userData = true; }
       else if (!DS[k].recs) { DS[k].recs = []; DS[k].stats = { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 }; }
+      // Re-tag each point's city from its coordinates so layers uploaded before
+      // all city centres were known get corrected (fixes "works only for Tashkent").
+      DS[k].recs.forEach(r => { r.fil = cityOf(r.lat, r.lon); });
     }
   }
   if (st.pts)              pointLayers.forEach(p => { const sv = st.pts[p.id]; if (sv) Object.assign(p, sv); });
