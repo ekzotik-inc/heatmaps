@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
   <title>Heat Map · Сигареты + Стики · BR</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260629l"/>
+  <link rel="stylesheet" href="style.css?v=20260629m"/>
 </head>
 <body>
 
@@ -272,6 +272,17 @@
         </details>
 
         <details class="adv-group">
+          <summary>Доступ к записи (только владелец)<span class="chev">›</span></summary>
+          <div class="adv-body">
+            <div class="up-row" style="display:block">Ключ администратора для записи на сервер</div>
+            <input type="password" id="admin-key-input" placeholder="Введите серверный ключ…" autocomplete="off"
+              style="width:100%;background:var(--card2);border:1px solid var(--line2);color:var(--ink);padding:9px 12px;border-radius:10px;font-size:13px;font-family:IQOS;outline:none"/>
+            <button class="btn" id="admin-key-save" style="margin-top:9px">Сохранить ключ</button>
+            <div class="foot">Ключ хранится только в этом браузере (localStorage) и не входит в код сайта. Без него правки видны лишь вам локально и не сохраняются в общую карту. Должен совпадать с <b>API_KEY</b> сервера.</div>
+          </div>
+        </details>
+
+        <details class="adv-group">
           <summary>База данных на сервере<span class="chev">›</span></summary>
           <div class="adv-body">
             <button class="btn btn-retraffic" id="btn-save-dataset" style="width:100%">⬆ Сохранить базу на сервере</button>
@@ -387,7 +398,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
   window._HM_SERVER_URL = 'https://hm-server-xpg0.onrender.com';
-  window._HM_SERVER_KEY = 'hm_br_tashkent_2026_secret';
+  // Write key is NOT shipped in the bundle. The owner enters it once in
+  // «Данные → Доступ к записи»; it lives only in their browser's localStorage.
 </script>
 
 <!-- Boot overlay shown while the base dataset loads from the server -->
@@ -410,7 +422,7 @@
     started = true;
     window.DATA = d;
     var s = document.createElement('script');
-    s.src = 'app.js?v=20260629l'; // bump to bust cache when app.js changes
+    s.src = 'app.js?v=20260629m'; // bump to bust cache when app.js changes
     s.onload = function () { var b = document.getElementById('boot-overlay'); if (b) b.remove(); };
     document.body.appendChild(s);
   }

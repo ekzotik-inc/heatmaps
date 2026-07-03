@@ -4,3 +4,13 @@ server/heatmaps.db
 server/heatmaps.db-shm
 server/heatmaps.db-wal
 data.js
+
+# Uploaded / runtime map data must never be committed — it lives on the server
+# and in the browser, not in the repo.
+server/state.json
+server/state.*.json
+server/.env
+*.dataset.json
+dataset.json
+uploads/
+*.tmp

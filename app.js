@@ -1627,7 +1627,11 @@ const storeKey = () => 'hm_state_' + (currentMap || 'main');
 // Set SERVER_KEY to the API_KEY you configured in server/.env
 // Leave SERVER_URL empty to skip server sync and use localStorage only.
 const SERVER_URL = window._HM_SERVER_URL || '';
-const SERVER_KEY = window._HM_SERVER_KEY || '';
+// Write key is never bundled — the owner enters it once and it lives only in
+// this browser's localStorage. Without it, this client can only read + edit
+// locally; it cannot write shared data to the server.
+let SERVER_KEY = '';
+try { SERVER_KEY = localStorage.getItem('hm_admin_key') || ''; } catch (e) {}
 
 let stateReady = false, _saveTimer = null;
 
@@ -1645,6 +1649,8 @@ function setSyncBadge(state, label) {
 // to the server. This becomes the new base for every user on next load.
 async function pushDataset(btn) {
   if (!SERVER_URL) { toast('Сервер не настроен', 'err'); return; }
+  if (!isAdmin()) { toast('Недостаточно прав', 'err'); return; }
+  if (!SERVER_KEY) { toast('Введите ключ администратора в «Данные → Доступ к записи»', 'err', 4500); return; }
   const dataset = {
     _app: 'hm-data', _v: 1,
     own: DATA.own, cities: DATA.cities,
@@ -1673,7 +1679,7 @@ async function pushDataset(btn) {
 
 async function pushToServer(snapshot, isRetry = false) {
   if (!SERVER_URL) return;
-  if (!isAdmin()) return; // only the admin writes the shared map
+  if (!isAdmin() || !SERVER_KEY) return; // only the owner (admin + key) writes the shared map
   setSyncBadge('syncing', isRetry ? 'Повтор…' : 'Сохранение…');
   try {
     const res = await fetch(SERVER_URL + '/state?map=' + encodeURIComponent(currentMap), {
@@ -1927,6 +1933,17 @@ function wireEvents() {
     saveState();
     toast(`Слой «${d.name}» обновлён (${d.stats.n} точек)`, 'ok');
   });
+
+  // Admin write key — stored only in this browser, never in the bundle
+  const keyInp = $('admin-key-input');
+  if (keyInp) {
+    keyInp.value = SERVER_KEY;
+    $('admin-key-save').addEventListener('click', () => {
+      SERVER_KEY = keyInp.value.trim();
+      try { SERVER_KEY ? localStorage.setItem('hm_admin_key', SERVER_KEY) : localStorage.removeItem('hm_admin_key'); } catch (e) {}
+      toast(SERVER_KEY ? 'Ключ сохранён — запись на сервер включена' : 'Ключ удалён — запись отключена', SERVER_KEY ? 'ok' : 'info');
+    });
+  }
 
   // Save current layers back to the server as the new base dataset (admin)
   const saveDsBtn = $('btn-save-dataset');
