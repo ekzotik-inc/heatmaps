@@ -35,7 +35,11 @@
 
 - **Разработка и пуш — прямо в `main`** (так распорядился владелец). Ветки-фичи
   не используем.
-- Render авто-деплоит статику из `main`. Сервер — отдельный сервис на Render.
+- **Фронт (статика) хостится на GitHub Pages** из `main` (авто-workflow
+  `pages-build-deployment`, режим «Deploy from a branch»; в репо его нет).
+  **Сервер данных** (`/data`, `/state`) — отдельный сервис на **Render**.
+  Ошибка `deploy-pages: Deployment failed, try again later` обычно транзиентная —
+  помогает «Re-run failed jobs» или пустой коммит.
 - **Кэш-бастинг:** `index.html` ссылается на `style.css?v=YYYYMMDD<буква>` и
   грузит `app.js?v=...` тем же тегом. **При любом изменении app.js/style.css/boot
   нужно поднять букву версии** (сейчас `20260629l` → следующий `...m`). `index.html`

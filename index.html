@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
   <title>Heat Map · Сигареты + Стики · BR</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260629m"/>
+  <link rel="stylesheet" href="style.css?v=20260629n"/>
 </head>
 <body>
 
@@ -394,8 +394,8 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- PapaParse + XLSX (~900 KB) are loaded on demand (ensureSheetLibs) only when
+     a file is uploaded or exported — not at initial page load. -->
 <script>
   window._HM_SERVER_URL = 'https://hm-server-xpg0.onrender.com';
   // Write key is NOT shipped in the bundle. The owner enters it once in
@@ -422,7 +422,7 @@
     started = true;
     window.DATA = d;
     var s = document.createElement('script');
-    s.src = 'app.js?v=20260629m'; // bump to bust cache when app.js changes
+    s.src = 'app.js?v=20260629n'; // bump to bust cache when app.js changes
     s.onload = function () { var b = document.getElementById('boot-overlay'); if (b) b.remove(); };
     document.body.appendChild(s);
   }

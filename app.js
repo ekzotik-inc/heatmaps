@@ -1,3 +1,19 @@
+/* ── ERROR SURFACE ───────────────────────────────────────────────────────
+   Lightweight global handler until real monitoring (Sentry) is wired with a
+   DSN. Logs everything to the console and shows a rate-limited toast so silent
+   failures become visible to users. */
+let _lastErrToast = 0;
+function _reportError(label, err) {
+  console.error('[hm] ' + label + ':', err);
+  const now = Date.now();
+  if (now - _lastErrToast > 5000 && typeof toast === 'function') {
+    _lastErrToast = now;
+    try { toast('Произошла ошибка — подробности в консоли', 'err', 4000); } catch (_) {}
+  }
+}
+window.addEventListener('error', e => _reportError('error', e.error || e.message));
+window.addEventListener('unhandledrejection', e => _reportError('unhandled promise', e.reason));
+
 /* ── UTILS: COLOUR ───────────────────────────────────────────────────── */
 function h2r(h) {
   h = h.replace('#', '');
@@ -105,15 +121,20 @@ function cityOf(lat, lon) {
 const DS = {
   cig:      Object.assign({ key: 'cig',      name: 'Сигареты', color: '#E0492A', intensity: 1, visible: true  }, DATA.cig),
   sticks:   Object.assign({ key: 'sticks',   name: 'Стики',    color: '#2C7FB8', intensity: 1, visible: false }, DATA.sticks),
-  combined: Object.assign({ key: 'combined', name: 'Оба',      color: '#6A3D9A', intensity: 1, visible: false }, DATA.combined),
 };
 DS.cig.ramp      = 'warm';
 DS.sticks.ramp   = 'cool';
-DS.combined.ramp = 'viridis';
 Object.values(DS).forEach(d => { d.opacity = 1; });
 
-// Layers shown on the map are user-uploaded only (custom_*). cig/sticks/combined
-// stay in DS purely as data for the Analysis tab and city lookup, not as layers.
+// Base shipment points used only to frame the map (formerly the "combined"
+// layer). combined = cig + sticks, so it's derived here and no longer shipped
+// in /data — saves ~1.1 MB of payload.
+function baseDemandRecs() {
+  return (DS.cig.recs || []).concat(DS.sticks.recs || []);
+}
+
+// Layers shown on the map are user-uploaded only (custom_*). cig/sticks stay in
+// DS purely as data for the Analysis tab and city lookup, not as layers.
 let heatKeys = [];
 let heatBoost = 1;
 let heatBlend = 'multiply';   // multiply makes overlapping layers mix like ink on a light basemap
@@ -725,6 +746,7 @@ function buildHeatUI() {
       del.addEventListener('mouseenter', () => del.style.color = '#e05454');
       del.addEventListener('mouseleave', () => del.style.color = 'var(--dim)');
       del.addEventListener('click', () => {
+        if (!confirm(`Удалить слой «${d.name}»? Данные слоя будут потеряны.`)) return;
         if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
         delete DS[k];
         heatKeys = heatKeys.filter(x => x !== k);
@@ -820,7 +842,7 @@ function buildCityUI() {
 
 /* Fit the map to the current city's data (or all data / city centre). */
 function fitView() {
-  const pts    = DS.combined.recs.filter(s => !city || s.fil === city).map(s => [s.lat, s.lon]);
+  const pts    = baseDemandRecs().filter(s => !city || s.fil === city).map(s => [s.lat, s.lon]);
   const ownPts = own.filter(o => !city || o.cityRu === city).map(o => [o.lat, o.lon]);
   const allPts = pts.concat(ownPts);
   if (allPts.length) {
@@ -995,6 +1017,7 @@ function buildCustomPtUI() {
     el.addEventListener('click', () => {
       const id = el.dataset.cpdel;
       const l  = customPtLayers.find(x => x.id === id); if (!l) return;
+      if (!confirm(`Удалить слой «${l.name}»? Данные слоя будут потеряны.`)) return;
       customPtLayers = customPtLayers.filter(x => x.id !== id);
       addrLayer.clearLayers();
       renderCustomPoints(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); saveState();
@@ -1115,16 +1138,50 @@ function focusNewLayer(key) {
   if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6 });
 }
 
-// Parse a CSV/XLSX file into an array of row objects, then call cb(rows).
+// Lazily load the CSV/XLSX parsers — ~900 KB most sessions never need, so they
+// are fetched on first upload/export instead of blocking the initial load.
+let _sheetLibsP = null;
+function ensureSheetLibs() {
+  if (window.Papa && window.XLSX) return Promise.resolve();
+  if (_sheetLibsP) return _sheetLibsP;
+  const load = src => new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = () => rej(new Error('load failed: ' + src));
+    document.head.appendChild(s);
+  });
+  _sheetLibsP = Promise.all([
+    window.Papa ? Promise.resolve() : load('https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js'),
+    window.XLSX ? Promise.resolve() : load('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'),
+  ]);
+  return _sheetLibsP;
+}
+
+// Parse a CSV/XLSX file into row objects → cb(rows). Loads parsers on demand,
+// shows a brief "processing" hint, and surfaces read/parse errors as toasts.
 function parseSheet(file, cb) {
-  const ext = file.name.split('.').pop().toLowerCase();
-  if (ext === 'csv') {
-    Papa.parse(file, { header: true, skipEmptyLines: true, complete: r => cb(r.data) });
-  } else {
-    const rd = new FileReader();
-    rd.onload = e => { const wb = XLSX.read(e.target.result, { type: 'array' }); cb(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]])); };
-    rd.readAsArrayBuffer(file);
-  }
+  const ext  = (file.name.split('.').pop() || '').toLowerCase();
+  const fail = msg => toast(msg || 'Не удалось прочитать файл', 'err', 4500);
+  ensureSheetLibs().then(() => {
+    toast('Обработка файла…', 'info', 1500);
+    if (ext === 'csv') {
+      Papa.parse(file, {
+        header: true, skipEmptyLines: true,
+        complete: r => { try { cb(r.data || []); } catch (e) { fail('Ошибка обработки: ' + e.message); } },
+        error: e => fail('Ошибка чтения CSV: ' + ((e && e.message) || e)),
+      });
+    } else {
+      const rd = new FileReader();
+      rd.onerror = () => fail('Не удалось прочитать файл');
+      // setTimeout lets the "processing" toast paint before the blocking parse
+      rd.onload = e => setTimeout(() => {
+        try {
+          const wb = XLSX.read(e.target.result, { type: 'array' });
+          cb(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) || []);
+        } catch (err) { fail('Ошибка чтения XLSX: ' + err.message); }
+      }, 20);
+      rd.readAsArrayBuffer(file);
+    }
+  }).catch(() => fail('Не удалось загрузить обработчик файлов (проверьте сеть)'));
 }
 
 /* ── DATA UPLOAD ─────────────────────────────────────────────────────── */
@@ -1286,6 +1343,7 @@ function applySnapshot(st) {
 /* ── EXPORT RECS ─────────────────────────────────────────────────────── */
 function exportRecs() {
   if (!lastRecs.length) { toast('Нет рекомендаций для экспорта', 'err'); return; }
+  if (!window.XLSX) { ensureSheetLibs().then(exportRecs).catch(() => toast('Не удалось загрузить XLSX', 'err')); return; }
   const header = ['Ранг', 'Название зоны', 'Город', 'Широта', 'Долгота', 'Спрос (ед/км²)', 'Точек рядом', 'Объём', 'До ближайшей ТТ, м'];
   const rows   = [header];
   lastRecs.forEach((s, i) => rows.push([
@@ -1537,6 +1595,7 @@ function previewAddrOnMap() {
 }
 
 function exportRetraffic() {
+  if (!window.XLSX) { ensureSheetLibs().then(exportRetraffic).catch(() => toast('Не удалось загрузить XLSX', 'err')); return; }
   const { points, excluded, avg, volThresh, srcName } = runAddrFilter();
   const isShipment = addrSrcKey === '__shipment__';
   const refName = addrRefName();
@@ -1656,7 +1715,7 @@ async function pushDataset(btn) {
     own: DATA.own, cities: DATA.cities,
     cig:      { recs: DS.cig.recs,      stats: DS.cig.stats },
     sticks:   { recs: DS.sticks.recs,   stats: DS.sticks.stats },
-    combined: { recs: DS.combined.recs, stats: DS.combined.stats },
+    // combined is derived (cig + sticks) on the client — not stored.
     districts: DATA.districts, field: DATA.field,
   };
   const old = btn ? btn.textContent : '';
@@ -1848,16 +1907,18 @@ function wireEvents() {
   // Template download
   $('dl-tpl').addEventListener('click', () => {
     const own = $('up-target').value === '__own__';
-    const rows = own
-      ? [['ch', 'name', 'city', 'code', 'addr', 'hours', 'lat', 'lon'],
-         ['BR', 'Пример BR', 'Tashkent', '1137', 'г.Ташкент, ул. Пример 1', '10:00-22:00', 41.311100, 69.279700],
-         ['SE', 'Пример SE', 'Samarkand', '2201', 'г.Самарканд, ул. Пример 2', '09:00-21:00', 39.654000, 66.959700]]
-      : [['name', 'lat', 'lon', 'value'], ['Пример ТТ', 41.311100, 69.279700, 12.5], ['Пример ТТ 2', 41.299000, 69.240000, 8]];
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = (own ? [6, 20, 14, 8, 30, 14, 12, 12] : [22, 12, 12, 10]).map(w => ({ wch: w }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Данные');
-    XLSX.writeFile(wb, own ? 'shablon_nashi_tochki.xlsx' : 'shablon_dannye.xlsx');
+    ensureSheetLibs().then(() => {
+      const rows = own
+        ? [['ch', 'name', 'city', 'code', 'addr', 'hours', 'lat', 'lon'],
+           ['BR', 'Пример BR', 'Tashkent', '1137', 'г.Ташкент, ул. Пример 1', '10:00-22:00', 41.311100, 69.279700],
+           ['SE', 'Пример SE', 'Samarkand', '2201', 'г.Самарканд, ул. Пример 2', '09:00-21:00', 39.654000, 66.959700]]
+        : [['name', 'lat', 'lon', 'value'], ['Пример ТТ', 41.311100, 69.279700, 12.5], ['Пример ТТ 2', 41.299000, 69.240000, 8]];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = (own ? [6, 20, 14, 8, 30, 14, 12, 12] : [22, 12, 12, 10]).map(w => ({ wch: w }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Данные');
+      XLSX.writeFile(wb, own ? 'shablon_nashi_tochki.xlsx' : 'shablon_dannye.xlsx');
+    }).catch(() => toast('Не удалось загрузить XLSX', 'err'));
   });
 
   // File upload (click + drag&drop)
@@ -1876,8 +1937,7 @@ function wireEvents() {
     handleDataFile(f);
   });
   function handleDataFile(f) {
-    const ext = f.name.split('.').pop().toLowerCase();
-    const done = rows => {
+    parseSheet(f, rows => {
       // Keep raw rows; final parse happens at "Обновить карту" once the
       // target layer is known (heat layers vs own IQOS points differ).
       const probe = toRecs(rows);
@@ -1887,14 +1947,7 @@ function wireEvents() {
       fn.textContent = '✓ ' + f.name + ' — ' + probe.length + ' точек';
       $('btn-update').disabled = false;
       toast(`Загружено ${probe.length} точек — нажмите «Обновить карту»`, 'ok');
-    };
-    if (ext === 'csv') {
-      Papa.parse(f, { header: true, skipEmptyLines: true, complete: r => done(r.data) });
-    } else {
-      const rd = new FileReader();
-      rd.onload = e => { const wb = XLSX.read(e.target.result, { type: 'array' }); done(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]])); };
-      rd.readAsArrayBuffer(f);
-    }
+    });
   }
 
   $('btn-update').addEventListener('click', e => {
@@ -2091,22 +2144,15 @@ function wireEvents() {
   cptFileInp.addEventListener('change', () => {
     const f = cptFileInp.files[0]; if (!f) return;
     const l = customPtLayers.find(x => x.id === _cptUploadTarget); if (!l) return;
-    const ext = f.name.split('.').pop().toLowerCase();
-    const done = recs => {
+    cptFileInp.value = '';
+    _cptUploadTarget = null;
+    parseSheet(f, rows => {
+      const recs = toCustomPtRecs(rows);
       if (!recs.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
       l.recs = recs;
       buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); renderCustomPoints(); saveState();
       toast(`Слой «${l.name}» — загружено ${recs.length} точек`, 'ok');
-    };
-    if (ext === 'csv') {
-      Papa.parse(f, { header: true, skipEmptyLines: true, complete: r => done(toCustomPtRecs(r.data)) });
-    } else {
-      const rd = new FileReader();
-      rd.onload = e => { const wb2 = XLSX.read(e.target.result, { type: 'array' }); done(toCustomPtRecs(XLSX.utils.sheet_to_json(wb2.Sheets[wb2.SheetNames[0]]))); };
-      rd.readAsArrayBuffer(f);
-    }
-    cptFileInp.value = '';
-    _cptUploadTarget = null;
+    });
   });
 
   // Autosave — delegated on sidebar, captures all interactions
@@ -2157,9 +2203,8 @@ async function startApp() {
 
   // Only fit bounds on first load (no saved city)
   if (!city) {
-    map.fitBounds(
-      L.latLngBounds(DS.combined.recs.map(s => [s.lat, s.lon]).concat(own.map(o => [o.lat, o.lon]))).pad(.05)
-    );
+    const framePts = baseDemandRecs().map(s => [s.lat, s.lon]).concat(own.map(o => [o.lat, o.lon]));
+    if (framePts.length) map.fitBounds(L.latLngBounds(framePts).pad(.05));
   }
 
   // Hydrate from server. Newer local edits (by timestamp) win over the server.

@@ -1,0 +1,19 @@
+{
+  "root": true,
+  "env": { "browser": true, "es2021": true },
+  "parserOptions": { "ecmaVersion": 2021, "sourceType": "script" },
+  "globals": {
+    "L": "readonly",
+    "Papa": "readonly",
+    "XLSX": "readonly",
+    "DATA": "writable"
+  },
+  "extends": "eslint:recommended",
+  "ignorePatterns": ["server/**", "fonts/**"],
+  "rules": {
+    "no-unused-vars": ["warn", { "args": "none" }],
+    "no-empty": ["warn", { "allowEmptyCatch": true }],
+    "no-console": "off",
+    "no-constant-condition": ["error", { "checkLoops": false }]
+  }
+}

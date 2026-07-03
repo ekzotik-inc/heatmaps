@@ -1,0 +1,13 @@
+{
+  "name": "heatmaps-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Heat Map · BR — static front-end (Leaflet). Data server lives in /server.",
+  "scripts": {
+    "lint": "eslint app.js",
+    "check": "node --check app.js"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0"
+  }
+}
