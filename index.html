@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
   <title>Heat Map · Сигареты + Стики · BR</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260629j"/>
+  <link rel="stylesheet" href="style.css?v=20260629k"/>
 </head>
 <body>
 
@@ -139,10 +139,9 @@
       <!-- TAB: АНАЛИЗ -->
       <div class="tab-panel" id="tab-analysis">
         <p class="tab-section-title">Рекомендации</p>
-        <div class="rec-basis" id="rec-basis">
-          <button class="on" data-b="cig">Сигареты</button>
-          <button data-b="sticks">Стики</button>
-          <button data-b="combined">Оба</button>
+        <div class="addr-step" style="margin-bottom:12px">
+          <div class="addr-step-label">Слой-основа спроса</div>
+          <select id="rec-basis-sel" class="addr-sel"></select>
         </div>
         <div class="rec-summary">
           <div class="rec-summary-icon">📍</div>
@@ -411,7 +410,7 @@
     started = true;
     window.DATA = d;
     var s = document.createElement('script');
-    s.src = 'app.js?v=20260629j'; // bump to bust cache when app.js changes
+    s.src = 'app.js?v=20260629k'; // bump to bust cache when app.js changes
     s.onload = function () { var b = document.getElementById('boot-overlay'); if (b) b.remove(); };
     document.body.appendChild(s);
   }

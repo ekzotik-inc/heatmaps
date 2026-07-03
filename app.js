@@ -105,10 +105,10 @@ let heatBlend = 'multiply';   // multiply makes overlapping layers mix like ink 
 let heatRadius = 28;
 
 // UI state
-let city = '', covR = 600, topN = 12, recShow = true, recBasis = 'cig';
+let city = '', covR = 600, topN = 12, recShow = true, recBasis = '';
 
 // Address-program state
-let addrSrcKey  = '__shipment__'; // source layer key or '__shipment__'
+let addrSrcKey  = ''; // uploaded heat-layer key or '__cpt__<id>' (set to first layer at boot)
 let addrRefKey  = '__own__';      // reference points key: '__own__' = BR/IQOS, '__cpt__<id>' = custom layer
 let rtRadius    = 1000;           // distance threshold (m)
 let rtRadiusOp  = 'lte';         // lte ≤ | lt < | gte ≥ | gt >
@@ -448,10 +448,28 @@ function openRec(s, rank) {
    .openOn(map);
 }
 
+/* Populate the recommendation-basis dropdown from uploaded layers */
+function buildRecBasisSel() {
+  const sel = document.getElementById('rec-basis-sel');
+  if (!sel) return;
+  if (!heatKeys.includes(recBasis)) recBasis = heatKeys[0] || '';
+  sel.innerHTML = heatKeys.length
+    ? heatKeys.map(k => `<option value="${k}"${k === recBasis ? ' selected' : ''}>${DS[k] ? DS[k].name : k}</option>`).join('')
+    : '<option value="">Нет слоёв — загрузите на вкладке «Карта»</option>';
+}
+
 function renderRecs() {
   recLayer.clearLayers();
   const d = DS[recBasis];
-  if (!d) return;
+  if (!d) {
+    lastRecs = [];
+    const rc = document.getElementById('rec-count'); if (rc) rc.textContent = '—';
+    const rl = document.getElementById('rec-lbl'); if (rl) rl.innerHTML = 'Загрузите слой на вкладке «Карта», чтобы получить рекомендации';
+    const list = document.getElementById('rec-list'); if (list) list.innerHTML = '';
+    const tgl = document.getElementById('rec-toggle'); if (tgl) tgl.style.display = 'none';
+    updateAccBadges();
+    return;
+  }
   lastBasisName = d.name;
 
   // Compute candidates
@@ -667,7 +685,7 @@ function buildHeatUI() {
       const commit = save => {
         if (done) return; done = true;
         if (save) { const v = inp.value.trim(); if (v) d.name = v; }
-        buildHeatUI(); buildAddrSrcSel(); rebuildUpTarget(); if (save) saveState();
+        buildHeatUI(); buildAddrSrcSel(); buildRecBasisSel(); rebuildUpTarget(); if (save) saveState();
       };
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') commit(true); else if (e.key === 'Escape') commit(false); });
       inp.addEventListener('blur', () => commit(true));
@@ -687,7 +705,7 @@ function buildHeatUI() {
         if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
         delete DS[k];
         heatKeys = heatKeys.filter(x => x !== k);
-        buildHeatUI(); buildAddrSrcSel(); rebuildUpTarget(); renderHeat(); renderRecs(); saveState();
+        buildHeatUI(); buildAddrSrcSel(); buildRecBasisSel(); rebuildUpTarget(); renderHeat(); renderRecs(); saveState();
       });
     }
     el.appendChild(card);
@@ -1069,7 +1087,7 @@ function confirmLayerModal() {
 function focusNewLayer(key) {
   const d = DS[key]; if (!d) return;
   if (city && d.recs.length && !d.recs.some(r => r.fil === city)) { city = ''; buildCityUI(); }
-  buildHeatUI(); rebuildUpTarget(); buildAddrSrcSel(); renderHeat(); renderRecs(); saveState();
+  buildHeatUI(); rebuildUpTarget(); buildAddrSrcSel(); buildRecBasisSel(); renderHeat(); renderRecs(); saveState();
   const bpts = d.recs.filter(r => !city || r.fil === city).map(r => [r.lat, r.lon]);
   if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6 });
 }
@@ -1308,10 +1326,8 @@ const cmpDist = (d, thresh, op) =>
 
 /* Returns all available source layers for address program (name → key map) */
 function addrSrcOptions() {
-  const opts = [{ key: '__shipment__', name: 'Отгрузки (сигареты + стики)' }];
-  heatKeys.forEach(k => {
-    if (k !== 'combined' && DS[k]) opts.push({ key: k, name: DS[k].name || k });
-  });
+  const opts = [];
+  heatKeys.forEach(k => { if (DS[k]) opts.push({ key: k, name: DS[k].name || k }); });
   customPtLayers.forEach(l => opts.push({ key: '__cpt__' + l.id, name: l.name }));
   return opts;
 }
@@ -1321,17 +1337,16 @@ function buildAddrSrcSel() {
   const sel = document.getElementById('addr-src-sel');
   if (!sel) return;
   const opts = addrSrcOptions();
-  // If current key no longer exists, reset to default
-  if (!opts.find(o => o.key === addrSrcKey)) addrSrcKey = '__shipment__';
-  sel.innerHTML = opts.map(o =>
-    `<option value="${o.key}"${o.key === addrSrcKey ? ' selected' : ''}>${o.name}</option>`
-  ).join('');
+  // If current key no longer exists, reset to the first available layer
+  if (!opts.find(o => o.key === addrSrcKey)) addrSrcKey = opts[0] ? opts[0].key : '';
+  sel.innerHTML = opts.length
+    ? opts.map(o => `<option value="${o.key}"${o.key === addrSrcKey ? ' selected' : ''}>${o.name}</option>`).join('')
+    : '<option value="">Нет слоёв — загрузите на вкладке «Карта»</option>';
   const isCpt = addrSrcKey.startsWith('__cpt__');
-  const isShipment = addrSrcKey === '__shipment__';
   const volBlock  = document.getElementById('addr-vol-block');
   const exclBlock = document.getElementById('addr-excl-block');
-  if (volBlock)  volBlock.style.display  = isCpt ? 'none' : '';   // show for shipment + heat layers
-  if (exclBlock) exclBlock.style.display = isShipment ? '' : 'none';
+  if (volBlock)  volBlock.style.display  = isCpt ? 'none' : '';   // volume only for heat layers
+  if (exclBlock) exclBlock.style.display = isCpt ? 'none' : '';   // exclusions for heat layers
   buildAddrRefSel();
 }
 
@@ -1367,21 +1382,6 @@ function addrRefPoints() {
 
 /* Get source records for current addrSrcKey */
 function addrSrcRecs() {
-  if (addrSrcKey === '__shipment__') {
-    const byCode = {};
-    ['cig', 'sticks'].forEach(key => {
-      const d = DS[key];
-      if (!d || !d.recs) return;
-      d.recs.forEach(r => {
-        const c = r.code || (r.lat + '|' + r.lon);
-        if (!byCode[c]) byCode[c] = { ...r, vol_cig: 0, vol_sticks: 0 };
-        byCode[c][key === 'cig' ? 'vol_cig' : 'vol_sticks'] += (r.vol || 0);
-      });
-    });
-    return Object.values(byCode).map(p => ({
-      ...p, vol_total: (p.vol_cig || 0) + (p.vol_sticks || 0),
-    }));
-  }
   if (addrSrcKey.startsWith('__cpt__')) {
     const id = addrSrcKey.slice(7);
     const layer = customPtLayers.find(l => l.id === id);
@@ -1393,7 +1393,7 @@ function addrSrcRecs() {
 
 /* Core filter: returns { points, excluded, avg, srcName } */
 function runAddrFilter() {
-  const isShipment = addrSrcKey === '__shipment__';
+  const hasVol = !addrSrcKey.startsWith('__cpt__');   // heat layers carry volume + support exclusions
   const srcName = addrSrcOptions().find(o => o.key === addrSrcKey)?.name || addrSrcKey;
 
   let points = addrSrcRecs();
@@ -1414,9 +1414,8 @@ function runAddrFilter() {
     p._nearRef  = nearestRef; // reference point object
   });
 
-  // Volume filter (shipment + heat layers; skip for custom point layers)
+  // Volume filter (heat layers; skip for custom point layers)
   let avg = 0, volThresh = 0;
-  const hasVol = !addrSrcKey.startsWith('__cpt__');
   if (hasVol) {
     avg = points.reduce((s, p) => s + (p.vol_total || 0), 0) / (points.length || 1);
     volThresh = rtVolMode === 'custom' ? rtVolCustom : avg;
@@ -1426,9 +1425,9 @@ function runAddrFilter() {
   // Distance to BR/IQOS filter
   points = points.filter(p => cmpDist(p._distOwn, rtRadius, rtRadiusOp));
 
-  // Exclusion (shipment mode only)
+  // Exclusion (heat-layer sources)
   let excluded = 0;
-  if (isShipment) {
+  if (hasVol) {
     const exclRecs = [];
     rtExclKeys.forEach(k => {
       if (DS[k] && DS[k].recs) exclRecs.push(...DS[k].recs);
@@ -1736,7 +1735,7 @@ function syncControls() {
   $('s-heat-radius').value = heatRadius; $('v-heat-radius').textContent = heatRadius + ' px';
   $('heat-blend').value    = heatBlend;
   $('rec-show').classList.toggle('on', recShow);
-  document.querySelectorAll('#rec-basis button').forEach(b => b.classList.toggle('on', b.dataset.b === recBasis));
+  buildRecBasisSel();
   const distBtn = $('districts-toggle'); if (distBtn) distBtn.classList.toggle('on', districtsOn);
   $('s-rt-radius').value  = rtRadius;     $('v-rt-radius').textContent = fmtD(rtRadius);
   $('op-rt-radius').value = rtRadiusOp;
@@ -1756,13 +1755,8 @@ function syncControls() {
 function wireEvents() {
   const $ = id => document.getElementById(id);
 
-  // Rec basis
-  document.querySelectorAll('#rec-basis button').forEach(b => {
-    b.addEventListener('click', () => {
-      document.querySelectorAll('#rec-basis button').forEach(x => x.classList.remove('on'));
-      b.classList.add('on'); recBasis = b.dataset.b; renderRecs();
-    });
-  });
+  // Rec basis — pick which uploaded layer drives the recommendations
+  $('rec-basis-sel').addEventListener('change', e => { recBasis = e.target.value; renderRecs(); });
 
   $('rec-show').addEventListener('click', e => { recShow = !recShow; e.target.classList.toggle('on', recShow); renderRecs(); });
   $('s-cov').addEventListener('input', e => { covR = +e.target.value; $('v-cov').textContent = fmtD(covR); fillSlider(e.target); renderRecs(); });
