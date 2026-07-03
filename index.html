@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
   <title>Heat Map · Сигареты + Стики · BR</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260629i"/>
+  <link rel="stylesheet" href="style.css?v=20260629j"/>
 </head>
 <body>
 
@@ -117,9 +117,11 @@
           </div>
         </details>
         <button class="add-layer-btn" id="add-layer-btn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Создать новый слой
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Загрузить слой (файл)
         </button>
+        <input type="file" id="heat-file" accept=".csv,.xlsx,.xls" style="display:none"/>
+        <input type="file" id="heat-update-file" accept=".csv,.xlsx,.xls" style="display:none"/>
       </div>
 
       <!-- TAB: ТОЧКИ -->
@@ -344,15 +346,19 @@
   </div>
 </div>
 
-<!-- Heat layer modal -->
+<!-- Heat layer modal (name + colour, shown after picking a file) -->
 <div id="layer-modal-overlay">
   <div class="layer-modal">
     <h3>Новый слой</h3>
-    <p>Задайте название — потом загрузите данные по шаблону</p>
+    <p>Задайте название и цвет слоя</p>
     <input type="text" id="layer-modal-input" placeholder="Название слоя…" maxlength="40"/>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <label style="font-size:12px;color:var(--mut)">Цвет слоя:</label>
+      <input type="color" id="layer-modal-color" value="#E63946" style="width:40px;height:32px;border-radius:8px"/>
+    </div>
     <div class="modal-actions">
       <button class="modal-btn secondary" id="layer-modal-cancel">Отмена</button>
-      <button class="modal-btn primary" id="layer-modal-confirm">Создать</button>
+      <button class="modal-btn primary" id="layer-modal-confirm">Готово</button>
     </div>
   </div>
 </div>
@@ -405,7 +411,7 @@
     started = true;
     window.DATA = d;
     var s = document.createElement('script');
-    s.src = 'app.js?v=20260629i'; // bump to bust cache when app.js changes
+    s.src = 'app.js?v=20260629j'; // bump to bust cache when app.js changes
     s.onload = function () { var b = document.getElementById('boot-overlay'); if (b) b.remove(); };
     document.body.appendChild(s);
   }

@@ -97,7 +97,9 @@ DS.sticks.ramp   = 'cool';
 DS.combined.ramp = 'viridis';
 Object.values(DS).forEach(d => { d.opacity = 1; });
 
-let heatKeys = ['cig', 'sticks'];
+// Layers shown on the map are user-uploaded only (custom_*). cig/sticks/combined
+// stay in DS purely as data for the Analysis tab and city lookup, not as layers.
+let heatKeys = [];
 let heatBoost = 1;
 let heatBlend = 'multiply';   // multiply makes overlapping layers mix like ink on a light basemap
 let heatRadius = 28;
@@ -548,7 +550,7 @@ function updateAccBadges() {
   const heatBadge = document.getElementById('acc-badge-heat');
   if (heatBadge) {
     const vis = heatKeys.filter(k => DS[k] && DS[k].visible).length;
-    heatBadge.textContent = `${vis}/${heatKeys.length}`;
+    heatBadge.textContent = heatKeys.length ? `${vis}/${heatKeys.length}` : '';
   }
   // Custom point layers badge
   const cptBadge = document.getElementById('acc-badge-cpt');
@@ -580,6 +582,9 @@ function toggleSolo(k) {
 function buildHeatUI() {
   const el = document.getElementById('heat-list');
   el.innerHTML = '';
+  if (!heatKeys.length) {
+    el.innerHTML = '<div class="cpt-empty">Слоёв пока нет. Нажмите «Загрузить слой» и выберите CSV/XLSX с колонками name, lat, lon, value.</div>';
+  }
   heatKeys.forEach(k => {
     const d = DS[k];
     if (!d) return;
@@ -593,6 +598,7 @@ function buildHeatUI() {
         <div class="nm">${d.name}
           <small>${d.stats.n.toLocaleString('ru-RU')} точек · объём ${Math.round(d.stats.sum).toLocaleString('ru-RU')}</small>
         </div>
+        <div class="lyr-rename" title="Переименовать" style="cursor:pointer;color:var(--dim);font-size:14px;line-height:1;padding:0 3px;transition:.15s">✎</div>
         <div class="lyr-solo${_soloKey === k ? ' on' : ''}" title="Показать только этот слой">◉</div>
         ${custom ? `<div class="lyr-del" title="Удалить слой" style="cursor:pointer;color:var(--dim);font-size:18px;line-height:1;padding:0 4px;transition:.15s">&times;</div>` : ''}
       </div>
@@ -607,6 +613,9 @@ function buildHeatUI() {
       <div class="lyr-ctl">
         <div class="grp" style="flex:1">Интенс. <input type="range" class="r-int" min="0.2" max="4" step="0.1" value="${d.intensity || 1}" style="flex:1"><span class="sl-val">${(d.intensity || 1).toFixed(1)}×</span></div>
         <div class="grp" style="flex:1">Прозр. <input type="range" class="r-op" min="0.05" max="1" step="0.05" value="${d.opacity == null ? 1 : d.opacity}" style="flex:1"><span class="sl-val">${Math.round((d.opacity == null ? 1 : d.opacity) * 100)}%</span></div>
+      </div>
+      <div class="lyr-ctl" style="margin-top:9px">
+        <button class="lyr-update" style="flex:1;padding:8px 10px;font-size:11.5px;font-family:IQOS;font-weight:600;color:var(--acc);background:var(--acc-l);border:1px solid rgba(91,124,250,.25);border-radius:10px;cursor:pointer;transition:.18s">⬆ Обновить данные</button>
       </div>`;
 
     const colorInp = card.querySelector('input[type=color]');
@@ -641,6 +650,33 @@ function buildHeatUI() {
       fillSlider(e.target);
       e.target.nextElementSibling.textContent = Math.round(d.opacity * 100) + '%';
       renderHeat();
+    });
+
+    // Rename — swap the name for an inline input
+    const nmEl = card.querySelector('.nm');
+    const renameBtn = card.querySelector('.lyr-rename');
+    renameBtn.addEventListener('mouseenter', () => renameBtn.style.color = 'var(--acc)');
+    renameBtn.addEventListener('mouseleave', () => renameBtn.style.color = 'var(--dim)');
+    renameBtn.addEventListener('click', () => {
+      const cur = d.name;
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.value = cur; inp.maxLength = 40;
+      inp.style.cssText = 'flex:1;min-width:0;font-family:IQOS;font-size:13px;font-weight:700;color:var(--ink);background:var(--card2);border:1.5px solid var(--acc);border-radius:8px;padding:5px 8px;outline:none';
+      nmEl.replaceWith(inp); inp.focus(); inp.select();
+      let done = false;
+      const commit = save => {
+        if (done) return; done = true;
+        if (save) { const v = inp.value.trim(); if (v) d.name = v; }
+        buildHeatUI(); buildAddrSrcSel(); rebuildUpTarget(); if (save) saveState();
+      };
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') commit(true); else if (e.key === 'Escape') commit(false); });
+      inp.addEventListener('blur', () => commit(true));
+    });
+
+    // Update — re-upload a file into this layer, replacing its data
+    card.querySelector('.lyr-update').addEventListener('click', () => {
+      _heatUpdateTarget = k;
+      document.getElementById('heat-update-file').click();
     });
 
     if (custom) {
@@ -998,32 +1034,56 @@ function toast(msg, type = 'info', ms = 2800) {
 /* ── CREATE LAYER MODAL ──────────────────────────────────────────────── */
 const LAYER_PALETTE = ['#E63946', '#457B9D', '#2DC653', '#FF9F1C', '#9B59B6', '#00B4D8', '#FF6B6B', '#06D6A0'];
 
-function openLayerModal() {
-  const overlay = document.getElementById('layer-modal-overlay');
-  const input   = document.getElementById('layer-modal-input');
-  input.value = '';
+let pendingHeatRows = null;     // parsed rows awaiting name/colour confirmation
+let _heatUpdateTarget = null;   // layer key being re-uploaded with fresh data
+
+function openLayerModal(prefillName) {
+  const overlay  = document.getElementById('layer-modal-overlay');
+  const input    = document.getElementById('layer-modal-input');
+  const colorInp = document.getElementById('layer-modal-color');
+  input.value = prefillName || '';
+  const usedColors = heatKeys.map(k2 => DS[k2] && DS[k2].color).filter(Boolean);
+  colorInp.value = LAYER_PALETTE.find(c => !usedColors.includes(c)) || LAYER_PALETTE[heatKeys.length % LAYER_PALETTE.length];
   overlay.classList.add('open');
-  setTimeout(() => input.focus(), 150);
+  setTimeout(() => { input.focus(); input.select(); }, 150);
 }
 function closeLayerModal() {
   document.getElementById('layer-modal-overlay').classList.remove('open');
 }
 function confirmLayerModal() {
-  const name = document.getElementById('layer-modal-input').value.trim();
+  const name  = document.getElementById('layer-modal-input').value.trim();
+  const color = document.getElementById('layer-modal-color').value;
+  if (!name) { document.getElementById('layer-modal-input').focus(); return; }
   closeLayerModal();
-  if (!name) return;
-  const key   = 'custom_' + Date.now();
-  const usedColors = heatKeys.map(k2 => DS[k2] && DS[k2].color).filter(Boolean);
-  const color = LAYER_PALETTE.find(c => !usedColors.includes(c)) || LAYER_PALETTE[heatKeys.length % LAYER_PALETTE.length];
-  DS[key] = { key, name, color, ramp: 'custom', opacity: 1, intensity: 1, visible: true, recs: [], stats: { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 } };
+  const rows = pendingHeatRows; pendingHeatRows = null;
+  const recs = rows ? enrich(toRecs(rows)) : [];
+  const key  = 'custom_' + Date.now();
+  DS[key] = { key, name, color, ramp: 'custom', opacity: 1, intensity: 1, visible: true,
+              recs, stats: statsOf(recs), _userData: true };
   heatKeys.push(key);
-  buildHeatUI(); rebuildUpTarget(); renderHeat();
-  document.getElementById('up-target').value = key;
-  // Highlight upload area
-  const fb = document.getElementById('filebox');
-  fb.style.borderColor = 'var(--acc)';
-  setTimeout(() => fb.style.borderColor = '', 1400);
-  toast(`Слой «${name}» создан — загрузите данные ниже`, 'ok');
+  focusNewLayer(key);
+  toast(recs.length ? `Слой «${name}» загружен (${recs.length} точек)` : `Слой «${name}» создан`, 'ok');
+}
+
+// Re-render everything after a layer's data changes, then fly the map to it.
+function focusNewLayer(key) {
+  const d = DS[key]; if (!d) return;
+  if (city && d.recs.length && !d.recs.some(r => r.fil === city)) { city = ''; buildCityUI(); }
+  buildHeatUI(); rebuildUpTarget(); buildAddrSrcSel(); renderHeat(); renderRecs(); saveState();
+  const bpts = d.recs.filter(r => !city || r.fil === city).map(r => [r.lat, r.lon]);
+  if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6 });
+}
+
+// Parse a CSV/XLSX file into an array of row objects, then call cb(rows).
+function parseSheet(file, cb) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'csv') {
+    Papa.parse(file, { header: true, skipEmptyLines: true, complete: r => cb(r.data) });
+  } else {
+    const rd = new FileReader();
+    rd.onload = e => { const wb = XLSX.read(e.target.result, { type: 'array' }); cb(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]])); };
+    rd.readAsArrayBuffer(file);
+  }
 }
 
 /* ── DATA UPLOAD ─────────────────────────────────────────────────────── */
@@ -1133,7 +1193,9 @@ function importState(file) {
 }
 
 function applySnapshot(st) {
-  if (Array.isArray(st.heatKeys)) heatKeys = st.heatKeys.slice();
+  // Only user-uploaded layers are shown; drop legacy cig/sticks/combined keys
+  // that older saved states may still carry.
+  if (Array.isArray(st.heatKeys)) heatKeys = st.heatKeys.filter(k => k.startsWith('custom_'));
   if (st.layers) {
     for (const k of heatKeys) {
       const sv = st.layers[k]; if (!sv) continue;
@@ -1727,11 +1789,35 @@ function wireEvents() {
   });
 
   // Create layer
-  $('add-layer-btn').addEventListener('click', openLayerModal);
-  $('layer-modal-cancel').addEventListener('click', closeLayerModal);
+  // Upload a file → then ask name/colour → create the layer from its data
+  $('add-layer-btn').addEventListener('click', () => $('heat-file').click());
+  const heatFileInp = $('heat-file');
+  heatFileInp.addEventListener('change', () => {
+    const f = heatFileInp.files[0]; if (!f) return;
+    parseSheet(f, rows => {
+      pendingHeatRows = rows;
+      openLayerModal(f.name.replace(/\.(csv|xlsx|xls)$/i, ''));
+    });
+    heatFileInp.value = '';
+  });
+  // Re-upload data into an existing layer (per-layer "Обновить данные")
+  const heatUpdInp = $('heat-update-file');
+  heatUpdInp.addEventListener('change', () => {
+    const f = heatUpdInp.files[0]; const k = _heatUpdateTarget;
+    heatUpdInp.value = ''; _heatUpdateTarget = null;
+    if (!f || !k || !DS[k]) return;
+    parseSheet(f, rows => {
+      const recs = enrich(toRecs(rows));
+      if (!recs.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
+      DS[k].recs = recs; DS[k].stats = statsOf(recs); DS[k].visible = true; DS[k]._userData = true;
+      focusNewLayer(k);
+      toast(`Слой «${DS[k].name}» обновлён (${recs.length} точек)`, 'ok');
+    });
+  });
+  $('layer-modal-cancel').addEventListener('click', () => { pendingHeatRows = null; closeLayerModal(); });
   $('layer-modal-confirm').addEventListener('click', confirmLayerModal);
   $('layer-modal-input').addEventListener('keydown', e => { if (e.key === 'Enter') confirmLayerModal(); if (e.key === 'Escape') closeLayerModal(); });
-  $('layer-modal-overlay').addEventListener('click', e => { if (e.target === $('layer-modal-overlay')) closeLayerModal(); });
+  $('layer-modal-overlay').addEventListener('click', e => { if (e.target === $('layer-modal-overlay')) { pendingHeatRows = null; closeLayerModal(); } });
 
   // Template download
   $('dl-tpl').addEventListener('click', () => {
