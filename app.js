@@ -459,7 +459,7 @@ function updateLayerLegend() {
     if (l.visible && l.recs && l.recs.length) items.push({ color: l.color, name: l.name });
   });
   if (recShow && lastRecs.length) items.push({ color: '#14B87D', name: 'Рекомендации' });
-  if (items.length < 2) { el.style.display = 'none'; return; }
+  if (!items.length) { el.style.display = 'none'; return; }
   el.style.display = '';
   el.innerHTML = '<div class="legend-title">Легенда</div>' + items.map(it =>
     `<div class="legend-item"><div class="legend-dot" style="background:${it.color}"></div><span class="legend-name">${esc(it.name)}</span></div>`
