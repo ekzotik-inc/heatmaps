@@ -1261,6 +1261,67 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
   transform: translateX(-50%) translateY(0);
 }
 
+/* ── CITY INFO TAB (сводка по городу) ────────────────────────────────── */
+.ci-hint {
+  padding: 34px 22px; text-align: center;
+  font-size: 12.5px; color: var(--dim); line-height: 1.65;
+  background: var(--card2); border: 1.5px dashed var(--line2);
+  border-radius: 16px;
+}
+.ci-hint-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 52px; height: 52px; margin: 0 auto 14px;
+  border-radius: 16px; background: var(--acc-l); color: var(--acc);
+}
+.ci-card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 16px; padding: 16px; margin-bottom: 11px;
+  box-shadow: var(--shadow-card);
+}
+.ci-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 13px; }
+.ci-city { font-size: 19px; font-weight: 800; color: var(--ink); letter-spacing: -.3px; }
+.ci-region { font-size: 11px; color: var(--dim); margin-top: 3px; }
+.ci-pop {
+  background: linear-gradient(135deg, var(--acc-l), var(--acc-l2));
+  border: 1px solid rgba(18,173,193,.22);
+  border-radius: 13px; padding: 13px 15px; margin-bottom: 9px;
+}
+.ci-pop .v { font-size: 26px; font-weight: 800; color: var(--acc-d); line-height: 1; font-variant-numeric: tabular-nums; }
+.ci-pop .l { font-size: 10.5px; color: var(--mut); margin-top: 6px; }
+.ci-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ci-tile {
+  background: var(--card2); border-radius: 12px; padding: 11px 12px;
+}
+.ci-tile .v { font-size: 15.5px; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+.ci-tile .l { font-size: 9.5px; color: var(--dim); margin-top: 4px; line-height: 1.45; }
+.ci-tile.hot { background: var(--rec-l); }
+.ci-tile.hot .v { color: var(--rec-ink); }
+.ci-sec {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 1.3px;
+  text-transform: uppercase; color: var(--dim); margin-bottom: 10px;
+}
+.ci-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  padding: 7px 0; font-size: 12.5px; color: var(--mut);
+  border-bottom: 1px solid var(--line);
+}
+.ci-row:last-child { border-bottom: none; padding-bottom: 0; }
+.ci-row b { color: var(--ink); font-weight: 800; font-variant-numeric: tabular-nums; }
+.ci-row b.green { color: var(--rec-ink); }
+.ci-tag {
+  display: flex; gap: 9px; align-items: flex-start;
+  font-size: 12px; color: var(--mut); line-height: 1.55;
+  padding: 5px 0;
+}
+.ci-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--acc);
+  flex: 0 0 auto; margin-top: 5px;
+}
+.ci-note {
+  font-size: 10px; color: var(--dim); line-height: 1.6;
+  margin: 4px 2px 0; padding-top: 10px; border-top: 1px solid var(--line);
+}
+
 /* ── CUSTOM POINT MODAL ──────────────────────────────────────────────── */
 #cpt-modal-overlay {
   position: fixed; inset: 0; z-index: 8000;

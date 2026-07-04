@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260704c"/>
+  <link rel="stylesheet" href="style.css?v=20260704d"/>
 </head>
 <body>
 
@@ -246,6 +246,12 @@
         </details>
       </div>
 
+      <!-- TAB: ГОРОД -->
+      <div class="tab-panel" id="tab-city">
+        <p class="tab-section-title">Сводка по городу</p>
+        <div id="city-info"></div>
+      </div>
+
       <!-- TAB: ДАННЫЕ -->
       <div class="tab-panel" id="tab-data">
         <p class="tab-section-title">Поделиться настройками</p>
@@ -319,6 +325,12 @@
           <span class="acc-badge acc-badge-green" id="acc-badge-rec"></span>
         </div>
         <span class="tab-label">Анализ</span>
+      </button>
+      <button class="side-tab" data-tab="tab-city">
+        <div class="tab-icon-wrap">
+          <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><line x1="9" y1="9" x2="9" y2="9.01"/><line x1="9" y1="12" x2="9" y2="12.01"/><line x1="9" y1="15" x2="9" y2="15.01"/><line x1="9" y1="18" x2="9" y2="18.01"/></svg></span>
+        </div>
+        <span class="tab-label">Город</span>
       </button>
       <button class="side-tab" data-tab="tab-data">
         <div class="tab-icon-wrap">
@@ -427,7 +439,7 @@
     started = true;
     window.DATA = d;
     var s = document.createElement('script');
-    s.src = 'app.js?v=20260704c'; // bump to bust cache when app.js changes
+    s.src = 'app.js?v=20260704d'; // bump to bust cache when app.js changes
     s.onload = function () { var b = document.getElementById('boot-overlay'); if (b) b.remove(); };
     document.body.appendChild(s);
   }
