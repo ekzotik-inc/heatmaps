@@ -640,6 +640,8 @@ function updateAccBadges() {
   // Rec badge
   const recBadge = document.getElementById('acc-badge-rec');
   if (recBadge && lastRecs.length) recBadge.textContent = lastRecs.length;
+  // City summary tab depends on the same inputs (city, layers, recs)
+  renderCityInfo();
 }
 
 /* Solo / isolate a single heat layer to fix the "overlap mush" problem */
@@ -865,6 +867,163 @@ function buildCityUI() {
   };
   mk('', 'Все', !city);
   CITIES.forEach(c => mk(c, c, city === c));
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   СВОДКА ПО ГОРОДУ (вкладка «Город»)
+   Справочные данные: Нацкомстат РУз (stat.uz) — население городов на
+   01.10.2025 и средняя номинальная зарплата по регионам за 2025 год;
+   ВОЗ/Нацкомстат — доля курящих среди взрослых (2024): мужчины 19,4%,
+   женщины 0,9%. Доля населения 21+ — оценка по возрастной структуре
+   Нацкомстата (~57% по стране, ~64% в Ташкенте). Продажа табака — 21+.
+   ══════════════════════════════════════════════════════════════════════ */
+const SMOKE_M = 0.194, SMOKE_F = 0.009;            // доля курящих (2024)
+const SMOKE_AVG = (SMOKE_M + SMOKE_F) / 2;         // ≈10,2% взрослых 21+
+
+const CITY_STATS = {
+  'Ташкент': {
+    pop: 3095000, popNote: 'stat.uz, 2025', adult: 0.64, wage: 10.75,
+    region: 'г. Ташкент — столица',
+    tags: [
+      'Крупнейший рынок страны: ~8% всего населения Узбекистана в одном городе',
+      'Максимальная покупательная способность: зарплата 10,75 млн сум — в 1,7 раза выше средней по стране',
+      'Высокий трафик деловых районов, ТЦ и транспортных узлов — лучший город для премиального сегмента (стики)',
+    ],
+  },
+  'Самарканд': {
+    pop: 604000, popNote: 'stat.uz, 01.10.2025', adult: 0.57, wage: 4.74,
+    region: 'Самаркандская область',
+    tags: [
+      '2-й по населению город страны — 604 тыс. человек',
+      'Туристическая столица: дополнительный спрос от туристов, потенциал travel-retail в центре',
+      'Зарплаты ниже средних по стране (4,74 млн сум) — важно держать доступный ценовой сегмент',
+    ],
+  },
+  'Андижан': {
+    pop: 501000, popNote: 'stat.uz, 01.10.2025', adult: 0.56, wage: 5.24,
+    region: 'Андижанская область (Ферганская долина)',
+    tags: [
+      'Центр самого плотнонаселённого региона страны — Ферганской долины',
+      'Зарплата 5,24 млн сум — самая высокая в долине: покупательная способность выше соседей',
+      'Компактный город: полное покрытие достигается небольшим числом правильно размещённых точек',
+    ],
+  },
+  'Фергана': {
+    pop: 299000, popNote: 'stat.uz, 2025', adult: 0.56, wage: 4.73,
+    region: 'Ферганская область',
+    tags: [
+      'Административный центр области, агломерация Фергана–Маргилан',
+      'Молодое население долины: аудитория 21+ будет расти быстрее, чем в среднем по стране',
+      'Чувствительность к цене (зарплата 4,73 млн сум) — фокус на средний и доступный сегмент',
+    ],
+  },
+  'Бухара': {
+    pop: 280000, popNote: 'stat.uz, 2025', adult: 0.57, wage: 5.09,
+    region: 'Бухарская область',
+    tags: [
+      'Крупный туристический центр — устойчивый дополнительный спрос от туристов круглый год',
+      'Высокий пеший трафик исторического центра — приоритет точкам у достопримечательностей и базаров',
+      'Зарплата по области 5,09 млн сум — близко к средней по стране',
+    ],
+  },
+  'Коканд': {
+    pop: 260000, popNote: 'stat.uz, 2025', adult: 0.56, wage: 4.73,
+    region: 'Ферганская область',
+    tags: [
+      'Исторический торговый хаб Ферганской долины — сильная базарная и придорожная торговля',
+      'Транзитный узел между Ташкентом и долиной — трафик АЗС и трасс',
+      'Чувствительность к цене (зарплата 4,73 млн сум) — фокус на доступный сегмент',
+    ],
+  },
+  'Навои': {
+    pop: 155000, popNote: 'оценка, 2025', adult: 0.58, wage: 7.87,
+    region: 'Навоийская область',
+    tags: [
+      'Промышленный центр (НГМК, химия): 2-е место по зарплатам в стране — 7,87 млн сум',
+      'Высокая доля работающих мужчин — ядро целевой аудитории, потенциал премиального сегмента',
+      'Небольшой город: полное покрытие достижимо очень быстро, важно занять его первыми',
+    ],
+  },
+};
+
+function renderCityInfo() {
+  const el = document.getElementById('city-info');
+  if (!el) return;
+  if (!city) {
+    el.innerHTML = `<div class="ci-hint">
+      <div class="ci-hint-icon">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><line x1="9" y1="9" x2="9" y2="9.01"/><line x1="9" y1="12" x2="9" y2="12.01"/><line x1="9" y1="15" x2="9" y2="15.01"/><line x1="9" y1="18" x2="9" y2="18.01"/></svg>
+      </div>
+      Выберите город на плашке сверху карты, чтобы получить краткую
+      информацию о населении этого города и потенциале рынка.</div>`;
+    return;
+  }
+  const s   = CITY_STATS[city];
+  const fmt = n => Math.round(n).toLocaleString('ru-RU');
+
+  // live-метрики из данных, загруженных на карту
+  const ownN = (typeof own !== 'undefined' && own) ? own.filter(o => o.cityRu === city).length : 0;
+  let layerN = 0;
+  heatKeys.forEach(k => { const d = DS[k]; if (d && d.recs) layerN += d.recs.filter(r => r.fil === city).length; });
+  const recN = lastRecs.length;
+
+  let html = '';
+  if (s) {
+    const adults  = s.pop * s.adult;
+    const smokers = adults * SMOKE_AVG;
+    const smMen   = adults * 0.5 * SMOKE_M;
+    html += `
+    <div class="ci-card">
+      <div class="ci-head">
+        <div>
+          <div class="ci-city">${esc(city)}</div>
+          <div class="ci-region">${esc(s.region)}</div>
+        </div>
+      </div>
+      <div class="ci-pop">
+        <div class="v">${fmt(s.pop)}</div>
+        <div class="l">население города · ${esc(s.popNote)}</div>
+      </div>
+      <div class="ci-grid">
+        <div class="ci-tile"><div class="v">${fmt(adults)}</div><div class="l">население 21+ (оценка)</div></div>
+        <div class="ci-tile hot"><div class="v">≈ ${fmt(smokers)}</div><div class="l">курильщиков 21+ — потенциальная аудитория</div></div>
+        <div class="ci-tile"><div class="v">${s.wage.toFixed(2).replace('.', ',')} млн</div><div class="l">средняя зарплата, сум/мес (2025)</div></div>
+        <div class="ci-tile"><div class="v">${fmt(smMen)}</div><div class="l">курящих мужчин 21+ — ядро ЦА (19,4%)</div></div>
+      </div>
+    </div>`;
+  } else {
+    html += `
+    <div class="ci-card">
+      <div class="ci-head"><div>
+        <div class="ci-city">${esc(city)}</div>
+        <div class="ci-region">нет справочных данных по этому городу</div>
+      </div></div>
+    </div>`;
+  }
+
+  html += `
+  <div class="ci-card">
+    <div class="ci-sec">На карте сейчас</div>
+    <div class="ci-row"><span>Наших точек BR / IQOS</span><b>${fmt(ownN)}</b></div>
+    <div class="ci-row"><span>Точек в загруженных слоях</span><b>${fmt(layerN)}</b></div>
+    <div class="ci-row"><span>Рекомендованных зон для BR</span><b class="green">${fmt(recN)}</b></div>
+    ${s && ownN ? `<div class="ci-row"><span>Курильщиков на 1 нашу точку</span><b>≈ ${fmt(s.pop * s.adult * SMOKE_AVG / ownN)}</b></div>` : ''}
+  </div>`;
+
+  if (s) {
+    html += `
+    <div class="ci-card">
+      <div class="ci-sec">Выводы для бизнеса</div>
+      ${s.tags.map(t => `<div class="ci-tag"><span class="ci-dot"></span><span>${t}</span></div>`).join('')}
+    </div>`;
+  }
+
+  html += `<div class="ci-note">Источники: Нацкомстат РУз (stat.uz) — население городов (2025)
+    и средняя зарплата по регионам (2025); ВОЗ — доля курящих среди взрослых (2024):
+    мужчины 19,4%, женщины 0,9%. Население 21+ и число курильщиков — оценка по
+    возрастной структуре. Продажа табачной продукции в РУз — только лицам 21+.</div>`;
+
+  el.innerHTML = html;
 }
 
 /* Fit the map to the current city's data (or all data / city centre). */
