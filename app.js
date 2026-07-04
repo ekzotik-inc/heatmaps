@@ -127,8 +127,8 @@ function cityOf(lat, lon) {
 
 /* ── LAYER STATE ─────────────────────────────────────────────────────── */
 const DS = {
-  cig:      Object.assign({ key: 'cig',      name: 'Сигареты', color: '#E0492A', intensity: 1, visible: true  }, DATA.cig),
-  sticks:   Object.assign({ key: 'sticks',   name: 'Стики',    color: '#2C7FB8', intensity: 1, visible: false }, DATA.sticks),
+  cig:      Object.assign({ key: 'cig',      name: 'Сигареты', color: '#F4685C', intensity: 1, visible: true  }, DATA.cig),
+  sticks:   Object.assign({ key: 'sticks',   name: 'Стики',    color: '#4C8DFF', intensity: 1, visible: false }, DATA.sticks),
 };
 DS.cig.ramp      = 'warm';
 DS.sticks.ramp   = 'cool';
@@ -171,8 +171,8 @@ let _cptUploadTarget = null;  // id of layer awaiting file upload
 const map = L.map('map', { preferCanvas: true, zoomControl: false, minZoom: 5, zoomSnap: .5 })
               .setView([41, 67], 6);
 
-L.tileLayer('https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1', {
-  attribution: '&copy; <a href="https://2gis.ru">2ГИС</a>', subdomains: '0123', maxZoom: 18,
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap &middot; &copy; CARTO', subdomains: 'abcd', maxZoom: 19,
 }).addTo(map);
 
 map.createPane('districts'); map.getPane('districts').style.zIndex = 460;
@@ -272,7 +272,7 @@ function renderIncome() {
                     { className: 'tt', direction: 'top', offset: [0, -12] })
        .bindPopup(`<div class="pp-title">${z.n}. ${z.name}</div>
                    <div class="pp-row"><span>Уровень</span><b>${TIER_NAME[z.tier]}</b></div>
-                   <div class="pp-row"><span>Ориентиры</span><b style="font-family:IQOS;font-weight:500;text-align:right">${z.pl}</b></div>
+                   <div class="pp-row"><span>Ориентиры</span><b style="font-family:Manrope;font-weight:500;text-align:right">${z.pl}</b></div>
                    <div class="pp-why">${CX[z.tier]}</div>`)
        .addTo(coresGroup);
     });
@@ -390,9 +390,9 @@ function renderPoints() {
       .bindPopup(`<div class="pp-title">${esc(o.name)}</div>
                   <div class="pp-row"><span>Канал</span><b>${esc(o.ch)}</b></div>
                   <div class="pp-row"><span>Город</span><b>${esc(o.cityRu)}</b></div>
-                  ${o.addr  ? `<div class="pp-row"><span>Адрес</span><b style="font-family:IQOS;font-weight:500;text-align:right">${esc(o.addr)}</b></div>` : ''}
+                  ${o.addr  ? `<div class="pp-row"><span>Адрес</span><b style="font-family:Manrope;font-weight:500;text-align:right">${esc(o.addr)}</b></div>` : ''}
                   ${o.hours ? `<div class="pp-row"><span>Часы</span><b>${esc(o.hours)}</b></div>` : ''}
-                  <span class="pp-tag" style="background:rgba(91,124,250,.12);color:#3a56c4;border:1px solid rgba(91,124,250,.35)">ТОЧКА IQOS</span>`)
+                  <span class="pp-tag" style="background:var(--acc-l);color:var(--acc-d);border:1px solid rgba(18,173,193,.35)">ТОЧКА IQOS</span>`)
       .addTo(pointsGroup);
     });
   });
@@ -685,7 +685,7 @@ function buildHeatUI() {
         <div class="grp" style="flex:1">Прозр. <input type="range" class="r-op" min="0.05" max="1" step="0.05" value="${d.opacity == null ? 1 : d.opacity}" style="flex:1"><span class="sl-val">${Math.round((d.opacity == null ? 1 : d.opacity) * 100)}%</span></div>
       </div>
       <div class="lyr-ctl" style="margin-top:9px">
-        <button class="lyr-update" style="flex:1;padding:8px 10px;font-size:11.5px;font-family:IQOS;font-weight:600;color:var(--acc);background:var(--acc-l);border:1px solid rgba(91,124,250,.25);border-radius:10px;cursor:pointer;transition:.18s">⬆ Обновить данные</button>
+        <button class="lyr-update" style="flex:1;padding:8px 10px;font-size:11.5px;font-family:Manrope;font-weight:600;color:var(--acc);background:var(--acc-l);border:1px solid rgba(18,173,193,.25);border-radius:10px;cursor:pointer;transition:.18s">⬆ Обновить данные</button>
       </div>`;
 
     const colorInp = card.querySelector('input[type=color]');
@@ -731,7 +731,7 @@ function buildHeatUI() {
       const cur = d.name;
       const inp = document.createElement('input');
       inp.type = 'text'; inp.value = cur; inp.maxLength = 40;
-      inp.style.cssText = 'flex:1;min-width:0;font-family:IQOS;font-size:13px;font-weight:700;color:var(--ink);background:var(--card2);border:1.5px solid var(--acc);border-radius:8px;padding:5px 8px;outline:none';
+      inp.style.cssText = 'flex:1;min-width:0;font-family:Manrope;font-size:13px;font-weight:700;color:var(--ink);background:var(--card2);border:1.5px solid var(--acc);border-radius:8px;padding:5px 8px;outline:none';
       nmEl.replaceWith(inp); inp.focus(); inp.select();
       let done = false;
       const commit = save => {
@@ -890,7 +890,7 @@ function renderCustomPoints() {
         zIndexOffset: 1500,
       });
       const parts = [r.name ? `<div class="pp-title">${esc(r.name)}</div>` : ''];
-      if (r.addr)  parts.push(`<div class="pp-row"><span>Адрес</span><b style="font-family:IQOS;font-weight:500;text-align:right">${esc(r.addr)}</b></div>`);
+      if (r.addr)  parts.push(`<div class="pp-row"><span>Адрес</span><b style="font-family:Manrope;font-weight:500;text-align:right">${esc(r.addr)}</b></div>`);
       if (r.hours) parts.push(`<div class="pp-row"><span>Часы</span><b>${esc(r.hours)}</b></div>`);
       if (r.code)  parts.push(`<div class="pp-row"><span>Код</span><b>${esc(r.code)}</b></div>`);
       m.bindPopup(parts.filter(Boolean).join(''));
