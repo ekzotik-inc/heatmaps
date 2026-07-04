@@ -14,6 +14,14 @@ function _reportError(label, err) {
 window.addEventListener('error', e => _reportError('error', e.error || e.message));
 window.addEventListener('unhandledrejection', e => _reportError('unhandled promise', e.reason));
 
+/* Escape user-supplied text before inserting into innerHTML / Leaflet popups
+   and tooltips. Layer names and point fields come from uploaded files and free
+   text, so they must never be rendered as raw HTML (XSS guard). */
+function esc(s) {
+  return ('' + (s == null ? '' : s)).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 /* ── UTILS: COLOUR ───────────────────────────────────────────────────── */
 function h2r(h) {
   h = h.replace('#', '');
@@ -377,13 +385,13 @@ function renderPoints() {
         icon: L.divIcon({ className: '', html: ic.html, iconSize: [32, 32], iconAnchor: ic.anchor }),
         zIndexOffset: 1500,
       })
-      .bindTooltip(`<b style="font-weight:700">${o.name}</b><br>${L0.name}`,
+      .bindTooltip(`<b style="font-weight:700">${esc(o.name)}</b><br>${esc(L0.name)}`,
                    { className: 'tt', direction: 'top', offset: [0, -ic.anchor[1] + 4] })
-      .bindPopup(`<div class="pp-title">${o.name}</div>
-                  <div class="pp-row"><span>Канал</span><b>${o.ch}</b></div>
-                  <div class="pp-row"><span>Город</span><b>${o.cityRu}</b></div>
-                  ${o.addr  ? `<div class="pp-row"><span>Адрес</span><b style="font-family:IQOS;font-weight:500;text-align:right">${o.addr}</b></div>` : ''}
-                  ${o.hours ? `<div class="pp-row"><span>Часы</span><b>${o.hours}</b></div>` : ''}
+      .bindPopup(`<div class="pp-title">${esc(o.name)}</div>
+                  <div class="pp-row"><span>Канал</span><b>${esc(o.ch)}</b></div>
+                  <div class="pp-row"><span>Город</span><b>${esc(o.cityRu)}</b></div>
+                  ${o.addr  ? `<div class="pp-row"><span>Адрес</span><b style="font-family:IQOS;font-weight:500;text-align:right">${esc(o.addr)}</b></div>` : ''}
+                  ${o.hours ? `<div class="pp-row"><span>Часы</span><b>${esc(o.hours)}</b></div>` : ''}
                   <span class="pp-tag" style="background:rgba(91,124,250,.12);color:#3a56c4;border:1px solid rgba(91,124,250,.35)">ТОЧКА IQOS</span>`)
       .addTo(pointsGroup);
     });
@@ -446,7 +454,7 @@ function updateLayerLegend() {
   el.style.display = '';
   el.innerHTML = visible.map(k => {
     const d = DS[k];
-    return `<div class="legend-item"><div class="legend-dot" style="background:${d.color}"></div><span class="legend-name">${d.name}</span></div>`;
+    return `<div class="legend-item"><div class="legend-dot" style="background:${d.color}"></div><span class="legend-name">${esc(d.name)}</span></div>`;
   }).join('');
 }
 
@@ -461,8 +469,8 @@ function mkRecItem(s, idx) {
   x.innerHTML = `
     <div class="rec-rank">${idx}</div>
     <div class="rec-main">
-      <b>${s.name}</b>
-      <div class="meta"><span class="hi">спрос ${Math.round(s.ld)}</span> · ${s.lc} тч · ${s.fil} · ${fmtD(s.nd)}</div>
+      <b>${esc(s.name)}</b>
+      <div class="meta"><span class="hi">спрос ${Math.round(s.ld)}</span> · ${s.lc} тч · ${esc(s.fil)} · ${fmtD(s.nd)}</div>
     </div>
     <div class="rec-demand">
       <div class="dv">${Math.round(s.ld)}</div>
@@ -482,12 +490,12 @@ function openRec(s, rank) {
    .setLatLng([s.lat, s.lon])
    .setContent(`
      <div class="pp-title">Зона #${rank} — кандидат на ТТ BR</div>
-     <div class="pp-row"><span>Основа</span><b>${d.name}</b></div>
-     <div class="pp-row"><span>Город</span><b>${s.fil}</b></div>
+     <div class="pp-row"><span>Основа</span><b>${esc(d.name)}</b></div>
+     <div class="pp-row"><span>Город</span><b>${esc(s.fil)}</b></div>
      <div class="pp-row"><span>Спрос рядом</span><b>${Math.round(s.ld)} ед.</b></div>
      <div class="pp-row"><span>Точек рынка в зоне</span><b>${s.lc}</b></div>
      <div class="pp-row"><span>До ближайшей ТТ</span><b>${fmtD(s.nd)}</b></div>
-     <div class="pp-why">Высокий спрос (${d.name.toLowerCase()}) в радиусе ~700 м без нашей ТТ ближе ${fmtD(covR)}. Ориентир — «${s.name}». Рекомендуется открытие BR.</div>
+     <div class="pp-why">Высокий спрос (${esc(d.name).toLowerCase()}) в радиусе ~700 м без нашей ТТ ближе ${fmtD(covR)}. Ориентир — «${esc(s.name)}». Рекомендуется открытие BR.</div>
      <span class="pp-tag" style="background:#10362a;color:#7fe3b4;border:1px solid #1c5a44">РЕКОМЕНДАЦИЯ BR</span>`)
    .openOn(map);
 }
@@ -498,7 +506,7 @@ function buildRecBasisSel() {
   if (!sel) return;
   if (!heatKeys.includes(recBasis)) recBasis = heatKeys[0] || '';
   sel.innerHTML = heatKeys.length
-    ? heatKeys.map(k => `<option value="${k}"${k === recBasis ? ' selected' : ''}>${DS[k] ? DS[k].name : k}</option>`).join('')
+    ? heatKeys.map(k => `<option value="${k}"${k === recBasis ? ' selected' : ''}>${esc(DS[k] ? DS[k].name : k)}</option>`).join('')
     : '<option value="">Нет слоёв — загрузите на вкладке «Карта»</option>';
 }
 
@@ -539,7 +547,7 @@ function renderRecs() {
   const cityTotal = d.recs.filter(s => !city || s.fil === city).reduce((a, s) => a + s.vol, 0) || 1;
   document.getElementById('rec-count').textContent = recs.length;
   document.getElementById('rec-lbl').innerHTML =
-    `зон для новой <b>BR</b> · основа: <b>${d.name.toLowerCase()}</b> · вне покрытия <b>${Math.round(uncSum).toLocaleString('ru-RU')}</b> ед. (<b>${Math.round(uncSum / cityTotal * 100)}%</b>)`;
+    `зон для новой <b>BR</b> · основа: <b>${esc(d.name).toLowerCase()}</b> · вне покрытия <b>${Math.round(uncSum).toLocaleString('ru-RU')}</b> ед. (<b>${Math.round(uncSum / cityTotal * 100)}%</b>)`;
 
   // Render list
   const el = document.getElementById('rec-list');
@@ -588,7 +596,7 @@ function renderRecs() {
       zIndexOffset: 2000,
     });
     m.bindTooltip(
-      `<b style="font-weight:700">Зона #${i + 1} · ${s.fil}</b><br>спрос ${Math.round(s.ld)} (${d.name.toLowerCase()})`,
+      `<b style="font-weight:700">Зона #${i + 1} · ${esc(s.fil)}</b><br>спрос ${Math.round(s.ld)} (${esc(d.name).toLowerCase()})`,
       { className: 'tt', direction: 'top', offset: [0, -14] }
     );
     m.on('click', () => openRec(s, i + 1));
@@ -657,7 +665,7 @@ function buildHeatUI() {
     card.innerHTML = `
       <div class="lyr-top">
         <div class="cbx${d.visible ? ' on' : ''}"></div>
-        <div class="nm">${d.name}
+        <div class="nm">${esc(d.name)}
           <small>${d.stats.n.toLocaleString('ru-RU')} точек · объём ${Math.round(d.stats.sum).toLocaleString('ru-RU')}</small>
         </div>
         <div class="lyr-rename" title="Переименовать" style="cursor:pointer;color:var(--dim);font-size:14px;line-height:1;padding:0 3px;transition:.15s">✎</div>
@@ -881,12 +889,12 @@ function renderCustomPoints() {
         icon: L.divIcon({ className: '', html: ic.html, iconSize: [30, 30], iconAnchor: ic.anchor }),
         zIndexOffset: 1500,
       });
-      const parts = [r.name ? `<div class="pp-title">${r.name}</div>` : ''];
-      if (r.addr)  parts.push(`<div class="pp-row"><span>Адрес</span><b style="font-family:IQOS;font-weight:500;text-align:right">${r.addr}</b></div>`);
-      if (r.hours) parts.push(`<div class="pp-row"><span>Часы</span><b>${r.hours}</b></div>`);
-      if (r.code)  parts.push(`<div class="pp-row"><span>Код</span><b>${r.code}</b></div>`);
+      const parts = [r.name ? `<div class="pp-title">${esc(r.name)}</div>` : ''];
+      if (r.addr)  parts.push(`<div class="pp-row"><span>Адрес</span><b style="font-family:IQOS;font-weight:500;text-align:right">${esc(r.addr)}</b></div>`);
+      if (r.hours) parts.push(`<div class="pp-row"><span>Часы</span><b>${esc(r.hours)}</b></div>`);
+      if (r.code)  parts.push(`<div class="pp-row"><span>Код</span><b>${esc(r.code)}</b></div>`);
       m.bindPopup(parts.filter(Boolean).join(''));
-      if (r.name) m.bindTooltip(`<b style="font-weight:700">${r.name}</b><br>${l.name}`, { className: 'tt', direction: 'top', offset: [0, -ic.anchor[1] + 4] });
+      if (r.name) m.bindTooltip(`<b style="font-weight:700">${esc(r.name)}</b><br>${esc(l.name)}`, { className: 'tt', direction: 'top', offset: [0, -ic.anchor[1] + 4] });
       m.addTo(l._group);
     });
   });
@@ -914,7 +922,7 @@ function buildCustomPtUI() {
     <div class="cpt-layer" data-cpid="${l.id}">
       <div class="cpt-top">
         <div class="cbx${l.visible ? ' on' : ''}" style="border-color:${l.color};${l.visible ? 'background:' + l.color : ''}" data-cpvis="${l.id}"></div>
-        <span class="cpt-name">${l.name}</span>
+        <span class="cpt-name">${esc(l.name)}</span>
         <span class="cpt-count">${l.recs.length}</span>
         <button class="cpt-del" data-cpdel="${l.id}" title="Удалить слой">✕</button>
       </div>
@@ -1046,7 +1054,7 @@ function toCustomPtRecs(rows) {
 function rebuildUpTarget() {
   const sel = document.getElementById('up-target');
   const cur = sel.value;
-  const heatOpts = heatKeys.map(k => `<option value="${k}">${DS[k] ? DS[k].name : k}</option>`).join('');
+  const heatOpts = heatKeys.map(k => `<option value="${k}">${esc(DS[k] ? DS[k].name : k)}</option>`).join('');
   sel.innerHTML = heatOpts + '<option value="__own__">Наши точки · IQOS (BR / SE)</option>';
   if (cur && (heatKeys.includes(cur) || cur === '__own__')) sel.value = cur;
 }
@@ -1390,7 +1398,7 @@ function buildRtExclUI() {
     return;
   }
   box.innerHTML = keys.map(k =>
-    `<label class="chk rt-excl-item"><div class="cbx${rtExclKeys.includes(k) ? ' on' : ''}" data-rtx="${k}"></div><span>${rtExclLayerName(k)}</span></label>`
+    `<label class="chk rt-excl-item"><div class="cbx${rtExclKeys.includes(k) ? ' on' : ''}" data-rtx="${k}"></div><span>${esc(rtExclLayerName(k))}</span></label>`
   ).join('');
   box.querySelectorAll('[data-rtx]').forEach(cb => {
     cb.addEventListener('click', () => {
@@ -1424,7 +1432,7 @@ function buildAddrSrcSel() {
   // If current key no longer exists, reset to the first available layer
   if (!opts.find(o => o.key === addrSrcKey)) addrSrcKey = opts[0] ? opts[0].key : '';
   sel.innerHTML = opts.length
-    ? opts.map(o => `<option value="${o.key}"${o.key === addrSrcKey ? ' selected' : ''}>${o.name}</option>`).join('')
+    ? opts.map(o => `<option value="${o.key}"${o.key === addrSrcKey ? ' selected' : ''}>${esc(o.name)}</option>`).join('')
     : '<option value="">Нет слоёв — загрузите на вкладке «Карта»</option>';
   const isCpt = addrSrcKey.startsWith('__cpt__');
   const volBlock  = document.getElementById('addr-vol-block');
@@ -1445,7 +1453,7 @@ function buildAddrRefSel() {
   // If current ref key no longer valid, reset
   if (!opts.find(o => o.key === addrRefKey)) addrRefKey = '__own__';
   sel.innerHTML = opts.map(o =>
-    `<option value="${o.key}"${o.key === addrRefKey ? ' selected' : ''}>${o.name}</option>`
+    `<option value="${o.key}"${o.key === addrRefKey ? ' selected' : ''}>${esc(o.name)}</option>`
   ).join('');
 }
 
@@ -1566,7 +1574,7 @@ function previewAddrOnMap() {
       fillOpacity: 1, pane: 'markerPane',
     });
     m.bindTooltip(
-      `<b style="color:#6C8EFF">${refLabel}</b><br>${refName}`,
+      `<b style="color:#6C8EFF">${esc(refLabel)}</b><br>${esc(refName)}`,
       { className: 'tt', direction: 'top', offset: [0, -8] }
     );
     addrLayer.addLayer(m);
@@ -1579,10 +1587,10 @@ function previewAddrOnMap() {
       fillOpacity: 0.92, pane: 'markerPane',
     });
     const nearName = p._nearRef ? (p._nearRef.name || p._nearRef.ch || '') : '';
-    const lines = [`<b style="color:#FF8C00">#${i + 1} ${p.name || '—'}</b>`];
-    if (p.addr) lines.push(p.addr);
-    if (p.fil)  lines.push(p.fil);
-    lines.push(`До ${refLabel}${nearName ? ' (' + nearName + ')' : ''}: <b>${fmtD(p._distOwn)}</b>`);
+    const lines = [`<b style="color:#FF8C00">#${i + 1} ${esc(p.name || '—')}</b>`];
+    if (p.addr) lines.push(esc(p.addr));
+    if (p.fil)  lines.push(esc(p.fil));
+    lines.push(`До ${esc(refLabel)}${nearName ? ' (' + esc(nearName) + ')' : ''}: <b>${fmtD(p._distOwn)}</b>`);
     if (p.vol_total != null) lines.push(`Объём: ${Math.round(p.vol_total)}`);
     m.bindPopup(lines.join('<br>'));
     addrLayer.addLayer(m);
