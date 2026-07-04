@@ -55,10 +55,11 @@ html, body {
 /* Desktop collapse — slide sidebar out, map reflows to full width */
 @media (min-width: 781px) {
   #app.side-hidden #side { margin-left: calc(-1 * (var(--side-w) + 14px)); }
+  #app.side-hidden #layer-legend { left: 28px; }
 }
 
-#map { flex: 1; height: 100%; border-radius: 24px; overflow: hidden; box-shadow: var(--shadow); background: #E4EBF3; }
-.leaflet-container { font-family: "Manrope"; background: #E4EBF3; }
+#map { flex: 1; height: 100%; border-radius: 24px; overflow: hidden; box-shadow: var(--shadow); background: #EDF1F7; }
+.leaflet-container { font-family: "Manrope"; background: #EDF1F7; }
 
 /* ── BRAND ───────────────────────────────────────────────────────────── */
 .brand {
@@ -71,12 +72,10 @@ html, body {
   width: 42px; height: 42px; border-radius: 14px; flex: 0 0 auto;
   background: linear-gradient(140deg, #17C4D6, #0E96A8);
   box-shadow: 0 6px 16px -4px rgba(14,150,168,.5), inset 0 0 0 1.5px rgba(255,255,255,.3);
-  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
 }
-.brand-mark::after {
-  content: ""; position: absolute; inset: 0; margin: auto;
-  width: 12px; height: 12px; border-radius: 50%; background: #fff;
-}
+.brand-mark svg { display: block; }
 .brand-text { flex: 1; min-width: 0; }
 .brand-text h1 {
   font-family: "Manrope"; font-weight: 800; font-size: 15px;
@@ -123,22 +122,25 @@ html, body {
 
 /* ── SIDE TABS NAV ───────────────────────────────────────────────────── */
 .side-tabs {
-  display: flex; flex: 0 0 auto;
+  display: flex; flex: 0 0 auto; gap: 5px;
+  padding: 9px 10px 11px;
   border-top: 1px solid var(--line);
   background: var(--side-bg);
 }
 .side-tab {
   flex: 1; display: flex; flex-direction: column; align-items: center;
-  gap: 3px; padding: 10px 4px 12px;
-  font-family: "Manrope"; font-size: 9px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: .5px;
-  color: var(--dim); background: none; border: none; cursor: pointer;
+  gap: 5px; padding: 9px 4px 10px;
+  font-family: "Manrope"; font-size: 10.5px; font-weight: 700;
+  letter-spacing: .1px;
+  color: var(--mut); background: none; border: none; border-radius: 13px;
+  cursor: pointer;
   transition: color .18s, background .18s;
 }
 .tab-icon-wrap { position: relative; display: inline-flex; }
-.side-tab .tab-icon { font-size: 18px; line-height: 1; }
+.side-tab .tab-icon { display: inline-flex; line-height: 1; }
+.side-tab .tab-icon svg { width: 19px; height: 19px; display: block; }
 .side-tab:hover { color: var(--acc); background: var(--acc-l); }
-.side-tab.active { color: var(--acc); border-top: 2px solid var(--acc); padding-top: 8px; }
+.side-tab.active { color: var(--acc-d); background: var(--acc-l); }
 
 /* ── TAB SECTION LABELS ──────────────────────────────────────────────── */
 .tab-section-title {
@@ -150,46 +152,65 @@ html, body {
 .tab-section-title::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .tab-section-divider { height: 1px; background: var(--line); margin: 22px 0; }
 
-/* ── COLLAPSIBLE GROUPS (declutter — advanced controls fold away) ─────── */
-.adv-group { margin: 18px 0 0; border-top: 1px solid var(--line); }
-.adv-group:first-child { border-top: none; margin-top: 0; }
+/* ── COLLAPSIBLE GROUPS (card-style rows, advanced controls fold away) ── */
+.adv-group {
+  margin: 12px 0 0;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 16px; box-shadow: var(--shadow-card);
+}
+.adv-group:first-child { margin-top: 0; }
 .adv-group > summary {
   list-style: none; cursor: pointer; user-select: none;
   display: flex; align-items: center; gap: 9px;
-  padding: 13px 2px 12px; margin: 0;
-  font-family: "Manrope"; font-size: 9.5px; font-weight: 700;
-  letter-spacing: 1.3px; text-transform: uppercase; color: var(--dim);
+  padding: 14px 16px; margin: 0; border-radius: 16px;
+  font-family: "Manrope"; font-size: 13px; font-weight: 600;
+  color: var(--mut);
   transition: color .15s;
 }
 .adv-group > summary::-webkit-details-marker { display: none; }
-.adv-group > summary:hover { color: var(--acc); }
-.adv-group[open] > summary { color: var(--mut); }
+.adv-group > summary:hover { color: var(--ink); }
+.adv-group[open] > summary { color: var(--ink); padding-bottom: 8px; }
 .adv-group > summary .chev {
-  margin-left: auto; font-size: 14px; line-height: 1; color: var(--dim);
+  margin-left: auto; font-size: 15px; line-height: 1; color: var(--dim);
+  transform: rotate(90deg);
   transition: transform .25s var(--ease-io), color .15s;
 }
 .adv-group > summary:hover .chev { color: var(--acc); }
-.adv-group[open] > summary .chev { transform: rotate(90deg); }
-.adv-group > .adv-body { padding: 2px 0 6px; animation: adv-in .22s var(--ease); }
+.adv-group[open] > summary .chev { transform: rotate(-90deg); }
+.adv-group > .adv-body { padding: 0 16px 15px; animation: adv-in .22s var(--ease); }
 @keyframes adv-in { from { opacity:0; transform: translateY(-5px); } to { opacity:1; transform:none; } }
+
+/* ── CARD-STYLE CONTROL BLOCK (e.g. «Общая яркость тепла») ───────────── */
+.ctrl.ctrl-card {
+  margin: 12px 0 0; padding: 15px 16px 17px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 16px; box-shadow: var(--shadow-card);
+}
+.ctrl-card .row { align-items: center; margin-bottom: 12px; }
+.ctrl-card label { font-size: 13px; font-weight: 600; color: var(--ink); }
+.ctrl-card .val, .ctrl-card .val.blue {
+  background: var(--acc-l); color: var(--acc-d);
+  padding: 4px 11px; border-radius: 9px; font-size: 11.5px;
+}
 
 /* ── ZOOM CONTROLS (custom, replaces default Leaflet) ────────────────── */
 #zoom-ctl {
   position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
   z-index: 1100;
-  display: flex; flex-direction: column;
-  background: rgba(255,255,255,.95); backdrop-filter: blur(10px);
-  border: 1px solid var(--line2); border-radius: 14px;
-  box-shadow: var(--shadow-sm); overflow: hidden;
+  display: flex; flex-direction: column; gap: 12px;
 }
 .zbtn {
-  width: 42px; height: 42px; padding: 0;
+  width: 44px; height: 44px; padding: 0;
   display: flex; align-items: center; justify-content: center;
-  background: none; border: none; cursor: pointer; color: var(--mut);
-  transition: background .15s var(--ease), color .15s;
+  background: rgba(255,255,255,.95); backdrop-filter: blur(10px);
+  border: 1px solid var(--line2); border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer; color: var(--mut);
+  transition: background .15s var(--ease), color .15s, transform .15s var(--ease);
 }
 .zbtn svg { width: 19px; height: 19px; display: block; }
-.zbtn + .zbtn { border-top: 1px solid var(--line); }
+.zbtn:hover { transform: translateY(-1px); }
+.zbtn-fit { margin-top: 8px; }
 .zbtn:hover  { background: var(--acc-l);  color: var(--acc); }
 .zbtn:active { background: var(--acc-l2); }
 .zbtn.disabled { color: var(--dim); opacity: .45; pointer-events: none; }
@@ -223,7 +244,9 @@ html, body {
   color: var(--mut); background: var(--card); border: 1px solid var(--line2);
   border-radius: 100px; padding: 5px 13px; cursor: pointer;
   transition: .2s var(--ease); flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 6px;
 }
+.city-extra-btn svg { display: block; }
 .city-extra-btn:hover { color: var(--acc); border-color: var(--acc); transform: translateY(-1px); }
 .city-extra-btn.on { background: var(--acc); border-color: var(--acc); color: #fff; box-shadow: 0 3px 10px rgba(18,173,193,.3); }
 
@@ -255,19 +278,47 @@ html, body {
   box-shadow: 0 3px 10px rgba(18,173,193,.3);
 }
 
-/* ── LAYER CARDS ─────────────────────────────────────────────────────── */
+/* ── LAYER CARDS (compact plate: dot · name · count · toggle) ────────── */
 .lyr {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 14px; padding: 15px 15px 16px; margin-bottom: 12px;
-  box-shadow: var(--shadow-card);
+  background: var(--card2);
+  border: 1px solid transparent;
+  border-radius: 16px; margin-bottom: 10px;
   transition: .22s var(--ease);
 }
-.lyr:hover {
-  border-color: var(--line2);
-  box-shadow: 0 1px 4px rgba(40,55,90,.05), 0 8px 20px rgba(40,55,90,.07);
+.lyr:hover { border-color: var(--line2); }
+.lyr-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 15px; cursor: pointer; user-select: none;
 }
-.lyr-top { display: flex; align-items: center; gap: 11px; }
+.lyr-dot {
+  width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto;
+  box-shadow: 0 1px 4px rgba(30,45,80,.25);
+}
+.lyr-head .nm { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 800; color: var(--ink); letter-spacing: -.2px; }
+.lyr-head .nm small {
+  display: block; font-weight: 600; font-size: 10.5px;
+  color: var(--dim); margin-top: 3px;
+}
+.lyr-chev { flex: 0 0 auto; color: var(--dim); transition: transform .25s var(--ease-io), color .15s; }
+.lyr-head:hover .lyr-chev { color: var(--acc); }
+.lyr.open .lyr-chev { transform: rotate(180deg); }
+.lyr-body { display: none; padding: 1px 15px 14px; }
+.lyr.open .lyr-body { display: block; animation: adv-in .22s var(--ease); }
+.lyr-meta { font-size: 10.5px; color: var(--dim); margin-top: 10px; }
+.lyr-actions { display: flex; gap: 7px; margin-top: 11px; }
+.lyr-act {
+  flex: 1; padding: 8px 4px;
+  font-family: "Manrope"; font-weight: 700; font-size: 11px; white-space: nowrap;
+  color: var(--mut); background: var(--card);
+  border: 1px solid var(--line2); border-radius: 9px;
+  cursor: pointer; transition: .18s var(--ease);
+}
+.lyr-act:hover { color: var(--acc); border-color: var(--acc); background: var(--acc-l); }
+.lyr-act.on { color: #fff; background: var(--acc); border-color: var(--acc); }
+.lyr-act.lyr-del { flex: 0 0 auto; width: 36px; padding: 8px 0; font-size: 14px; color: var(--dim); }
+.lyr-act.lyr-del:hover { color: var(--danger); border-color: rgba(233,86,75,.5); background: rgba(233,86,75,.07); }
+/* legacy header row (points tab cards) */
+.lyr-top { display: flex; align-items: center; gap: 11px; padding: 14px 15px 0; }
 .lyr-top .nm { flex: 1; font-size: 13px; font-weight: 700; color: var(--ink); }
 .lyr-top .nm small {
   display: block; font-weight: 500; font-size: 9.5px;
@@ -280,18 +331,23 @@ html, body {
 .lyr-ctl .grp { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--mut); }
 .sl-val { font-size: 10px; color: var(--acc); min-width: 28px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; font-weight: 700; }
 
-/* ── LAYER LEGEND (on map) ───────────────────────────────────────────── */
+/* ── LAYER LEGEND (bottom-left on map) ───────────────────────────────── */
 #layer-legend {
-  position: absolute; top: 96px; right: 14px; z-index: 1100;
+  /* map starts after: app padding 14 + sidebar + flex gap 14; inset 14 more */
+  position: absolute; left: calc(var(--side-w) + 42px); bottom: 28px; z-index: 1100;
   background: rgba(255,255,255,.95); backdrop-filter: blur(10px);
-  border: 1px solid var(--line2); border-radius: 12px;
-  padding: 9px 13px; font-size: 11px; color: var(--mut);
+  border: 1px solid var(--line2); border-radius: 16px;
+  padding: 13px 17px 14px; font-size: 12px; color: var(--mut);
   box-shadow: var(--shadow-sm);
-  display: flex; flex-direction: column; gap: 6px; min-width: 120px;
+  display: flex; flex-direction: column; gap: 8px; min-width: 150px;
 }
-.legend-item { display: flex; align-items: center; gap: 7px; }
-.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.legend-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
+.legend-title {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 1.3px;
+  text-transform: uppercase; color: var(--dim); margin-bottom: 2px;
+}
+.legend-item { display: flex; align-items: center; gap: 9px; }
+.legend-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 1px 3px rgba(30,45,80,.2); }
+.legend-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; color: var(--ink); font-weight: 600; }
 
 /* gradient strip showing the layer's active colour ramp */
 .ramp-preview {
@@ -346,10 +402,10 @@ input[type=range] {
   background: linear-gradient(90deg, var(--acc) var(--pct, 50%), #dde2ec var(--pct, 50%));
 }
 input[type=range]::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 16px; height: 16px;
-  border-radius: 50%; background: #fff;
-  cursor: pointer; border: 2px solid var(--acc);
-  box-shadow: 0 2px 6px rgba(40,55,90,.2);
+  -webkit-appearance: none; width: 17px; height: 17px;
+  border-radius: 50%; background: var(--acc);
+  cursor: pointer; border: 2.5px solid #fff;
+  box-shadow: 0 2px 8px rgba(18,173,193,.45);
   transition: box-shadow .18s, transform .12s;
 }
 input[type=range]::-webkit-slider-thumb:hover { box-shadow: 0 2px 8px rgba(40,55,90,.28), 0 0 0 5px var(--acc-l); transform: scale(1.05); }
@@ -357,7 +413,8 @@ input[type=range].green {
   background: linear-gradient(90deg, var(--rec) var(--pct, 50%), #dde2ec var(--pct, 50%));
 }
 input[type=range].green::-webkit-slider-thumb {
-  border-color: var(--rec);
+  background: var(--rec);
+  box-shadow: 0 2px 8px rgba(20,184,125,.45);
 }
 input[type=range].green::-webkit-slider-thumb:hover { box-shadow: 0 2px 8px rgba(40,55,90,.28), 0 0 0 5px var(--rec-l); }
 .lyr-ctl input[type=range] { width: 92px; }
@@ -912,7 +969,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 
   /* Tabs: bigger touch targets */
   .side-tab { padding: 12px 4px 14px; font-size: 10px; }
-  .side-tab .tab-icon { font-size: 20px; }
+  .side-tab .tab-icon svg { width: 21px; height: 21px; }
 
   /* Section titles: readable size */
   .tab-section-title { font-size: 11px; }
