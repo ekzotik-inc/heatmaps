@@ -171,8 +171,9 @@ let _cptUploadTarget = null;  // id of layer awaiting file upload
 const map = L.map('map', { preferCanvas: true, zoomControl: false, minZoom: 5, zoomSnap: .5 })
               .setView([41, 67], 6);
 
-L.tileLayer('https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1', {
-  attribution: '&copy; <a href="https://2gis.ru">2ГИС</a>', subdomains: '0123', maxZoom: 18,
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &middot; &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  subdomains: 'abcd', maxZoom: 19,
 }).addTo(map);
 
 map.createPane('districts'); map.getPane('districts').style.zIndex = 460;
@@ -449,13 +450,20 @@ function renderHeat() {
 function updateLayerLegend() {
   const el = document.getElementById('layer-legend');
   if (!el) return;
-  const visible = heatKeys.filter(k => DS[k] && DS[k].visible && DS[k].recs && DS[k].recs.length);
-  if (visible.length < 2) { el.style.display = 'none'; return; }
-  el.style.display = '';
-  el.innerHTML = visible.map(k => {
+  const items = [];
+  heatKeys.forEach(k => {
     const d = DS[k];
-    return `<div class="legend-item"><div class="legend-dot" style="background:${d.color}"></div><span class="legend-name">${esc(d.name)}</span></div>`;
-  }).join('');
+    if (d && d.visible && d.recs && d.recs.length) items.push({ color: d.color, name: d.name });
+  });
+  customPtLayers.forEach(l => {
+    if (l.visible && l.recs && l.recs.length) items.push({ color: l.color, name: l.name });
+  });
+  if (recShow && lastRecs.length) items.push({ color: '#14B87D', name: 'Рекомендации' });
+  if (items.length < 2) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.innerHTML = '<div class="legend-title">Легенда</div>' + items.map(it =>
+    `<div class="legend-item"><div class="legend-dot" style="background:${it.color}"></div><span class="legend-name">${esc(it.name)}</span></div>`
+  ).join('');
 }
 
 /* ── RECOMMENDATIONS ─────────────────────────────────────────────────── */
@@ -519,7 +527,7 @@ function renderRecs() {
     const rl = document.getElementById('rec-lbl'); if (rl) rl.innerHTML = 'Загрузите слой на вкладке «Карта», чтобы получить рекомендации';
     const list = document.getElementById('rec-list'); if (list) list.innerHTML = '';
     const tgl = document.getElementById('rec-toggle'); if (tgl) tgl.style.display = 'none';
-    updateAccBadges();
+    updateAccBadges(); updateLayerLegend();
     return;
   }
   lastBasisName = d.name;
@@ -540,7 +548,7 @@ function renderRecs() {
     if (recs.length >= topN) break;
   }
   lastRecs = recs;
-  updateAccBadges();
+  updateAccBadges(); updateLayerLegend();
 
   // Summary
   const uncSum    = cand.reduce((a, s) => a + s.vol, 0);
@@ -649,6 +657,8 @@ function toggleSolo(k) {
 }
 
 /* ── UI BUILDERS ─────────────────────────────────────────────────────── */
+const _lyrOpen = new Set();   // keys of layer cards whose settings are expanded
+
 function buildHeatUI() {
   const el = document.getElementById('heat-list');
   el.innerHTML = '';
@@ -660,33 +670,44 @@ function buildHeatUI() {
     if (!d) return;
     const custom = k.startsWith('custom_');
     const card   = document.createElement('div');
-    card.className = 'lyr';
-    card.style.borderLeft = `3px solid ${d.color}`;
+    card.className = 'lyr' + (_lyrOpen.has(k) ? ' open' : '');
     card.innerHTML = `
-      <div class="lyr-top">
-        <div class="cbx${d.visible ? ' on' : ''}"></div>
+      <div class="lyr-head">
+        <span class="lyr-dot" style="background:${d.color}"></span>
         <div class="nm">${esc(d.name)}
-          <small>${d.stats.n.toLocaleString('ru-RU')} точек · объём ${Math.round(d.stats.sum).toLocaleString('ru-RU')}</small>
+          <small>${d.stats.n.toLocaleString('ru-RU')} точек</small>
         </div>
-        <div class="lyr-rename" title="Переименовать" style="cursor:pointer;color:var(--dim);font-size:14px;line-height:1;padding:0 3px;transition:.15s">✎</div>
-        <div class="lyr-solo${_soloKey === k ? ' on' : ''}" title="Показать только этот слой">◉</div>
-        ${custom ? `<div class="lyr-del" title="Удалить слой" style="cursor:pointer;color:var(--dim);font-size:18px;line-height:1;padding:0 4px;transition:.15s">&times;</div>` : ''}
+        <svg class="lyr-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        <div class="cbx${d.visible ? ' on' : ''}"></div>
       </div>
-      <div class="lyr-ctl">
-        <div class="grp" style="flex:1">Палитра
-          <select class="ramp-sel" style="flex:1">${Object.keys(RAMP_NAMES).map(r =>
-            `<option value="${r}"${(d.ramp || 'custom') === r ? ' selected' : ''}>${RAMP_NAMES[r]}</option>`).join('')}</select>
-          <input type="color" value="${d.color}" style="display:${(d.ramp || 'custom') === 'custom' ? '' : 'none'}">
+      <div class="lyr-body">
+        <div class="lyr-ctl">
+          <div class="grp" style="flex:1">Палитра
+            <select class="ramp-sel" style="flex:1">${Object.keys(RAMP_NAMES).map(r =>
+              `<option value="${r}"${(d.ramp || 'custom') === r ? ' selected' : ''}>${RAMP_NAMES[r]}</option>`).join('')}</select>
+            <input type="color" value="${d.color}" style="display:${(d.ramp || 'custom') === 'custom' ? '' : 'none'}">
+          </div>
         </div>
-      </div>
-      <div class="ramp-preview"></div>
-      <div class="lyr-ctl">
-        <div class="grp" style="flex:1">Интенс. <input type="range" class="r-int" min="0.2" max="4" step="0.1" value="${d.intensity || 1}" style="flex:1"><span class="sl-val">${(d.intensity || 1).toFixed(1)}×</span></div>
-        <div class="grp" style="flex:1">Прозр. <input type="range" class="r-op" min="0.05" max="1" step="0.05" value="${d.opacity == null ? 1 : d.opacity}" style="flex:1"><span class="sl-val">${Math.round((d.opacity == null ? 1 : d.opacity) * 100)}%</span></div>
-      </div>
-      <div class="lyr-ctl" style="margin-top:9px">
-        <button class="lyr-update" style="flex:1;padding:8px 10px;font-size:11.5px;font-family:Manrope;font-weight:600;color:var(--acc);background:var(--acc-l);border:1px solid rgba(18,173,193,.25);border-radius:10px;cursor:pointer;transition:.18s">⬆ Обновить данные</button>
+        <div class="ramp-preview"></div>
+        <div class="lyr-ctl">
+          <div class="grp" style="flex:1">Интенс. <input type="range" class="r-int" min="0.2" max="4" step="0.1" value="${d.intensity || 1}" style="flex:1"><span class="sl-val">${(d.intensity || 1).toFixed(1)}×</span></div>
+          <div class="grp" style="flex:1">Прозр. <input type="range" class="r-op" min="0.05" max="1" step="0.05" value="${d.opacity == null ? 1 : d.opacity}" style="flex:1"><span class="sl-val">${Math.round((d.opacity == null ? 1 : d.opacity) * 100)}%</span></div>
+        </div>
+        <div class="lyr-meta">Объём слоя: ${Math.round(d.stats.sum).toLocaleString('ru-RU')}</div>
+        <div class="lyr-actions">
+          <button class="lyr-act lyr-rename" title="Переименовать слой">✎ Имя</button>
+          <button class="lyr-act lyr-solo${_soloKey === k ? ' on' : ''}" title="Показать только этот слой">◉ Соло</button>
+          <button class="lyr-act lyr-update" title="Перезалить файл в этот слой">⬆ Данные</button>
+          ${custom ? `<button class="lyr-act lyr-del" title="Удалить слой">&times;</button>` : ''}
+        </div>
       </div>`;
+
+    // Header click expands / collapses the settings (except the toggle pill)
+    card.querySelector('.lyr-head').addEventListener('click', e => {
+      if (e.target.closest('.cbx') || e.target.tagName === 'INPUT') return;
+      const open = card.classList.toggle('open');
+      if (open) _lyrOpen.add(k); else _lyrOpen.delete(k);
+    });
 
     const colorInp = card.querySelector('input[type=color]');
     const rampSel  = card.querySelector('.ramp-sel');
@@ -708,7 +729,7 @@ function buildHeatUI() {
       colorInp.style.display = d.ramp === 'custom' ? '' : 'none';
       drawPreview(); renderHeat();
     });
-    colorInp.addEventListener('input', e => { d.color = e.target.value; card.style.borderLeft = `3px solid ${d.color}`; drawPreview(); renderHeat(); });
+    colorInp.addEventListener('input', e => { d.color = e.target.value; card.querySelector('.lyr-dot').style.background = d.color; drawPreview(); renderHeat(); });
     card.querySelector('.r-int').addEventListener('input', e => {
       d.intensity = +e.target.value;
       fillSlider(e.target);
@@ -725,8 +746,6 @@ function buildHeatUI() {
     // Rename — swap the name for an inline input
     const nmEl = card.querySelector('.nm');
     const renameBtn = card.querySelector('.lyr-rename');
-    renameBtn.addEventListener('mouseenter', () => renameBtn.style.color = 'var(--acc)');
-    renameBtn.addEventListener('mouseleave', () => renameBtn.style.color = 'var(--dim)');
     renameBtn.addEventListener('click', () => {
       const cur = d.name;
       const inp = document.createElement('input');
@@ -751,8 +770,6 @@ function buildHeatUI() {
 
     if (custom) {
       const del = card.querySelector('.lyr-del');
-      del.addEventListener('mouseenter', () => del.style.color = '#e05454');
-      del.addEventListener('mouseleave', () => del.style.color = 'var(--dim)');
       del.addEventListener('click', () => {
         if (!confirm(`Удалить слой «${d.name}»? Данные слоя будут потеряны.`)) return;
         if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
@@ -762,6 +779,7 @@ function buildHeatUI() {
       });
     }
     el.appendChild(card);
+    card.querySelectorAll('input[type=range]').forEach(fillSlider);
   });
 }
 
@@ -898,6 +916,7 @@ function renderCustomPoints() {
       m.addTo(l._group);
     });
   });
+  updateLayerLegend();
 }
 
 function buildCustomPtUI() {

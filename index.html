@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260629q"/>
+  <link rel="stylesheet" href="style.css?v=20260704a"/>
 </head>
 <body>
 
@@ -71,7 +71,9 @@
 <div id="app">
   <aside id="side">
     <div class="brand">
-      <div class="brand-mark"></div>
+      <div class="brand-mark">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+      </div>
       <div class="brand-text">
         <h1>Тепловая карта · BR</h1>
         <p>Сигареты + Стики · Аналитика</p>
@@ -90,7 +92,7 @@
       <div class="tab-panel active" id="tab-map">
         <p class="tab-section-title">Тепловые слои</p>
         <div id="heat-list"></div>
-        <div class="ctrl" style="margin-top:6px">
+        <div class="ctrl ctrl-card">
           <div class="row">
             <label>Общая яркость тепла <span class="tip-icon" data-tip="Усиливает или ослабляет яркость всех тепловых слоёв одновременно">ⓘ</span></label>
             <span class="val blue" id="v-heat-boost">100%</span>
@@ -299,28 +301,28 @@
     <nav class="side-tabs">
       <button class="side-tab active" data-tab="tab-map">
         <div class="tab-icon-wrap">
-          <span class="tab-icon">🗺</span>
+          <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg></span>
           <span class="acc-badge" id="acc-badge-heat"></span>
         </div>
         <span class="tab-label">Карта</span>
       </button>
       <button class="side-tab" data-tab="tab-points">
         <div class="tab-icon-wrap">
-          <span class="tab-icon">📍</span>
+          <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
           <span class="acc-badge" id="acc-badge-cpt"></span>
         </div>
         <span class="tab-label">Точки</span>
       </button>
       <button class="side-tab" data-tab="tab-analysis">
         <div class="tab-icon-wrap">
-          <span class="tab-icon">🎯</span>
+          <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/></svg></span>
           <span class="acc-badge acc-badge-green" id="acc-badge-rec"></span>
         </div>
         <span class="tab-label">Анализ</span>
       </button>
       <button class="side-tab" data-tab="tab-data">
         <div class="tab-icon-wrap">
-          <span class="tab-icon">⚙️</span>
+          <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
         </div>
         <span class="tab-label">Данные</span>
       </button>
@@ -335,7 +337,7 @@
   <div id="city-bar">
     <div class="cities" id="seg-city"></div>
     <div class="city-bar-sep"></div>
-    <button id="districts-toggle" class="city-extra-btn" title="Границы 12 районов Ташкента">🗺 Районы</button>
+    <button id="districts-toggle" class="city-extra-btn" title="Границы 12 районов Ташкента"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>Районы</button>
   </div>
   <div class="badge">Точек на карте: <b id="b-count">—</b></div>
   <div id="layer-legend" style="display:none"></div>
@@ -425,7 +427,7 @@
     started = true;
     window.DATA = d;
     var s = document.createElement('script');
-    s.src = 'app.js?v=20260629q'; // bump to bust cache when app.js changes
+    s.src = 'app.js?v=20260704a'; // bump to bust cache when app.js changes
     s.onload = function () { var b = document.getElementById('boot-overlay'); if (b) b.remove(); };
     document.body.appendChild(s);
   }
