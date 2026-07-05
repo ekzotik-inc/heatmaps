@@ -961,11 +961,8 @@ function renderCityInfo() {
   const s   = CITY_STATS[city];
   const fmt = n => Math.round(n).toLocaleString('ru-RU');
 
-  // live-метрики из данных, загруженных на карту
+  // live-метрика: число наших точек в городе (для «Курильщиков на 1 нашу точку»)
   const ownN = (typeof own !== 'undefined' && own) ? own.filter(o => o.cityRu === city).length : 0;
-  let layerN = 0;
-  heatKeys.forEach(k => { const d = DS[k]; if (d && d.recs) layerN += d.recs.filter(r => r.fil === city).length; });
-  const recN = lastRecs.length;
 
   let html = '';
   if (s) {
@@ -1004,10 +1001,7 @@ function renderCityInfo() {
   html += `
   <div class="ci-card">
     <div class="ci-sec">На карте сейчас</div>
-    <div class="ci-row"><span>Наших точек BR / IQOS</span><b>${fmt(ownN)}</b></div>
-    <div class="ci-row"><span>Точек в загруженных слоях</span><b>${fmt(layerN)}</b></div>
-    <div class="ci-row"><span>Рекомендованных зон для BR</span><b class="green">${fmt(recN)}</b></div>
-    ${s && ownN ? `<div class="ci-row"><span>Курильщиков на 1 нашу точку</span><b>≈ ${fmt(s.pop * s.adult * SMOKE_AVG / ownN)}</b></div>` : ''}
+    <div class="ci-row"><span>Курильщиков на 1 нашу точку</span><b>${s && ownN ? '≈ ' + fmt(s.pop * s.adult * SMOKE_AVG / ownN) : '—'}</b></div>
   </div>`;
 
   if (s) {
