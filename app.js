@@ -2394,7 +2394,16 @@ async function startApp() {
   try { local = JSON.parse(localStorage.getItem(storeKey())); } catch (e) {}
   const serverTs = serverState && serverState._savedAt ? Date.parse(serverState._savedAt) : 0;
   const localTs  = local && local._clientTs ? local._clientTs : 0;
-  const chosen   = (localTs > serverTs && local) ? local : (serverState || null);
+  const hasLayers = st => !!(st && Array.isArray(st.heatKeys) && st.heatKeys.some(k => k.startsWith('custom_')));
+  const localHasLayers  = hasLayers(local);
+  const serverHasLayers = hasLayers(serverState);
+  // Guard against the last-write-wins trap: a stale/empty local snapshot must
+  // not clobber a server state that still holds the uploaded layers (and vice
+  // versa). Only fall back to timestamps when both (or neither) have layers.
+  let chosen;
+  if (serverHasLayers && !localHasLayers)      chosen = serverState;
+  else if (localHasLayers && !serverHasLayers) chosen = local;
+  else chosen = (localTs > serverTs && local) ? local : (serverState || null);
 
   if (chosen) {
     applySnapshot(chosen);
