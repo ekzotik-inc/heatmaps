@@ -57,7 +57,7 @@ async function initDb() {
 }
 
 // Each department keeps its own independent map state, stored under its own key.
-const MAPS = ['comdep', 'other'];
+const MAPS = ['comdep', 'other', 'kg'];
 function mapKey(req) {
   const m = (req.query.map || '').toString();
   return MAPS.includes(m) ? m : 'main'; // 'main' = legacy/default

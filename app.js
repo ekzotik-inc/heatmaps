@@ -85,37 +85,17 @@ function fmtD(m) { return m >= 1000 ? (m / 1000).toFixed(1) + ' км' : Math.rou
 
 /* ── DATA SETUP ──────────────────────────────────────────────────────── */
 const own    = DATA.own;
-const CITIES = DATA.cities;
-
 const OWN_RU = { Tashkent: 'Ташкент', Samarkand: 'Самарканд', Andijan: 'Андижан',
                  Bukhara: 'Бухара', Fergana: 'Фергана', Kokand: 'Коканд', Margilan: 'Фергана' };
 own.forEach(o => { o.cityRu = OWN_RU[o.city] || o.city; o.chk = o.ch === 'BR' ? 'BR' : 'SE'; });
 const ownC = own.map(o => [o.lat, o.lon]);
 
-// Known city centres — fallback so nearest-city lookup covers every city in the
-// top bar even if the base dataset has no shipment data for that city.
-const CITY_CENTERS = {
-  'Ташкент':   [41.311, 69.280],
-  'Андижан':   [40.783, 72.344],
-  'Бухара':    [39.768, 64.421],
-  'Самарканд': [39.654, 66.975],
-  'Коканд':    [40.529, 70.943],
-  'Фергана':   [40.389, 71.783],
-  'Навои':     [40.104, 65.373],
-};
-// City centroid cache for fast nearest-city lookup. Prefer a data-derived
-// centroid; fall back to the known centre so every city resolves correctly.
-const CC = {};
-CITIES.forEach(c => {
-  const a = DATA.cig.recs.filter(s => s.fil === c);
-  if (a.length) CC[c] = [a.reduce((x, s) => x + s.lat, 0) / a.length, a.reduce((x, s) => x + s.lon, 0) / a.length];
-  else if (CITY_CENTERS[c]) CC[c] = CITY_CENTERS[c];
-});
-// Ensure all known cities exist in CC + CITIES even if absent from the dataset.
-Object.keys(CITY_CENTERS).forEach(c => {
-  if (!CC[c]) CC[c] = CITY_CENTERS[c];
-  if (!CITIES.includes(c)) CITIES.push(c);
-});
+// City config is PER-MAP (Узбекистан vs Кыргызстан) — see COUNTRIES /
+// applyCountry() below. Declared here so cityOf()/renderCityInfo() can
+// reference them; actual values are set when a map is chosen (start of startApp).
+let CITIES = [], CITY_CENTERS = {}, CITY_STATS = {}, CC = {};
+let SMOKE_M = 0.194, SMOKE_F = 0.009, SMOKE_AVG = (SMOKE_M + SMOKE_F) / 2;
+let WAGE_UNIT = 'млн', WAGE_CUR = 'сум/мес (2025)';
 function cityOf(lat, lon) {
   let best = CITIES[0], bd = 1e9;
   for (const c in CC) {
@@ -877,10 +857,9 @@ function buildCityUI() {
    женщины 0,9%. Доля населения 21+ — оценка по возрастной структуре
    Нацкомстата (~57% по стране, ~64% в Ташкенте). Продажа табака — 21+.
    ══════════════════════════════════════════════════════════════════════ */
-const SMOKE_M = 0.194, SMOKE_F = 0.009;            // доля курящих (2024)
-const SMOKE_AVG = (SMOKE_M + SMOKE_F) / 2;         // ≈10,2% взрослых 21+
-
-const CITY_STATS = {
+// Узбекистан — справочник городов (SMOKE_* и CITY_STATS выбираются по карте
+// через applyCountry(); см. COUNTRIES ниже).
+const UZ_STATS = {
   'Ташкент': {
     pop: 3095000, popNote: 'stat.uz, 2025', adult: 0.64, wage: 10.75,
     region: 'г. Ташкент — столица',
@@ -946,6 +925,135 @@ const CITY_STATS = {
   },
 };
 
+/* ── COUNTRIES (per-map city config) ─────────────────────────────────────
+   Каждая карта привязана к стране: свой список городов (плашка сверху),
+   центроиды (cityOf), справочник (вкладка «Город»), доля курящих и валюта
+   зарплаты. UZ — Узбекистан, KG — Кыргызстан. */
+const UZ_CENTERS = {
+  'Ташкент':   [41.311, 69.280], 'Андижан': [40.783, 72.344], 'Бухара': [39.768, 64.421],
+  'Самарканд': [39.654, 66.975], 'Коканд':  [40.529, 70.943], 'Фергана': [40.389, 71.783],
+  'Навои':     [40.104, 65.373],
+};
+const KG_CENTERS = {
+  'Бишкек':      [42.874, 74.598], 'Ош':      [40.529, 72.796], 'Джалал-Абад': [40.933, 72.997],
+  'Каракол':     [42.490, 78.394], 'Токмок':  [42.842, 75.290], 'Узген':       [40.769, 73.300],
+  'Нарын':       [41.428, 76.000], 'Талас':   [42.521, 72.243], 'Баткен':      [40.062, 70.818],
+};
+
+/* Кыргызстан — справочник городов. Источники: население — Нацстатком КР
+   (stat.gov.kg), начало 2025; зарплата — средняя номинальная по регионам за
+   2025 (тыс. сом/мес, Нацстатком КР); курение — ВОЗ 2024 (муж. 32,8%,
+   жен. 2,9%). Доля 21+ — оценка по возрастной структуре (~56%, Бишкек ~0,62). */
+const KG_STATS = {
+  'Бишкек': {
+    pop: 1300000, popNote: 'stat.gov.kg, 2025', adult: 0.62, wage: 56.94,
+    region: 'г. Бишкек — столица',
+    tags: [
+      'Крупнейший рынок страны: ~1,3 млн человек, ~19% населения Кыргызстана',
+      'Самые высокие зарплаты в стране (56,9 тыс. сом) — приоритет премиального сегмента (стики)',
+      'Деловые районы, ТЦ и транспортные узлы — максимальный трафик для флагманских точек',
+    ],
+  },
+  'Ош': {
+    pop: 473500, popNote: 'stat.gov.kg, 2025', adult: 0.56, wage: 34.0,
+    region: 'г. Ош + Ошская область (юг)',
+    tags: [
+      '2-й город страны и столица юга — 473 тыс. человек',
+      'Крупнейший рынок Ферганской долины КР, мощная базарная торговля (Ошский базар)',
+      'Зарплаты ниже столичных — держать доступный ценовой сегмент',
+    ],
+  },
+  'Джалал-Абад': {
+    pop: 184400, popNote: 'stat.gov.kg, 2025', adult: 0.55, wage: 35.39,
+    region: 'Джалал-Абадская область',
+    tags: [
+      '3-й по населению город, центр густонаселённого юга',
+      'Молодое население долины — аудитория 21+ будет расти',
+      'Чувствительность к цене — фокус на средний и доступный сегмент',
+    ],
+  },
+  'Каракол': {
+    pop: 90700, popNote: 'stat.gov.kg, 2025', adult: 0.56, wage: 48.04,
+    region: 'Иссык-Кульская область',
+    tags: [
+      'Центр Иссык-Кульской области — 2-е место по зарплатам (48,0 тыс. сом)',
+      'Сильный сезонный туризм на Иссык-Куле — доп. спрос летом, потенциал travel-retail',
+      'Компактный город: полное покрытие достигается небольшим числом точек',
+    ],
+  },
+  'Токмок': {
+    pop: 76200, popNote: 'stat.gov.kg, 2025', adult: 0.56, wage: 42.0,
+    region: 'Чуйская область',
+    tags: [
+      'Промышленный город Чуйской области рядом с Бишкеком',
+      'Транзитный узел — трафик трасс и АЗС',
+      'Близость к столичной агломерации — общий с Бишкеком поток',
+    ],
+  },
+  'Узген': {
+    pop: 65500, popNote: 'stat.gov.kg, 2025', adult: 0.54, wage: 30.0,
+    region: 'Ошская область',
+    tags: [
+      'Исторический торговый город на юге, плотная базарная торговля',
+      'Молодое сельское окружение — растущая база потребителей',
+      'Ценовая чувствительность — доступный сегмент',
+    ],
+  },
+  'Нарын': {
+    pop: 52000, popNote: 'stat.gov.kg, 2025', adult: 0.55, wage: 41.06,
+    region: 'Нарынская область',
+    tags: [
+      'Административный центр обширной горной области',
+      'Зарплата 41,1 тыс. сом — выше средней по стране',
+      'Транзит на трассе в Китай (Торугарт) — трафик дальнобоя',
+    ],
+  },
+  'Талас': {
+    pop: 44000, popNote: 'stat.gov.kg, 2025', adult: 0.55, wage: 39.6,
+    region: 'Таласская область',
+    tags: [
+      'Центр аграрной Таласской области (фасоль на экспорт)',
+      'Небольшой рынок — важно занять его первыми',
+      'Сезонность доходов от урожая',
+    ],
+  },
+  'Баткен': {
+    pop: 29000, popNote: 'stat.gov.kg, 2025', adult: 0.54, wage: 28.0,
+    region: 'Баткенская область',
+    tags: [
+      'Самый южный областной центр, приграничный регион',
+      'Небольшое, но растущее население; невысокие зарплаты',
+      'Фокус на доступный сегмент',
+    ],
+  },
+};
+
+const COUNTRIES = {
+  uz: { centers: UZ_CENTERS, stats: UZ_STATS, smokeM: 0.194, smokeF: 0.009, wageUnit: 'млн', wageCur: 'сум/мес (2025)' },
+  kg: { centers: KG_CENTERS, stats: KG_STATS, smokeM: 0.328, smokeF: 0.029, wageUnit: 'тыс', wageCur: 'сом/мес (2025)' },
+};
+const MAP_COUNTRY = { comdep: 'uz', other: 'uz', main: 'uz', kg: 'kg' };
+let COUNTRY = 'uz';
+
+// Activate a map's country: set city list, centroids, stats, smoking rates,
+// wage units. Called at the start of startApp() once the map is known.
+function applyCountry(mapId) {
+  COUNTRY = MAP_COUNTRY[mapId] || 'uz';
+  const co = COUNTRIES[COUNTRY];
+  CITY_CENTERS = co.centers;
+  CITY_STATS   = co.stats;
+  SMOKE_M = co.smokeM; SMOKE_F = co.smokeF; SMOKE_AVG = (SMOKE_M + SMOKE_F) / 2;
+  WAGE_UNIT = co.wageUnit; WAGE_CUR = co.wageCur;
+  CITIES = Object.keys(co.centers);
+  CC = {};
+  CITIES.forEach(c => {
+    const a = (DATA.cig && DATA.cig.recs) ? DATA.cig.recs.filter(s => s.fil === c) : [];
+    CC[c] = a.length
+      ? [a.reduce((x, s) => x + s.lat, 0) / a.length, a.reduce((x, s) => x + s.lon, 0) / a.length]
+      : co.centers[c];
+  });
+}
+
 function renderCityInfo() {
   const el = document.getElementById('city-info');
   if (!el) return;
@@ -984,8 +1092,8 @@ function renderCityInfo() {
       <div class="ci-grid">
         <div class="ci-tile"><div class="v">${fmt(adults)}</div><div class="l">население 21+ (оценка)</div></div>
         <div class="ci-tile hot"><div class="v">≈ ${fmt(smokers)}</div><div class="l">курильщиков 21+ — потенциальная аудитория</div></div>
-        <div class="ci-tile"><div class="v">${s.wage.toFixed(2).replace('.', ',')} млн</div><div class="l">средняя зарплата, сум/мес (2025)</div></div>
-        <div class="ci-tile"><div class="v">${fmt(smMen)}</div><div class="l">курящих мужчин 21+ — ядро ЦА (19,4%)</div></div>
+        <div class="ci-tile"><div class="v">${s.wage.toFixed(2).replace('.', ',')} ${WAGE_UNIT}</div><div class="l">средняя зарплата, ${WAGE_CUR}</div></div>
+        <div class="ci-tile"><div class="v">${fmt(smMen)}</div><div class="l">курящих мужчин 21+ — ядро ЦА (${(SMOKE_M * 100).toFixed(1).replace('.', ',')}%)</div></div>
       </div>
     </div>`;
   } else {
@@ -2346,7 +2454,7 @@ function wireEvents() {
 let pendingUpload = null;
 
 /* ── ROLE UI ─────────────────────────────────────────────────────────── */
-const MAP_LABEL = { comdep: 'Com Dep', other: 'Другая' };
+const MAP_LABEL = { comdep: 'Com Dep', other: 'Другая', kg: 'Кыргызстан' };
 
 function showRoleBadge() {
   const badge = document.getElementById('mode-badge');
@@ -2374,6 +2482,13 @@ async function startApp() {
   if (_appStarted) return;
   _appStarted = true;
 
+  // Activate this map's country (cities, centroids, city stats) BEFORE any
+  // state restore / render — cityOf() and the city bar depend on it.
+  applyCountry(currentMap);
+  // The «Районы» overlay (Tashkent districts) is Uzbekistan-only.
+  const distBtn = document.getElementById('districts-toggle');
+  if (distBtn) distBtn.style.display = COUNTRY === 'uz' ? '' : 'none';
+
   // Load local state first so UI is immediately responsive
   loadState();
   buildCityUI(); buildHeatUI(); buildPtUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
@@ -2382,10 +2497,14 @@ async function startApp() {
   stateReady = true;
   setTimeout(() => { if (map && map.invalidateSize) map.invalidateSize(); }, 60);
 
-  // Only fit bounds on first load (no saved city)
+  // Only fit bounds on first load (no saved city). The base dataset is UZ, so
+  // for other countries centre on the first city instead.
   if (!city) {
-    const framePts = baseDemandRecs().map(s => [s.lat, s.lon]).concat(own.map(o => [o.lat, o.lon]));
+    const framePts = (COUNTRY === 'uz')
+      ? baseDemandRecs().map(s => [s.lat, s.lon]).concat(own.map(o => [o.lat, o.lon]))
+      : [];
     if (framePts.length) map.fitBounds(L.latLngBounds(framePts).pad(.05));
+    else if (CITIES[0] && CC[CITIES[0]]) map.setView(CC[CITIES[0]], 11);
   }
 
   // Hydrate from server. Newer local edits (by timestamp) win over the server.
@@ -2434,6 +2553,7 @@ async function startApp() {
     { u: 'hm_root', p: 'Zx7$Kp9-Lm2@Rt',   role: 'admin'  },
     { u: 'comdep',  p: 'ComDep-2026!view',  role: 'comdep' },
     { u: 'otdel',   p: 'Otdel-2026!view',   role: 'other'  },
+    { u: 'kg',      p: 'KG-2026!view',      role: 'kg'     },
   ];
   const SK = 'hm_auth_ok';
 
