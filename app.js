@@ -2045,37 +2045,40 @@ async function pushDataset(btn) {
   }
 }
 
+// Single-flight upload: the state can be several MB (many uploaded points), so
+// overlapping POSTs on rapid edits (slider drags) pile up and get dropped
+// («Failed to fetch»). Only one push runs at a time; edits during a push set a
+// pending flag and trigger exactly one more push (with a fresh snapshot) after.
+let _pushing = false, _pushPending = false;
+
 async function pushToServer(snapshot, isRetry = false) {
   if (!SERVER_URL) return;
   if (!isAdmin() || !SERVER_KEY) return; // only the owner (admin + key) writes the shared map
+  if (_pushing) { _pushPending = true; return; }   // coalesce concurrent saves
+  _pushing = true;
   setSyncBadge('syncing', isRetry ? 'Повтор…' : 'Сохранение…');
   try {
     const res = await fetch(SERVER_URL + '/state?map=' + encodeURIComponent(currentMap), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Key': SERVER_KEY },
       body: JSON.stringify(snapshot),
+      signal: AbortSignal.timeout(120000),   // large bodies can take a while
     });
     if (!res.ok) {
-      if (!isRetry) {
-        setSyncBadge('err', 'Ошибка — повтор через 6 с');
-        setTimeout(() => { const fresh = buildStateSnapshot(); pushToServer(fresh, true); }, 6000);
-      } else {
-        setSyncBadge('err', 'Ошибка сохранения');
-      }
-      console.warn('Server sync error:', res.status, res.status === 413 ? '(данные слишком большие — увеличьте лимит сервера)' : '');
+      setSyncBadge('err', res.status === 413 ? 'Данные слишком большие' : 'Ошибка сохранения');
+      console.warn('Server sync error:', res.status);
       if (res.status === 413) toast('Данные слишком большие для сервера', 'err');
     } else {
       const now = new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
       setSyncBadge('ok', 'Сохранено ' + now);
     }
   } catch (e) {
-    if (!isRetry) {
-      setSyncBadge('err', 'Сервер недоступен — повтор через 6 с');
-      setTimeout(() => pushToServer(snapshot, true), 6000);
-    } else {
-      setSyncBadge('err', 'Сервер недоступен');
-    }
+    setSyncBadge('err', isRetry ? 'Сервер недоступен' : 'Сервер недоступен — повтор через 6 с');
     console.warn('Server unreachable, saved locally only:', e.message);
+    if (!isRetry) setTimeout(() => pushToServer(buildStateSnapshot(), true), 6000);
+  } finally {
+    _pushing = false;
+    if (_pushPending) { _pushPending = false; setTimeout(() => pushToServer(buildStateSnapshot()), 100); }
   }
 }
 
@@ -2118,7 +2121,7 @@ function doSave() {
 function saveState() {
   if (!stateReady) return;
   clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(doSave, 400);
+  _saveTimer = setTimeout(doSave, 1500);   // batch rapid edits — state can be several MB
 }
 
 function loadState() {
