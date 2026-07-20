@@ -1532,12 +1532,27 @@ function statsOf(recs) {
 }
 
 /* ── SHARE STATE (export / import JSON) ──────────────────────────────── */
+// Persist only the essential input fields — derived nd/ld/lc/fil and stats are
+// recomputed on load (enrich + cityOf + statsOf). Coords rounded to ~1 m. This
+// keeps the saved per-map state small enough to POST reliably (the full recs
+// grew past ~7 MB and saves started failing).
+function slimRecs(recs) {
+  return recs.map(r => {
+    const m = { lat: +(+r.lat).toFixed(5), lon: +(+r.lon).toFixed(5), vol: r.vol };
+    if (r.name)  m.name  = r.name;
+    if (r.addr)  m.addr  = r.addr;
+    if (r.code)  m.code  = r.code;
+    if (r.hours) m.hours = r.hours;
+    return m;
+  });
+}
+
 function buildStateSnapshot() {
   const layers = {};
   heatKeys.forEach(k => {
     const d = DS[k]; if (!d) return;
     const o = { name: d.name, color: d.color, ramp: d.ramp, opacity: d.opacity, intensity: d.intensity, visible: d.visible };
-    if (k.startsWith('custom_') || d._userData) { o.recs = d.recs; o.stats = d.stats; o._userData = true; }
+    if (k.startsWith('custom_') || d._userData) { o.recs = slimRecs(d.recs); o._userData = true; }
     layers[k] = o;
   });
   const pts = {};
@@ -1590,11 +1605,16 @@ function applySnapshot(st) {
       Object.assign(DS[k], { name: sv.name, color: sv.color, intensity: sv.intensity, visible: sv.visible });
       if (typeof sv.ramp    === 'string') DS[k].ramp    = sv.ramp;
       if (typeof sv.opacity === 'number') DS[k].opacity = sv.opacity;
-      if (sv.recs) { DS[k].recs = sv.recs; DS[k].stats = sv.stats || statsOf(sv.recs); DS[k]._userData = true; }
-      else if (!DS[k].recs) { DS[k].recs = []; DS[k].stats = { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 }; }
-      // Re-tag each point's city from its coordinates so layers uploaded before
-      // all city centres were known get corrected (fixes "works only for Tashkent").
-      DS[k].recs.forEach(r => { r.fil = cityOf(r.lat, r.lon); });
+      if (sv.recs) {
+        // Saved recs are slim (see slimRecs) — rebuild derived fields:
+        // fil (city) from coords, nd/ld/lc via enrich, and stats.
+        sv.recs.forEach(r => { r.fil = cityOf(r.lat, r.lon); });
+        DS[k].recs = enrich(sv.recs);
+        DS[k].stats = statsOf(DS[k].recs);
+        DS[k]._userData = true;
+      } else if (!DS[k].recs) {
+        DS[k].recs = []; DS[k].stats = { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 };
+      }
     }
   }
   if (st.pts)              pointLayers.forEach(p => { const sv = st.pts[p.id]; if (sv) Object.assign(p, sv); });
