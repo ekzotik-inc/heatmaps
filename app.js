@@ -394,6 +394,37 @@ function restyleHeatCanvases() {
   heatKeys.forEach(k => { const d = DS[k]; if (d) applyHeatCanvas(d); });
 }
 
+// leaflet.heat piles up the intensities of overlapping points, so a 50 000-point
+// layer saturates the gradient while a 100-point layer never accumulates and
+// stays washed out. Estimate each layer's own typical peak stacking at the
+// current zoom (p97 of per-cell intensity sums on a radius-sized pixel grid)
+// and use it as that layer's `max` — every layer then spans its full gradient
+// independently of how many points it has.
+function heatCellMax(pts, zoom) {
+  if (!pts.length) return 1;
+  const scale = 256 * Math.pow(2, zoom) / heatRadius;
+  const bins = new Map();
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const s = Math.sin(p[0] * Math.PI / 180);
+    const x = Math.floor((p[1] + 180) / 360 * scale);
+    const y = Math.floor((0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * scale);
+    const key = x * 4194304 + y;
+    bins.set(key, (bins.get(key) || 0) + p[2]);
+  }
+  const sums = [...bins.values()].sort((a, b) => a - b);
+  return Math.max(sums[Math.min(sums.length - 1, Math.floor(sums.length * 0.97))], 1);
+}
+
+function refreshHeatMax() {
+  heatKeys.forEach(k => {
+    const d = DS[k];
+    if (!d || !d._leaf || !d._pts || !d._pts.length) return;
+    d._leaf.setOptions({ max: heatCellMax(d._pts, map.getZoom()) });
+    requestAnimationFrame(() => applyHeatCanvas(d));
+  });
+}
+
 function renderHeat() {
   let total = 0;
   heatKeys.forEach(k => {
@@ -417,9 +448,13 @@ function renderHeat() {
       return [r.lat, r.lon, Math.min(Math.max(g, 0.18) * boost, 1)];
     });
     total += recs.length;
+    d._pts = pts;
+    // Sparse layers get a wider brush so isolated points read as heat, not specks.
+    const rMul = Math.min(Math.max(Math.pow(600 / Math.max(recs.length, 1), 0.18), 1), 1.6);
+    const rad  = Math.round(heatRadius * rMul);
     d._leaf = L.heatLayer(pts, {
-      radius: heatRadius, blur: Math.round(heatRadius * .8), minOpacity: .22,
-      max: 1,
+      radius: rad, blur: Math.round(rad * .8), minOpacity: .22,
+      max: heatCellMax(pts, map.getZoom()),
       gradient: gradOf(d),
     }).addTo(map);
     requestAnimationFrame(() => applyHeatCanvas(d));
@@ -2339,6 +2374,8 @@ function wireEvents() {
     map.on('zoomend', syncZoomBtns);
     syncZoomBtns();
   }
+  // Point stacking depends on zoom — re-normalise each layer's max after zooming.
+  map.on('zoomend', refreshHeatMax);
 
   // Export recs
   $('rec-export').addEventListener('click', exportRecs);
