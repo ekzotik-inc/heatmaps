@@ -268,10 +268,13 @@ const SHAPES = [
   ['diamond', 'Ромб'], ['triangle', 'Треугольник'], ['star', 'Звезда'], ['ring', 'Кольцо'],
 ];
 
-// Built-in IQOS BR/SE display layers removed — users create their own custom
-// point layers (Points tab). `own` data is still used for recommendation
-// distance calc and the address-program "наши точки" reference.
-const pointLayers = [];
+// Наши точки · IQOS (BR / 2nd SE) — display layers over the shared `own`
+// dataset. The same data drives recommendation distances, the address-program
+// reference and «Курильщиков на 1 нашу точку» in the City tab.
+const pointLayers = [
+  { id: 'br', name: 'IQOS — BR',     color: '#12ADC1', shape: 'teardrop', visible: true, radiusOn: false, radiusM: 1500, radiusColor: '#12ADC1', radiusOpacity: 0.15, data: own.filter(o => o.chk === 'BR') },
+  { id: 'se', name: 'IQOS — 2nd SE', color: '#14B87D', shape: 'hex',      visible: true, radiusOn: false, radiusM: 1500, radiusColor: '#14B87D', radiusOpacity: 0.15, data: own.filter(o => o.chk === 'SE') },
+];
 
 function starPath(h, s) {
   let p = '';
@@ -470,6 +473,9 @@ function updateLayerLegend() {
   heatKeys.forEach(k => {
     const d = DS[k];
     if (d && d.visible && d.recs && d.recs.length) items.push({ color: d.color, name: d.name });
+  });
+  pointLayers.forEach(p => {
+    if (p.visible && p.data && p.data.length) items.push({ color: p.color, name: p.name });
   });
   customPtLayers.forEach(l => {
     if (l.visible && l.recs && l.recs.length) items.push({ color: l.color, name: l.name });
@@ -804,6 +810,10 @@ function buildHeatUI() {
 function buildPtUI() {
   const el = document.getElementById('pt-list');
   el.innerHTML = '';
+  if (!own.length) {
+    el.innerHTML = '<div class="cpt-empty">Точек IQOS пока нет. Нажмите «Загрузить наши точки» и выберите CSV/XLSX по шаблону (ch, name, city, code, addr, hours, lat, lon)</div>';
+    return;
+  }
   pointLayers.forEach(L0 => {
     const card = document.createElement('div');
     card.className = 'lyr';
@@ -814,6 +824,7 @@ function buildPtUI() {
       <div class="lyr-top">
         <div class="cbx${L0.visible ? ' on' : ''}"></div>
         <div class="nm">${L0.name}</div>
+        <span class="cpt-count">${L0.data.length}</span>
       </div>
       <div class="lyr-ctl">
         <div class="grp">Цвет <input type="color" class="pt-col" value="${L0.color}"></div>
@@ -1155,10 +1166,16 @@ function renderCityInfo() {
     </div>`;
   }
 
-  html += `<div class="ci-note">Источники: Нацкомстат РУз (stat.uz) — население городов (2025)
-    и средняя зарплата по регионам (2025); ВОЗ — доля курящих среди взрослых (2024):
-    мужчины 19,4%, женщины 0,9%. Население 21+ и число курильщиков — оценка по
-    возрастной структуре. Продажа табачной продукции в РУз — только лицам 21+.</div>`;
+  const mPct = (SMOKE_M * 100).toFixed(1).replace('.', ','), fPct = (SMOKE_F * 100).toFixed(1).replace('.', ',');
+  html += COUNTRY === 'kg'
+    ? `<div class="ci-note">Источники: Нацстатком КР (stat.gov.kg) — население городов (2025)
+      и средняя зарплата по регионам (2025); ВОЗ — доля курящих среди взрослых (2024):
+      мужчины ${mPct}%, женщины ${fPct}%. Население 21+ и число курильщиков — оценка по
+      возрастной структуре.</div>`
+    : `<div class="ci-note">Источники: Нацкомстат РУз (stat.uz) — население городов (2025)
+      и средняя зарплата по регионам (2025); ВОЗ — доля курящих среди взрослых (2024):
+      мужчины ${mPct}%, женщины ${fPct}%. Население 21+ и число курильщиков — оценка по
+      возрастной структуре. Продажа табачной продукции в РУз — только лицам 21+.</div>`;
 
   el.innerHTML = html;
 }
@@ -1397,13 +1414,42 @@ function toOwnRecs(rows) {
   return out;
 }
 
+// City tag for own points: explicit city column first, otherwise the nearest
+// map city — but only within 60 km, so points from another country's dataset
+// don't get glued to the wrong city bar / stats.
+function retagOwnCities() {
+  own.forEach(o => {
+    o.cityRu = OWN_RU[o.city] || o.city || '';
+    if (!CITIES.includes(o.cityRu)) {
+      const c = cityOf(o.lat, o.lon);
+      if (c && CC[c] && hav(o.lat, o.lon, CC[c][0], CC[c][1]) < 60000) o.cityRu = c;
+    }
+  });
+}
+
 // Replace the global own-points dataset in place and refresh derived state.
 function setOwn(newArr) {
   own.length = 0; newArr.forEach(o => own.push(o));
-  own.forEach(o => { o.cityRu = OWN_RU[o.city] || o.city; o.chk = o.ch === 'BR' ? 'BR' : 'SE'; });
+  own.forEach(o => { o.chk = o.ch === 'BR' ? 'BR' : 'SE'; });
+  retagOwnCities();
   ownC.length = 0; own.forEach(o => ownC.push([o.lat, o.lon]));
   const br = pointLayers.find(p => p.id === 'br'); if (br) br.data = own.filter(o => o.chk === 'BR');
   const se = pointLayers.find(p => p.id === 'se'); if (se) se.data = own.filter(o => o.chk === 'SE');
+}
+
+// One shared entry point for uploading own IQOS points — used by both the
+// Points tab and the Данные tab so the flow and the template are identical.
+function applyOwnUpload(rows) {
+  const arr = toOwnRecs(rows);
+  if (!arr.length) { toast('Не найдено строк с lat/lon', 'err'); return false; }
+  setOwn(arr);
+  buildPtUI(); renderPoints(); renderRecs(); renderCityInfo();
+  saveState();
+  const br = own.filter(o => o.chk === 'BR').length;
+  toast(`Наши точки обновлены: ${own.length} (BR ${br}, 2nd SE ${own.length - br})`, 'ok', 4000);
+  if (isAdmin() && SERVER_KEY) pushDataset(null); // share the new base with everyone
+  else if (isAdmin()) toast('Чтобы сохранить точки для всех — введите ключ в «Данные → Доступ к записи»', 'err', 5500);
+  return true;
 }
 
 /* ── TOAST NOTIFICATIONS ─────────────────────────────────────────────── */
@@ -2065,18 +2111,35 @@ async function pushDataset(btn) {
   const old = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Сохранение…'; }
   try {
-    const res = await fetch(SERVER_URL + '/data', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': SERVER_KEY },
-      body: JSON.stringify(dataset),
-      signal: AbortSignal.timeout(60000),
-    });
+    const res = await postJson(SERVER_URL + '/data', dataset, 90000);
+    if (res.status === 415) { _gzipOk = false; throw new Error('gzip не поддержан сервером — повторите'); }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     toast('База данных сохранена на сервере', 'ok');
   } catch (e) {
     toast('Не удалось сохранить базу: ' + (e.name === 'TimeoutError' ? 'таймаут' : e.message), 'err');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = old; }
+  }
+}
+
+// Multi-MB uploads travel ~6× faster gzipped. If the server (or an old deploy)
+// rejects a compressed request, we fall back to plain JSON for the session.
+let _gzipOk = typeof CompressionStream !== 'undefined';
+async function postJson(url, obj, timeoutMs) {
+  const json = JSON.stringify(obj);
+  const headers = { 'Content-Type': 'application/json', 'X-API-Key': SERVER_KEY };
+  let body = json;
+  if (_gzipOk) {
+    try {
+      body = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+      headers['Content-Encoding'] = 'gzip';
+    } catch (e) { _gzipOk = false; body = json; }
+  }
+  try {
+    return await fetch(url, { method: 'POST', headers, body, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (e) {
+    if (headers['Content-Encoding']) _gzipOk = false; // CORS/proxy may not accept gzip — retry plain
+    throw e;
   }
 }
 
@@ -2093,12 +2156,8 @@ async function pushToServer(snapshot, isRetry = false) {
   _pushing = true;
   setSyncBadge('syncing', isRetry ? 'Повтор…' : 'Сохранение…');
   try {
-    const res = await fetch(SERVER_URL + '/state?map=' + encodeURIComponent(currentMap), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': SERVER_KEY },
-      body: JSON.stringify(snapshot),
-      signal: AbortSignal.timeout(120000),   // large bodies can take a while
-    });
+    const res = await postJson(SERVER_URL + '/state?map=' + encodeURIComponent(currentMap), snapshot, 120000);
+    if (res.status === 415) { _gzipOk = false; throw new Error('gzip не поддержан сервером'); }
     if (!res.ok) {
       setSyncBadge('err', res.status === 413 ? 'Данные слишком большие' : 'Ошибка сохранения');
       console.warn('Server sync error:', res.status);
@@ -2251,22 +2310,52 @@ function wireEvents() {
   $('layer-modal-input').addEventListener('keydown', e => { if (e.key === 'Enter') confirmLayerModal(); if (e.key === 'Escape') closeLayerModal(); });
   $('layer-modal-overlay').addEventListener('click', e => { if (e.target === $('layer-modal-overlay')) { pendingHeatRows = null; closeLayerModal(); } });
 
-  // Template download
-  $('dl-tpl').addEventListener('click', () => {
-    const own = $('up-target').value === '__own__';
+  // Template downloads — one generator for all three upload flows, so the
+  // sample files always match what the corresponding parser expects.
+  const TEMPLATES = {
+    own: {
+      rows: [['ch', 'name', 'city', 'code', 'addr', 'hours', 'lat', 'lon'],
+             ['BR', 'Пример BR', 'Tashkent', '1137', 'г.Ташкент, ул. Пример 1', '10:00-22:00', 41.311100, 69.279700],
+             ['SE', 'Пример SE', 'Samarkand', '2201', 'г.Самарканд, ул. Пример 2', '09:00-21:00', 39.654000, 66.959700]],
+      cols: [6, 20, 14, 8, 30, 14, 12, 12], file: 'shablon_nashi_tochki.xlsx',
+    },
+    heat: {
+      rows: [['name', 'lat', 'lon', 'value'], ['Пример ТТ', 41.311100, 69.279700, 12.5], ['Пример ТТ 2', 41.299000, 69.240000, 8]],
+      cols: [22, 12, 12, 10], file: 'shablon_sloy_heatmap.xlsx',
+    },
+    cpt: {
+      rows: [['name', 'lat', 'lon', 'addr', 'hours', 'code'],
+             ['Пример точки', 41.311100, 69.279700, 'г.Ташкент, ул. Пример 1', '10:00-22:00', 'A-01'],
+             ['Пример точки 2', 41.299000, 69.240000, 'г.Ташкент, ул. Пример 2', '', '']],
+      cols: [22, 12, 12, 30, 14, 8], file: 'shablon_svoi_tochki.xlsx',
+    },
+  };
+  function downloadTemplate(kind) {
+    const t = TEMPLATES[kind];
     ensureSheetLibs().then(() => {
-      const rows = own
-        ? [['ch', 'name', 'city', 'code', 'addr', 'hours', 'lat', 'lon'],
-           ['BR', 'Пример BR', 'Tashkent', '1137', 'г.Ташкент, ул. Пример 1', '10:00-22:00', 41.311100, 69.279700],
-           ['SE', 'Пример SE', 'Samarkand', '2201', 'г.Самарканд, ул. Пример 2', '09:00-21:00', 39.654000, 66.959700]]
-        : [['name', 'lat', 'lon', 'value'], ['Пример ТТ', 41.311100, 69.279700, 12.5], ['Пример ТТ 2', 41.299000, 69.240000, 8]];
-      const ws = XLSX.utils.aoa_to_sheet(rows);
-      ws['!cols'] = (own ? [6, 20, 14, 8, 30, 14, 12, 12] : [22, 12, 12, 10]).map(w => ({ wch: w }));
+      const ws = XLSX.utils.aoa_to_sheet(t.rows);
+      ws['!cols'] = t.cols.map(w => ({ wch: w }));
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Данные');
-      XLSX.writeFile(wb, own ? 'shablon_nashi_tochki.xlsx' : 'shablon_dannye.xlsx');
+      XLSX.writeFile(wb, t.file);
     }).catch(() => toast('Не удалось загрузить XLSX', 'err'));
-  });
+  }
+  $('dl-tpl').addEventListener('click', () =>
+    downloadTemplate($('up-target').value === '__own__' ? 'own' : 'heat'));
+  const ownTpl = $('own-tpl'); if (ownTpl) ownTpl.addEventListener('click', () => downloadTemplate('own'));
+  const cptTpl = $('cpt-tpl'); if (cptTpl) cptTpl.addEventListener('click', () => downloadTemplate('cpt'));
+
+  // Upload own IQOS points straight from the Points tab (same flow as Данные)
+  const ownFileInp = $('own-file');
+  if (ownFileInp) {
+    $('own-upload-btn').addEventListener('click', () => ownFileInp.click());
+    ownFileInp.addEventListener('change', () => {
+      const f = ownFileInp.files[0];
+      ownFileInp.value = '';
+      if (!f) return;
+      parseSheet(f, rows => applyOwnUpload(rows));
+    });
+  }
 
   // File upload (click + drag&drop)
   const fileInp = $('file'), fileBox = $('filebox');
@@ -2309,14 +2398,7 @@ function wireEvents() {
     };
 
     if (tk === '__own__') {
-      const arr = toOwnRecs(pendingUpload);
-      if (!arr.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
-      setOwn(arr);
-      reset();
-      buildPtUI(); renderPoints(); renderRecs();
-      saveState();
-      const br = own.filter(o => o.chk === 'BR').length, se = own.length - br;
-      toast(`Наши точки обновлены: ${own.length} (BR ${br}, SE ${se}) — нажмите «Сохранить базу на сервере»`, 'ok', 4500);
+      if (applyOwnUpload(pendingUpload)) reset();
       return;
     }
 
@@ -2545,6 +2627,11 @@ async function startApp() {
   // Activate this map's country (cities, centroids, city stats) BEFORE any
   // state restore / render — cityOf() and the city bar depend on it.
   applyCountry(currentMap);
+  // Cities are known only now — tag own points so the city filter and
+  // «Курильщиков на 1 нашу точку» work even when the city column was empty.
+  retagOwnCities();
+  const brL = pointLayers.find(p => p.id === 'br'); if (brL) brL.data = own.filter(o => o.chk === 'BR');
+  const seL = pointLayers.find(p => p.id === 'se'); if (seL) seL.data = own.filter(o => o.chk === 'SE');
   // The «Районы» overlay (Tashkent districts) is Uzbekistan-only.
   const distBtn = document.getElementById('districts-toggle');
   if (distBtn) distBtn.style.display = COUNTRY === 'uz' ? '' : 'none';

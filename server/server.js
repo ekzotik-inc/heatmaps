@@ -8,6 +8,7 @@ const path    = require('path');
 const http    = require('http');
 const express = require('express');
 const cors    = require('cors');
+const compression = require('compression');
 
 // ---------------------------------------------------------------------------
 // Config — read from .env file manually (no dotenv dep needed)
@@ -125,9 +126,12 @@ app.use(cors({
     cb(new Error(`CORS: origin ${origin} not allowed`));
   },
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-API-Key'],
+  // Content-Encoding lets the client gzip multi-MB state uploads.
+  allowedHeaders: ['Content-Type', 'X-API-Key', 'Content-Encoding'],
 }));
 
+app.use(compression()); // gzip GET /state and /data responses (12 MB → ~2 MB)
+// body-parser inflates gzip/deflate request bodies automatically (inflate: true)
 app.use(express.json({ limit: '50mb' })); // state can include uploaded layer data
 
 // Health check
