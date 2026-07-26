@@ -1,7 +1,7 @@
 # Heatmap App — Feature Tracking Spreadsheet
 
 > **Legend** — Status: ✅ OK · ❌ Bug · ⚠️ UX issue · 🔲 Not tested  
-> Last updated: 2026-06-29
+> Last updated: 2026-07-26
 
 ---
 
@@ -36,7 +36,10 @@
 | N1 | Toggle "Радиус охвата" on own-point layer | Semi-transparent circle (default 1.5 km) drawn around each marker in `ptradius` pane | All | ✅ | |
 | N2 | Adjust radius / fill opacity / radius color | Circles re-render live; persisted to server+localStorage | All | ✅ | |
 | N3 | Click solo (◉) on heat layer | Isolates that layer; re-click restores prior visibility | All | ✅ | Fixes 2-3 layer overlap mush |
-| N4 | Press keys 1-4 | Switches sidebar tabs; ignored while typing; skips hidden tabs | All | ✅ | |
+| N4 | Press keys 1-5 | Switches sidebar tabs (Карта/Точки/Анализ/Город/Данные); ignored while typing; skips hidden tabs | All | ✅ | Было 1-4 — вкладка «Город» была недостижима (исправлено 07.2026) |
+| N6 | Tab/Space on a toggle | Custom `.cbx` switches are focusable (`role="switch"`), Space/Enter toggles, clicking the label works too | All | ✅ | a11y-проход 07.2026 |
+| N7 | «По размеру» / стартовый вид | Frames the layers actually drawn; KG map still opens on Bishkek | All | ✅ | Раньше кадрировался по нерисуемому базовому датасету |
+| N8 | Address program without reference points | Explicit toast «нет точек-ориентиров» instead of «нет точек по фильтрам» | All | ✅ | Проявлялось на карте KG |
 | N5 | Mobile adaptation | Drawer width capped, larger touch targets, repositioned badges, safe-area, landscape | All | ✅ | |
 
 ---

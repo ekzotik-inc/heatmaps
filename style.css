@@ -56,6 +56,8 @@ html, body {
 @media (min-width: 781px) {
   #app.side-hidden #side { margin-left: calc(-1 * (var(--side-w) + 14px)); }
   #app.side-hidden #layer-legend { left: 28px; }
+  /* Сайдбар убран — карта занимает всё окно, плашка городов снова по центру */
+  #app.side-hidden #city-bar { left: 50%; max-width: calc(100vw - 84px); }
 }
 
 #map { flex: 1; height: 100%; border-radius: 24px; overflow: hidden; box-shadow: var(--shadow); background: #EDF1F7; }
@@ -225,7 +227,12 @@ html, body {
 
 /* ── CITY BAR (floating on map) ──────────────────────────────────────── */
 #city-bar {
-  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+  position: absolute; top: 14px;
+  /* Центр карты, а не экрана: при большом числе городов (в KG их девять)
+     плашка иначе уезжала левым краем под сайдбар. */
+  left: calc(50% + (var(--side-w) + 14px) / 2); transform: translateX(-50%);
+  max-width: calc(100vw - var(--side-w) - 84px);
+  overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
   z-index: 1100;
   background: rgba(255,255,255,.95); backdrop-filter: blur(10px);
   border: 1px solid var(--line2); border-radius: 100px;
@@ -233,6 +240,7 @@ html, body {
   box-shadow: var(--shadow-sm);
   display: flex; align-items: center; gap: 0;
 }
+#city-bar::-webkit-scrollbar { display: none; }
 #city-bar .cities { display: flex; flex-wrap: nowrap; gap: 4px; }
 #city-bar .cities button {
   font-size: 11px; padding: 5px 13px;
@@ -421,13 +429,11 @@ input[type=range].green::-webkit-slider-thumb:hover { box-shadow: 0 2px 8px rgba
 input[type=range].full { width: 100%; }
 
 /* ── SOLO (isolate) layer button ─────────────────────────────────────── */
-.lyr-solo {
-  cursor: pointer; color: var(--dim); font-size: 15px; line-height: 1;
-  padding: 0 5px; flex: 0 0 auto; transition: color .15s, transform .15s;
-  user-select: none;
-}
-.lyr-solo:hover { color: var(--acc); transform: scale(1.15); }
-.lyr-solo.on { color: var(--acc); text-shadow: 0 0 8px var(--acc-l2); }
+/* «Соло» — обычная кнопка .lyr-act (раньше была отдельной иконкой).
+   Старое правило .lyr-solo.on красило текст в акцентный цвет и перебивало
+   .lyr-act.on: во включённом состоянии получался бирюзовый текст на
+   бирюзовом фоне. Оставляем только оформление .lyr-act. */
+.lyr-solo { user-select: none; }
 
 /* ── POINT COVERAGE RADIUS CONTROLS ──────────────────────────────────── */
 .pt-radius-block { border-top: 1px dashed var(--line2); margin-top: 8px; padding-top: 2px; }
@@ -1333,3 +1339,46 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
 #cpt-modal-overlay.open { opacity: 1; pointer-events: auto; }
 #cpt-modal-overlay .layer-modal { transform: scale(.96); transition: transform .2s var(--ease); }
 #cpt-modal-overlay.open .layer-modal { transform: scale(1); }
+
+/* ── ДОСТУПНОСТЬ ─────────────────────────────────────────────────────────
+   Видимого фокуса в интерфейсе не было вообще: пройти по нему с клавиатуры
+   было невозможно. :focus-visible срабатывает только при клавиатурной
+   навигации, поэтому на внешний вид при работе мышью это не влияет. */
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+input[type=range]:focus-visible,
+input[type=color]:focus-visible,
+[role="switch"]:focus-visible,
+.cbx:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+.cbx:focus-visible { outline-offset: 3px; border-radius: 100px; }
+/* Тумблеры теперь role="switch" и получают фокус — курсор должен это отражать */
+.cbx { cursor: pointer; }
+
+/* Ссылка «пропустить к карте» для клавиатуры: видна только при фокусе */
+.skip-link {
+  position: absolute; left: 14px; top: -60px; z-index: 9999;
+  background: var(--card); color: var(--acc-d);
+  border: 1px solid var(--acc); border-radius: 10px;
+  padding: 10px 16px; font-size: 13px; font-weight: 700;
+  box-shadow: var(--shadow-sm); transition: top .18s var(--ease);
+}
+.skip-link:focus { top: 14px; }
+
+/* Предупреждающий тост: цвет рамки из токена --warn, текст — основной,
+   иначе контраст оранжевого на белом ниже нормы WCAG. */
+.toast.warn { border-color: rgba(242,169,59,.5); color: var(--ink); }
+
+/* Системная настройка «уменьшить движение»: гасим анимации и перелёты. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,46 @@
+name: ci
+
+# Проверки на каждый push/PR: синтаксис клиента и сервера + ESLint.
+# Сборки нет — проект статический, поэтому этого достаточно, чтобы на Pages
+# никогда не уехал файл с синтаксической ошибкой.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # нужна история для diff base…head в проверке версии кэша
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Syntax check (client + server)
+        run: |
+          node --check app.js
+          node --check server/server.js
+
+      - name: ESLint
+        run: |
+          npm install --no-audit --no-fund
+          npx eslint app.js
+
+      - name: Cache version bumped with app.js/style.css
+        if: github.event_name == 'pull_request'
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD")
+          if echo "$CHANGED" | grep -qE '^(app\.js|style\.css)$'; then
+            if ! echo "$CHANGED" | grep -q '^index\.html$'; then
+              echo "::error::app.js/style.css изменены, но index.html (версия кэша ?v=) — нет. См. CLAUDE.md"
+              exit 1
+            fi
+          fi

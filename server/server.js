@@ -116,6 +116,15 @@ function verifyKey(req) {
 // App
 // ---------------------------------------------------------------------------
 const app = express();
+app.disable('x-powered-by');
+
+// Минимальные защитные заголовки (без зависимости от helmet).
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
 
 // CORS
 app.use(cors({
@@ -131,6 +140,15 @@ app.use(cors({
 }));
 
 app.use(compression()); // gzip GET /state and /data responses (12 MB → ~2 MB)
+
+// Ключ проверяется ДО разбора тела: иначе аноним мог заставить сервер принять и
+// распаковать 50 МБ JSON (в т.ч. gzip-бомбу) — и только потом получить 401.
+app.use((req, res, next) => {
+  if (req.method !== 'POST') return next();
+  if (verifyKey(req)) return next();
+  res.status(401).json({ error: 'Invalid or missing X-API-Key header' });
+});
+
 // body-parser inflates gzip/deflate request bodies automatically (inflate: true)
 app.use(express.json({ limit: '50mb' })); // state can include uploaded layer data
 
@@ -148,6 +166,8 @@ app.get('/data', async (req, res) => {
 });
 
 // POST /data — replace the base dataset (admin only, requires X-API-Key).
+// Ключ уже проверен глобальным middleware выше; повторная проверка оставлена
+// как защита на случай изменения порядка middleware.
 app.post('/data', async (req, res) => {
   if (!verifyKey(req)) {
     return res.status(401).json({ error: 'Invalid or missing X-API-Key header' });

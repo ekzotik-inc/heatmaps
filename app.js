@@ -81,7 +81,76 @@ function hav(a, b, c, d) {
         x = Math.sin(dla / 2) ** 2 + Math.cos(l1) * Math.cos(l2) * Math.sin(dlo / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(x));
 }
-function fmtD(m) { return m >= 1000 ? (m / 1000).toFixed(1) + ' км' : Math.round(m) + ' м'; }
+// Distances can be "unknown" (no reference points at all — e.g. the KG map has
+// no own IQOS points yet). Show a dash instead of «1000000000000 км».
+function fmtD(m) {
+  if (m == null || !isFinite(m)) return '—';
+  return m >= 1000 ? (m / 1000).toFixed(1) + ' км' : Math.round(m) + ' м';
+}
+
+/* ── SPATIAL INDEX (nearest-point lookups) ────────────────────────────────
+   Наивный поиск ближайшей точки — O(записей × наших точек); при 20k записей и
+   1k точек это десятки миллионов haversine на каждую загрузку слоя И на каждую
+   гидрацию состояния. Грид по ~0.05° (≈5,5 км) сводит это к нескольким ячейкам
+   вокруг запроса. Обход по «кольцам» останавливается, только когда найденное
+   расстояние заведомо меньше всего, что может лежать за кольцом, — результат
+   совпадает с брутфорсом. */
+const IX_CELL = 0.05, M_PER_DEG = 111320;
+function buildPtIndex(pts) {
+  const cells = new Map(), arr = [];
+  let maxAbsLat = 0;
+  for (const p of pts) {
+    const la = Array.isArray(p) ? p[0] : p.lat, lo = Array.isArray(p) ? p[1] : p.lon;
+    if (!isFinite(la) || !isFinite(lo)) continue;
+    if (Math.abs(la) > maxAbsLat) maxAbsLat = Math.abs(la);
+    const i = arr.push({ lat: la, lon: lo, ref: p }) - 1;
+    const key = Math.floor(la / IX_CELL) + '|' + Math.floor(lo / IX_CELL);
+    const c = cells.get(key);
+    if (c) c.push(i); else cells.set(key, [i]);
+  }
+  // Самая «северная» точка индекса задаёт минимальный масштаб долготы — только
+  // с ним нижняя оценка расстояния до следующих колец остаётся корректной.
+  return { cells, arr, minCos: Math.cos(maxAbsLat * Math.PI / 180) };
+}
+function nearestPt(ix, lat, lon) {
+  const { cells, arr } = ix;
+  if (!arr.length) return null;
+  const ci = Math.floor(lat / IX_CELL), cj = Math.floor(lon / IX_CELL);
+  // Долгота «сжимается» с широтой — берём самый слабый (безопасный) масштаб
+  // из широты запроса и самой северной точки индекса.
+  const lonScale = Math.max(Math.min(Math.cos(lat * Math.PI / 180), ix.minCos), 0.05);
+  let best = Infinity, bestRef = null, settled = false;
+  const scan = c => {
+    for (const idx of c) {
+      const p = arr[idx], d = hav(lat, lon, p.lat, p.lon);
+      if (d < best) { best = d; bestRef = p.ref; }
+    }
+  };
+  for (let ring = 0; ring <= 60 && !settled; ring++) {
+    if (ring === 0) {
+      const c = cells.get(ci + '|' + cj); if (c) scan(c);
+    } else {
+      // Обходим только рамку кольца: на верхней/нижней строке — все столбцы,
+      // на остальных — лишь два крайних (иначе обход стал бы O(ring³)).
+      for (let di = -ring; di <= ring; di++) {
+        const edge = Math.abs(di) === ring;
+        for (let dj = -ring; dj <= ring; dj += edge ? 1 : 2 * ring) {
+          const c = cells.get((ci + di) + '|' + (cj + dj)); if (c) scan(c);
+        }
+      }
+    }
+    // Всё, что дальше этого кольца, отстоит минимум на ring ячеек по одной из
+    // осей — если найденное ближе, дальше искать нечего.
+    if (bestRef && best <= ring * IX_CELL * M_PER_DEG * lonScale) settled = true;
+  }
+  // Оценка не сомкнулась за 60 колец (~330 км) — точки разрежены, считаем
+  // честно по всем: гарантируем тот же ответ, что и брутфорс.
+  if (!settled) {
+    best = Infinity; bestRef = null;
+    for (const p of arr) { const d = hav(lat, lon, p.lat, p.lon); if (d < best) { best = d; bestRef = p.ref; } }
+  }
+  return bestRef ? { dist: best, ref: bestRef } : null;
+}
 
 /* ── DATA SETUP ──────────────────────────────────────────────────────── */
 const own    = DATA.own;
@@ -93,7 +162,7 @@ const ownC = own.map(o => [o.lat, o.lon]);
 // City config is PER-MAP (Узбекистан vs Кыргызстан) — see COUNTRIES /
 // applyCountry() below. Declared here so cityOf()/renderCityInfo() can
 // reference them; actual values are set when a map is chosen (start of startApp).
-let CITIES = [], CITY_CENTERS = {}, CITY_STATS = {}, CC = {};
+let CITIES = [], CITY_STATS = {}, CC = {};
 let SMOKE_M = 0.194, SMOKE_F = 0.009, SMOKE_AVG = (SMOKE_M + SMOKE_F) / 2;
 let WAGE_UNIT = 'млн', WAGE_CUR = 'сум/мес (2025)';
 function cityOf(lat, lon) {
@@ -113,13 +182,6 @@ const DS = {
 DS.cig.ramp      = 'warm';
 DS.sticks.ramp   = 'cool';
 Object.values(DS).forEach(d => { d.opacity = 1; });
-
-// Base shipment points used only to frame the map (formerly the "combined"
-// layer). combined = cig + sticks, so it's derived here and no longer shipped
-// in /data — saves ~1.1 MB of payload.
-function baseDemandRecs() {
-  return (DS.cig.recs || []).concat(DS.sticks.recs || []);
-}
 
 // Layers shown on the map are user-uploaded only (custom_*). cig/sticks stay in
 // DS purely as data for the Analysis tab and city lookup, not as layers.
@@ -526,7 +588,7 @@ function openRec(s, rank) {
      <div class="pp-row"><span>Точек рынка в зоне</span><b>${s.lc}</b></div>
      <div class="pp-row"><span>До ближайшей ТТ</span><b>${fmtD(s.nd)}</b></div>
      <div class="pp-why">Высокий спрос (${esc(d.name).toLowerCase()}) в радиусе ~700 м без нашей ТТ ближе ${fmtD(covR)}. Ориентир — «${esc(s.name)}». Рекомендуется открытие BR.</div>
-     <span class="pp-tag" style="background:#10362a;color:#7fe3b4;border:1px solid #1c5a44">РЕКОМЕНДАЦИЯ BR</span>`)
+     <span class="pp-tag" style="background:var(--rec-l);color:var(--rec-ink);border:1px solid rgba(20,184,125,.35)">РЕКОМЕНДАЦИЯ BR</span>`)
    .openOn(map);
 }
 
@@ -644,6 +706,39 @@ function fillAllSliders() {
   document.querySelectorAll('input[type=range]').forEach(fillSlider);
 }
 
+/* ── ДОСТУПНОСТЬ: кастомные тумблеры ──────────────────────────────────────
+   `.cbx` — это <div>, поэтому по умолчанию он не получает фокус, не работает
+   с клавиатуры и никак не объявляется скринридером. Помечаем как
+   role="switch", даём tabindex и держим aria-checked в актуальном состоянии.
+   Вызывается после каждой пересборки списков (разметка там перерисовывается). */
+function a11ySwitches() {
+  document.querySelectorAll('.cbx').forEach(el => {
+    el.setAttribute('role', 'switch');
+    if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+    el.setAttribute('aria-checked', el.classList.contains('on') ? 'true' : 'false');
+  });
+}
+// Пробел / Enter переключают тумблер под фокусом.
+document.addEventListener('keydown', e => {
+  const t = e.target;
+  if (!t || !t.classList || !t.classList.contains('cbx')) return;
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); t.click(); }
+});
+document.addEventListener('click', e => {
+  const t = e.target.closest ? e.target.closest('.cbx') : null;
+  // Обработчики самих тумблеров навешаны прямо на элемент, поэтому к моменту
+  // всплытия сюда класс .on уже актуален — читаем его синхронно.
+  if (t) t.setAttribute('aria-checked', t.classList.contains('on') ? 'true' : 'false');
+});
+// Клик по подписи рядом с тумблером тоже переключает: <label> без `for` не
+// делает ничего, и текст «Показывать на карте» выглядел неработающим.
+document.addEventListener('click', e => {
+  const lab = e.target.closest ? e.target.closest('label.chk') : null;
+  if (!lab || e.target.closest('.cbx')) return;
+  const cb = lab.querySelector('.cbx');
+  if (cb) cb.click();
+});
+
 /* ── ACCORDION BADGE UPDATER ─────────────────────────────────────────── */
 function updateAccBadges() {
   // Heat layers badge: visible / total
@@ -658,9 +753,9 @@ function updateAccBadges() {
     const cptVis = customPtLayers.filter(l => l.visible).length;
     cptBadge.textContent = customPtLayers.length ? `${cptVis}/${customPtLayers.length}` : '';
   }
-  // Rec badge
+  // Rec badge — очищаем, когда рекомендаций нет (иначе висит старое число)
   const recBadge = document.getElementById('acc-badge-rec');
-  if (recBadge && lastRecs.length) recBadge.textContent = lastRecs.length;
+  if (recBadge) recBadge.textContent = lastRecs.length ? lastRecs.length : '';
   // City summary tab depends on the same inputs (city, layers, recs)
   renderCityInfo();
 }
@@ -702,7 +797,7 @@ function buildHeatUI() {
           <small>${d.stats.n.toLocaleString('ru-RU')} точек</small>
         </div>
         <svg class="lyr-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        <div class="cbx${d.visible ? ' on' : ''}"></div>
+        <div class="cbx${d.visible ? ' on' : ''}" aria-label="Показывать слой «${esc(d.name)}» на карте"></div>
       </div>
       <div class="lyr-body">
         <div class="lyr-ctl">
@@ -805,6 +900,7 @@ function buildHeatUI() {
     el.appendChild(card);
     card.querySelectorAll('input[type=range]').forEach(fillSlider);
   });
+  a11ySwitches();
 }
 
 function buildPtUI() {
@@ -822,9 +918,9 @@ function buildPtUI() {
     const oPct = (L0.radiusOpacity || .15) / .5 * 100;
     card.innerHTML = `
       <div class="lyr-top">
-        <div class="cbx${L0.visible ? ' on' : ''}"></div>
-        <div class="nm">${L0.name}</div>
+        <div class="nm">${esc(L0.name)}</div>
         <span class="cpt-count">${L0.data.length}</span>
+        <div class="cbx${L0.visible ? ' on' : ''}" aria-label="Показывать «${esc(L0.name)}» на карте"></div>
       </div>
       <div class="lyr-ctl">
         <div class="grp">Цвет <input type="color" class="pt-col" value="${L0.color}"></div>
@@ -832,7 +928,7 @@ function buildPtUI() {
       </div>
       <div class="pt-radius-block">
         <div class="lyr-top" style="margin-top:10px">
-          <div class="cbx green pt-rad-cbx${L0.radiusOn ? ' on' : ''}" style="width:34px;height:19px"></div>
+          <div class="cbx green pt-rad-cbx${L0.radiusOn ? ' on' : ''}" style="width:34px;height:19px" aria-label="Радиус охвата для «${esc(L0.name)}»"></div>
           <div class="nm" style="font-size:11.5px;color:var(--mut)">Радиус охвата</div>
         </div>
         <div class="pt-radius-ctl" style="${L0.radiusOn ? '' : 'display:none'}">
@@ -873,6 +969,7 @@ function buildPtUI() {
     card.querySelector('.pt-rad-col').addEventListener('input', e => { L0.radiusColor = e.target.value; renderRadii(); saveState(); });
     el.appendChild(card);
   });
+  a11ySwitches();
 }
 
 function buildCityUI() {
@@ -881,10 +978,11 @@ function buildCityUI() {
   const mk = (val, lab, on) => {
     const b = document.createElement('button');
     b.dataset.city = val; b.textContent = lab;
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
     if (on) b.classList.add('on');
     b.addEventListener('click', () => {
-      el.querySelectorAll('button').forEach(x => x.classList.remove('on'));
-      b.classList.add('on');
+      el.querySelectorAll('button').forEach(x => { x.classList.remove('on'); x.setAttribute('aria-pressed', 'false'); });
+      b.classList.add('on'); b.setAttribute('aria-pressed', 'true');
       city = val;
       renderHeat(); renderPoints(); renderRecs();
       fitView();
@@ -1086,7 +1184,6 @@ let COUNTRY = 'uz';
 function applyCountry(mapId) {
   COUNTRY = MAP_COUNTRY[mapId] || 'uz';
   const co = COUNTRIES[COUNTRY];
-  CITY_CENTERS = co.centers;
   CITY_STATS   = co.stats;
   SMOKE_M = co.smokeM; SMOKE_F = co.smokeF; SMOKE_AVG = (SMOKE_M + SMOKE_F) / 2;
   WAGE_UNIT = co.wageUnit; WAGE_CUR = co.wageCur;
@@ -1180,15 +1277,43 @@ function renderCityInfo() {
   el.innerHTML = html;
 }
 
-/* Fit the map to the current city's data (or all data / city centre). */
+/* Coordinates of everything currently drawn on the map (heat layers, own IQOS
+   points, custom point layers), filtered by the selected city where the layer
+   has a city tag. Used to frame the view — «по размеру» must show what the
+   user actually sees, not the base dataset that isn't drawn at all. */
+function visiblePts() {
+  const out = [];
+  heatKeys.forEach(k => {
+    const d = DS[k];
+    if (!d || !d.visible || !d.recs) return;
+    for (const r of d.recs) if (!city || r.fil === city) out.push([r.lat, r.lon]);
+  });
+  pointLayers.forEach(p => {
+    if (!p.visible) return;
+    for (const o of p.data) {
+      // База наших точек — узбекистанская и общая для всех карт. На карте другой
+      // страны она не должна утаскивать вид к Ташкенту: учитываем только точки,
+      // привязанные к городу активной страны.
+      if (city ? o.cityRu !== city : (COUNTRY !== 'uz' && !CITIES.includes(o.cityRu))) continue;
+      out.push([o.lat, o.lon]);
+    }
+  });
+  customPtLayers.forEach(l => {
+    if (!l.visible) return;
+    for (const r of l.recs) out.push([r.lat, r.lon]);
+  });
+  return out;
+}
+
+/* Fit the map to what is visible (or the city centre when nothing is drawn). */
 function fitView() {
-  const pts    = baseDemandRecs().filter(s => !city || s.fil === city).map(s => [s.lat, s.lon]);
-  const ownPts = own.filter(o => !city || o.cityRu === city).map(o => [o.lat, o.lon]);
-  const allPts = pts.concat(ownPts);
-  if (allPts.length) {
-    map.flyToBounds(L.latLngBounds(allPts).pad(.12), { duration: .6 });
+  const pts = visiblePts();
+  if (pts.length) {
+    map.flyToBounds(L.latLngBounds(pts).pad(.12), { duration: .6 });
   } else if (city && CC[city]) {
     map.flyTo(CC[city], 12, { duration: .6 });   // no data yet — centre on city
+  } else if (CITIES[0] && CC[CITIES[0]]) {
+    map.flyTo(CC[CITIES[0]], 11, { duration: .6 });
   }
 }
 
@@ -1254,9 +1379,9 @@ function buildCustomPtUI() {
     return `
     <div class="cpt-layer" data-cpid="${l.id}">
       <div class="cpt-top">
-        <div class="cbx${l.visible ? ' on' : ''}" style="border-color:${l.color};${l.visible ? 'background:' + l.color : ''}" data-cpvis="${l.id}"></div>
         <span class="cpt-name">${esc(l.name)}</span>
         <span class="cpt-count">${l.recs.length}</span>
+        <div class="cbx${l.visible ? ' on' : ''}" style="border-color:${l.color};${l.visible ? 'background:' + l.color : ''}" data-cpvis="${l.id}" aria-label="Показывать слой «${esc(l.name)}» на карте"></div>
         <button class="cpt-del" data-cpdel="${l.id}" title="Удалить слой">✕</button>
       </div>
       <div class="lyr-ctl">
@@ -1268,7 +1393,7 @@ function buildCustomPtUI() {
       </div>
       <div class="pt-radius-block">
         <div class="lyr-top" style="margin-top:10px">
-          <div class="cbx green cpt-rad-cbx${l.radiusOn ? ' on' : ''}" style="width:34px;height:19px" data-cprad="${l.id}"></div>
+          <div class="cbx green cpt-rad-cbx${l.radiusOn ? ' on' : ''}" style="width:34px;height:19px" data-cprad="${l.id}" aria-label="Радиус охвата для «${esc(l.name)}»"></div>
           <div class="nm" style="font-size:11.5px;color:var(--mut)">Радиус охвата</div>
         </div>
         <div class="pt-radius-ctl" data-cpradctl="${l.id}" style="${l.radiusOn ? '' : 'display:none'}">
@@ -1365,6 +1490,7 @@ function buildCustomPtUI() {
       toast(`Слой «${l.name}» удалён`, 'info');
     });
   });
+  a11ySwitches();
 }
 
 function toCustomPtRecs(rows) {
@@ -1578,10 +1704,13 @@ function toRecs(rows) {
 }
 
 function enrich(recs) {
+  // nd — расстояние до ближайшей нашей точки. Если наших точек нет вообще
+  // (KG-карта до загрузки точек) — расстояние неизвестно: Infinity честно
+  // означает «не покрыто», а в интерфейсе печатается как «—».
+  const ix = buildPtIndex(ownC);
   for (const s of recs) {
-    let best = 1e18;
-    for (const [a, b] of ownC) { const d = hav(s.lat, s.lon, a, b); if (d < best) best = d; }
-    s.nd = Math.round(best);
+    const n = nearestPt(ix, s.lat, s.lon);
+    s.nd = n ? Math.round(n.dist) : Infinity;
   }
   const grid = {};
   recs.forEach((s, i) => {
@@ -1739,7 +1868,8 @@ function exportRecs() {
   lastRecs.forEach((s, i) => rows.push([
     i + 1, s.name || ('Зона ' + (i + 1)), s.fil || '',
     +s.lat.toFixed(6), +s.lon.toFixed(6),
-    Math.round(s.ld), s.lc, Math.round(s.vol * 100) / 100, s.nd,
+    Math.round(s.ld), s.lc, Math.round(s.vol * 100) / 100,
+    isFinite(s.nd) ? s.nd : '',
   ]));
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!cols'] = [{ wch: 6 }, { wch: 30 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 20 }];
@@ -1780,8 +1910,9 @@ function buildRtExclUI() {
     return;
   }
   box.innerHTML = keys.map(k =>
-    `<label class="chk rt-excl-item"><div class="cbx${rtExclKeys.includes(k) ? ' on' : ''}" data-rtx="${k}"></div><span>${esc(rtExclLayerName(k))}</span></label>`
+    `<label class="chk rt-excl-item"><div class="cbx${rtExclKeys.includes(k) ? ' on' : ''}" data-rtx="${esc(k)}" aria-label="Исключать точки рядом со слоем «${esc(rtExclLayerName(k))}»"></div><span>${esc(rtExclLayerName(k))}</span></label>`
   ).join('');
+  a11ySwitches();
   box.querySelectorAll('[data-rtx]').forEach(cb => {
     cb.addEventListener('click', () => {
       const k = cb.dataset.rtx;
@@ -1878,14 +2009,11 @@ function runAddrFilter() {
     : addrRefPoints();
 
   // Attach nearest reference-point distance AND the ref point itself
+  const refIx = buildPtIndex(refPts);
   points.forEach(p => {
-    let minD = Infinity, nearestRef = null;
-    refPts.forEach(o => {
-      const d = hav(p.lat, p.lon, o.lat, o.lon);
-      if (d < minD) { minD = d; nearestRef = o; }
-    });
-    p._distOwn  = Math.round(minD);
-    p._nearRef  = nearestRef; // reference point object
+    const n = nearestPt(refIx, p.lat, p.lon);
+    p._distOwn = n ? Math.round(n.dist) : Infinity;
+    p._nearRef = n ? n.ref : null;   // reference point object
   });
 
   // Volume filter (heat layers; skip for custom point layers)
@@ -1918,13 +2046,16 @@ function runAddrFilter() {
     }
   }
 
-  return { points, excluded, avg, volThresh, srcName };
+  return { points, excluded, avg, volThresh, srcName, hasVol, noRef: !refPts.length };
 }
 
 /* Show filtered points on map */
 function previewAddrOnMap() {
   addrLayer.clearLayers();
-  const { points } = runAddrFilter();
+  const { points, noRef } = runAddrFilter();
+  // Без референсных точек фильтр по расстоянию не имеет смысла — говорим прямо,
+  // а не «нет точек по фильтрам» (частый случай на карте KG).
+  if (noRef) { toast(`Нет точек-ориентиров («${addrRefName()}») — загрузите их во вкладке «Точки»`, 'err', 5000); return; }
   if (!points.length) { toast('Нет точек по текущим фильтрам', 'warn'); return; }
 
   const refLabel = addrRefName();
@@ -1986,10 +2117,13 @@ function previewAddrOnMap() {
 
 function exportRetraffic() {
   if (!window.XLSX) { ensureSheetLibs().then(exportRetraffic).catch(() => toast('Не удалось загрузить XLSX', 'err')); return; }
-  const { points, excluded, avg, volThresh, srcName } = runAddrFilter();
-  const isShipment = addrSrcKey === '__shipment__';
+  const { points, excluded, avg, volThresh, srcName, hasVol, noRef } = runAddrFilter();
   const refName = addrRefName();
 
+  if (noRef) {
+    toast(`Нет точек-ориентиров («${refName}») — загрузите их во вкладке «Точки»`, 'err', 5000);
+    return;
+  }
   if (!points.length) {
     toast('Нет точек по текущим фильтрам', 'err');
     return;
@@ -1998,35 +2132,18 @@ function exportRetraffic() {
   points.sort((a, b) => (b.vol_total || 0) - (a.vol_total || 0));
 
   const distCol = `До ${refName}, м`;
-  const header = isShipment
-    ? ['№', 'Название', 'Город', 'Адрес', 'Широта', 'Долгота', 'Объём сиг.', 'Объём стики', 'Объём итого', distCol, 'Код']
-    : ['№', 'Название', 'Город', 'Адрес', 'Широта', 'Долгота', 'Объём', distCol, 'Код'];
-
-  const rows = [header];
+  const rows = [['№', 'Название', 'Город', 'Адрес', 'Широта', 'Долгота', 'Объём', distCol, 'Код']];
   points.forEach((p, i) => {
-    if (isShipment) {
-      rows.push([
-        i + 1, p.name || '', p.fil || '', p.addr || '',
-        +p.lat.toFixed(6), +p.lon.toFixed(6),
-        Math.round((p.vol_cig || 0) * 100) / 100,
-        Math.round((p.vol_sticks || 0) * 100) / 100,
-        Math.round((p.vol_total || 0) * 100) / 100,
-        p._distOwn, p.code || '',
-      ]);
-    } else {
-      rows.push([
-        i + 1, p.name || '', p.fil || '', p.addr || '',
-        +p.lat.toFixed(6), +p.lon.toFixed(6),
-        p.vol_total != null ? Math.round((p.vol_total || 0) * 100) / 100 : '',
-        p._distOwn, p.code || '',
-      ]);
-    }
+    rows.push([
+      i + 1, p.name || '', p.fil || '', p.addr || '',
+      +p.lat.toFixed(6), +p.lon.toFixed(6),
+      p.vol_total != null ? Math.round((p.vol_total || 0) * 100) / 100 : '',
+      isFinite(p._distOwn) ? p._distOwn : '', p.code || '',
+    ]);
   });
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = isShipment
-    ? [{ wch: 4 }, { wch: 38 }, { wch: 12 }, { wch: 36 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 10 }]
-    : [{ wch: 4 }, { wch: 38 }, { wch: 12 }, { wch: 36 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 10 }];
+  ws['!cols'] = [{ wch: 4 }, { wch: 38 }, { wch: 12 }, { wch: 36 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 10 }];
 
   const exclNames = rtExclKeys.map(k => {
     if (DS[k]) return DS[k].name;
@@ -2034,11 +2151,14 @@ function exportRetraffic() {
     return cpt ? cpt.name : null;
   }).filter(Boolean);
 
+  // Параметры объёма и исключений применяются к тепловым слоям (hasVol) —
+  // раньше этот блок был привязан к удалённому режиму «отгрузки» и в файл не
+  // попадал, из-за чего в выгрузке не было видно, какие фильтры отработали.
   const infoData = [
     ['Параметры фильтра'],
     ['Исходный слой', srcName],
     ['Расстояние до ' + refName, opLabel(rtRadiusOp) + ' ' + fmtD(rtRadius)],
-    ...(isShipment ? [
+    ...(hasVol ? [
       ['Объём', opLabel(rtVolOp) + ' ' + (rtVolMode === 'avg' ? `среднего (${avg.toFixed(1)} ед.)` : volThresh)],
       ['Исключаемые слои', exclNames.length ? exclNames.join(', ') : 'не выбраны'],
       ['Расстояние до исключ. слоя', opLabel(rtExclOp) + ' ' + fmtD(rtExclRadius)],
@@ -2245,6 +2365,7 @@ function syncControls() {
   buildAddrSrcSel();
   buildRtExclUI();
   fillAllSliders();
+  a11ySwitches();
   updateAccBadges();
 }
 
@@ -2514,8 +2635,10 @@ function wireEvents() {
     if (e.key === 'Escape' && isMobile()) { setSide(false); return; }
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'select' || tag === 'textarea' || e.metaKey || e.ctrlKey || e.altKey) return;
-    const tabs = ['tab-map', 'tab-points', 'tab-analysis', 'tab-data'];
-    if (e.key >= '1' && e.key <= '4') {
+    // Порядок как в нижней навигации — иначе «Город» недостижим с клавиатуры,
+    // а «4» открывает не то, что подписано.
+    const tabs = ['tab-map', 'tab-points', 'tab-analysis', 'tab-city', 'tab-data'];
+    if (e.key >= '1' && e.key <= '5') {
       const t = document.querySelector(`.side-tab[data-tab="${tabs[+e.key - 1]}"]`);
       if (t && t.offsetParent !== null) t.click(); // skip if hidden (e.g. data tab for viewers)
     }
@@ -2644,12 +2767,10 @@ async function startApp() {
   stateReady = true;
   setTimeout(() => { if (map && map.invalidateSize) map.invalidateSize(); }, 60);
 
-  // Only fit bounds on first load (no saved city). The base dataset is UZ, so
-  // for other countries centre on the first city instead.
+  // Only fit bounds on first load (no saved city): frame what is actually drawn
+  // (uploaded layers + our points); fall back to the country's first city.
   if (!city) {
-    const framePts = (COUNTRY === 'uz')
-      ? baseDemandRecs().map(s => [s.lat, s.lon]).concat(own.map(o => [o.lat, o.lon]))
-      : [];
+    const framePts = visiblePts();
     if (framePts.length) map.fitBounds(L.latLngBounds(framePts).pad(.05));
     else if (CITIES[0] && CC[CITIES[0]]) map.setView(CC[CITIES[0]], 11);
   }
@@ -2703,6 +2824,12 @@ async function startApp() {
     { u: 'kg',      p: 'KG-2026!view',      role: 'kg'     },
   ];
   const SK = 'hm_auth_ok';
+
+  // Год в подвале экрана входа — из системной даты, иначе он молча устаревает.
+  const year = new Date().getFullYear();
+  document.querySelectorAll('.auth-footer').forEach(el => {
+    el.textContent = 'Аналитика торговых точек · ' + year;
+  });
 
   const screen    = document.getElementById('auth-screen');
   const stepLogin = document.getElementById('auth-step-login');

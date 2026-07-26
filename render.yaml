@@ -7,7 +7,13 @@ services:
     startCommand: node server.js
     plan: free
     envVars:
+      # Ключ записи НИКОГДА не хранится в репозитории: значение задаётся вручную
+      # в дашборде Render (Environment). sync: false означает «Render спросит
+      # значение при деплое и не будет тянуть его из этого файла».
       - key: API_KEY
-        value: hm_br_tashkent_2026_secret
+        sync: false
+      # Пусто = принимать запросы с любого origin (чтение открыто по замыслу).
+      # Чтобы сузить — перечислить через запятую, например:
+      # https://ekzotik-inc.github.io
       - key: ALLOWED_ORIGINS
-        value: ""
+        sync: false

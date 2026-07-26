@@ -5,13 +5,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
   <title>Heat Map · Сигареты + Стики · BR</title>
+  <meta name="description" content="Тепловая карта торговых точек: анализ спроса, рекомендации по открытию BR и адресная программа по городам Узбекистана и Кыргызстана."/>
+  <meta name="theme-color" content="#12ADC1"/>
+  <meta name="color-scheme" content="light"/>
+  <meta name="robots" content="noindex, nofollow"/>
+  <meta property="og:title" content="Heat Map · BR — аналитика торговых точек"/>
+  <meta property="og:description" content="Тепловые слои, рекомендации по открытию точек и адресная программа на карте 2ГИС."/>
+  <meta property="og:type" content="website"/>
+  <!-- Инлайновая иконка: без неё браузер на каждой загрузке ходил за
+       несуществующим /favicon.ico и получал 404. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%2312ADC1'/%3E%3Cpath d='M12 4.6 3.8 8.4 12 12.2l8.2-3.8L12 4.6Z' fill='%23ffffff'/%3E%3Cpath d='M3.8 12.6 12 16.4l8.2-3.8' fill='none' stroke='%23ffffff' stroke-width='1.7' stroke-linejoin='round' stroke-linecap='round' opacity='.75'/%3E%3C/svg%3E"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260722b"/>
+  <link rel="stylesheet" href="style.css?v=20260726a"/>
 </head>
 <body>
+
+<noscript>
+  <div style="max-width:520px;margin:80px auto;padding:28px;border-radius:16px;background:#fff;
+              font-family:system-ui,sans-serif;color:#1C2434;line-height:1.6;text-align:center">
+    <b>Для работы карты нужен JavaScript.</b><br/>
+    Включите его в настройках браузера и обновите страницу.
+  </div>
+</noscript>
 
 <div id="auth-screen">
   <div class="auth-card" id="auth-step-login">
@@ -76,6 +94,7 @@
 </div>
 
 <div id="app">
+  <a class="skip-link" href="#map">Перейти к карте</a>
   <aside id="side">
     <div class="brand">
       <div class="brand-mark">
@@ -303,7 +322,7 @@
           <div class="adv-body">
             <div class="up-row" style="display:block">Ключ администратора для записи на сервер</div>
             <input type="password" id="admin-key-input" placeholder="Введите серверный ключ…" autocomplete="off"
-              style="width:100%;background:var(--card2);border:1px solid var(--line2);color:var(--ink);padding:9px 12px;border-radius:10px;font-size:13px;font-family:IQOS;outline:none"/>
+              style="width:100%;background:var(--card2);border:1px solid var(--line2);color:var(--ink);padding:9px 12px;border-radius:10px;font-size:13px;font-family:inherit;outline:none"/>
             <button class="btn" id="admin-key-save" style="margin-top:9px">Сохранить ключ</button>
             <div class="foot">Ключ хранится только в этом браузере (localStorage) и не входит в код сайта. Без него правки видны лишь вам локально и не сохраняются в общую карту. Должен совпадать с <b>API_KEY</b> сервера.</div>
           </div>
@@ -367,7 +386,7 @@
     <div class="city-bar-sep"></div>
     <button id="districts-toggle" class="city-extra-btn" title="Границы 12 районов Ташкента"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>Районы</button>
   </div>
-  <div class="badge">Точек на карте: <b id="b-count">—</b></div>
+  <div class="badge" aria-live="polite">Точек на карте: <b id="b-count">—</b></div>
   <div id="layer-legend" style="display:none"></div>
   <div class="sync-badge" id="sync-badge" style="display:none">
     <span class="sync-dot" id="sync-dot"></span>
@@ -423,7 +442,7 @@
   </div>
 </div>
 
-<div id="toast-container"></div>
+<div id="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
@@ -455,7 +474,7 @@
     started = true;
     window.DATA = d;
     var s = document.createElement('script');
-    s.src = 'app.js?v=20260722b'; // bump to bust cache when app.js changes
+    s.src = 'app.js?v=20260726a'; // bump to bust cache when app.js changes
     s.onload = function () { var b = document.getElementById('boot-overlay'); if (b) b.remove(); };
     document.body.appendChild(s);
   }
