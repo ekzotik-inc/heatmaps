@@ -82,7 +82,7 @@ function hav(a, b, c, d) {
   return 2 * R * Math.asin(Math.sqrt(x));
 }
 // Distances can be "unknown" (no reference points at all — e.g. the KG map has
-// no own IQOS points yet). Show a dash instead of «1000000000000 км».
+// no points of ours loaded yet). Show a dash instead of «1000000000000 км».
 function fmtD(m) {
   if (m == null || !isFinite(m)) return '—';
   return m >= 1000 ? (m / 1000).toFixed(1) + ' км' : Math.round(m) + ' м';
@@ -153,11 +153,29 @@ function nearestPt(ix, lat, lon) {
 }
 
 /* ── DATA SETUP ──────────────────────────────────────────────────────── */
-const own    = DATA.own;
-const OWN_RU = { Tashkent: 'Ташкент', Samarkand: 'Самарканд', Andijan: 'Андижан',
-                 Bukhara: 'Бухара', Fergana: 'Фергана', Kokand: 'Коканд', Margilan: 'Фергана' };
-own.forEach(o => { o.cityRu = OWN_RU[o.city] || o.city; o.chk = o.ch === 'BR' ? 'BR' : 'SE'; });
-const ownC = own.map(o => [o.lat, o.lon]);
+/* НАШИ ТОЧКИ — это все слои вкладки «Точки» (`customPtLayers`). Отдельного
+   зашитого в базу набора IQOS BR/SE больше нет: пользователь загружает свои
+   слои сам, и всё, что там лежит, считается нашей сетью. От этих точек
+   считаются: покрытие в рекомендациях (`nd`), расстояния в адресной программе
+   и метрика «Курильщиков на 1 нашу точку».
+   Видимость слоя на карте на расчёты НЕ влияет — скрытый слой всё равно наш. */
+function ourPts() {
+  const out = [];
+  customPtLayers.forEach(l => { for (const r of l.recs) out.push(r); });
+  return out;
+}
+
+/* Сколько наших точек в выбранном городе. У слоёв точек нет колонки города,
+   поэтому определяем по ближайшему центру и только в пределах 60 км — иначе
+   точки другого региона приписались бы городу. */
+function ourPtsInCity(c) {
+  if (!c || !CC[c]) return 0;
+  let n = 0;
+  for (const r of ourPts()) {
+    if (cityOf(r.lat, r.lon) === c && hav(r.lat, r.lon, CC[c][0], CC[c][1]) < 60000) n++;
+  }
+  return n;
+}
 
 // City config is PER-MAP (Узбекистан vs Кыргызстан) — see COUNTRIES /
 // applyCountry() below. Declared here so cityOf()/renderCityInfo() can
@@ -195,7 +213,7 @@ let city = '', covR = 600, topN = 12, recShow = true, recBasis = '';
 
 // Address-program state
 let addrSrcKey  = ''; // uploaded heat-layer key or '__cpt__<id>' (set to first layer at boot)
-let addrRefKey  = '__own__';      // reference points key: '__own__' = BR/IQOS, '__cpt__<id>' = custom layer
+let addrRefKey  = '';             // reference points key: '__cpt__<id>' — слой наших точек
 let rtRadius    = 1000;           // distance threshold (m)
 let rtRadiusOp  = 'lte';         // lte ≤ | lt < | gte ≥ | gt >
 let rtVolOp     = 'gte';         // volume operator (shipment mode only)
@@ -228,8 +246,6 @@ const distRenderer  = L.svg({ pane: 'districts' });
 const radiusRenderer = L.svg({ pane: 'ptradius' });
 const districtGroup = L.layerGroup().addTo(map);
 const coresGroup    = L.layerGroup().addTo(map);
-const radiusGroup   = L.layerGroup().addTo(map); // coverage radius around own points
-const pointsGroup   = L.layerGroup().addTo(map);
 const recLayer      = L.layerGroup().addTo(map);
 const addrLayer     = L.layerGroup().addTo(map); // address-program preview markers
 const cptRoot       = L.layerGroup().addTo(map); // parent for ALL custom-point layer groups
@@ -330,14 +346,6 @@ const SHAPES = [
   ['diamond', 'Ромб'], ['triangle', 'Треугольник'], ['star', 'Звезда'], ['ring', 'Кольцо'],
 ];
 
-// Наши точки · IQOS (BR / 2nd SE) — display layers over the shared `own`
-// dataset. The same data drives recommendation distances, the address-program
-// reference and «Курильщиков на 1 нашу точку» in the City tab.
-const pointLayers = [
-  { id: 'br', name: 'IQOS — BR',     color: '#12ADC1', shape: 'teardrop', visible: true, radiusOn: false, radiusM: 1500, radiusColor: '#12ADC1', radiusOpacity: 0.15, data: own.filter(o => o.chk === 'BR') },
-  { id: 'se', name: 'IQOS — 2nd SE', color: '#14B87D', shape: 'hex',      visible: true, radiusOn: false, radiusM: 1500, radiusColor: '#14B87D', radiusOpacity: 0.15, data: own.filter(o => o.chk === 'SE') },
-];
-
 function starPath(h, s) {
   let p = '';
   for (let i = 0; i < 10; i++) {
@@ -402,47 +410,6 @@ function shp(shape, color, s) {
       body = `<circle cx="${h}" cy="${h}" r="${s*.32}" ${f} ${st}/><circle cx="${h*.82}" cy="${h*.78}" r="${s*.08}" fill="#fff" opacity=".5"/>`;
   }
   return { html: `<svg class="pt-pin" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}">${defs}${body}</svg>`, anchor };
-}
-
-function renderRadii() {
-  radiusGroup.clearLayers();
-  pointLayers.forEach(L0 => {
-    if (!L0.visible || !L0.radiusOn) return;
-    const col = L0.radiusColor || L0.color;
-    const op  = L0.radiusOpacity == null ? 0.15 : L0.radiusOpacity;
-    L0.data.filter(o => !city || o.cityRu === city).forEach(o => {
-      L.circle([o.lat, o.lon], {
-        renderer: radiusRenderer, pane: 'ptradius',
-        radius: L0.radiusM, color: col, weight: 1.2,
-        opacity: Math.min(op + 0.35, 0.9), fillColor: col, fillOpacity: op,
-        interactive: false,
-      }).addTo(radiusGroup);
-    });
-  });
-}
-
-function renderPoints() {
-  renderRadii();
-  pointsGroup.clearLayers();
-  pointLayers.forEach(L0 => {
-    if (!L0.visible) return;
-    const ic = shp(L0.shape, L0.color, 32);
-    L0.data.filter(o => !city || o.cityRu === city).forEach(o => {
-      L.marker([o.lat, o.lon], {
-        icon: L.divIcon({ className: '', html: ic.html, iconSize: [32, 32], iconAnchor: ic.anchor }),
-        zIndexOffset: 1500,
-      })
-      .bindTooltip(`<b style="font-weight:700">${esc(o.name)}</b><br>${esc(L0.name)}`,
-                   { className: 'tt', direction: 'top', offset: [0, -ic.anchor[1] + 4] })
-      .bindPopup(`<div class="pp-title">${esc(o.name)}</div>
-                  <div class="pp-row"><span>Канал</span><b>${esc(o.ch)}</b></div>
-                  <div class="pp-row"><span>Город</span><b>${esc(o.cityRu)}</b></div>
-                  ${o.addr  ? `<div class="pp-row"><span>Адрес</span><b style="font-family:Manrope;font-weight:500;text-align:right">${esc(o.addr)}</b></div>` : ''}
-                  ${o.hours ? `<div class="pp-row"><span>Часы</span><b>${esc(o.hours)}</b></div>` : ''}
-                  <span class="pp-tag" style="background:var(--acc-l);color:var(--acc-d);border:1px solid rgba(18,173,193,.35)">ТОЧКА IQOS</span>`)
-      .addTo(pointsGroup);
-    });
-  });
 }
 
 /* ── HEAT LAYERS ─────────────────────────────────────────────────────── */
@@ -535,9 +502,6 @@ function updateLayerLegend() {
   heatKeys.forEach(k => {
     const d = DS[k];
     if (d && d.visible && d.recs && d.recs.length) items.push({ color: d.color, name: d.name });
-  });
-  pointLayers.forEach(p => {
-    if (p.visible && p.data && p.data.length) items.push({ color: p.color, name: p.name });
   });
   customPtLayers.forEach(l => {
     if (l.visible && l.recs && l.recs.length) items.push({ color: l.color, name: l.name });
@@ -903,75 +867,6 @@ function buildHeatUI() {
   a11ySwitches();
 }
 
-function buildPtUI() {
-  const el = document.getElementById('pt-list');
-  el.innerHTML = '';
-  if (!own.length) {
-    el.innerHTML = '<div class="cpt-empty">Точек IQOS пока нет. Нажмите «Загрузить наши точки» и выберите CSV/XLSX по шаблону (ch, name, city, code, addr, hours, lat, lon)</div>';
-    return;
-  }
-  pointLayers.forEach(L0 => {
-    const card = document.createElement('div');
-    card.className = 'lyr';
-    const opts = SHAPES.map(s => `<option value="${s[0]}"${s[0] === L0.shape ? ' selected' : ''}>${s[1]}</option>`).join('');
-    const rPct = (L0.radiusM - 200) / (5000 - 200) * 100;
-    const oPct = (L0.radiusOpacity || .15) / .5 * 100;
-    card.innerHTML = `
-      <div class="lyr-top">
-        <div class="nm">${esc(L0.name)}</div>
-        <span class="cpt-count">${L0.data.length}</span>
-        <div class="cbx${L0.visible ? ' on' : ''}" aria-label="Показывать «${esc(L0.name)}» на карте"></div>
-      </div>
-      <div class="lyr-ctl">
-        <div class="grp">Цвет <input type="color" class="pt-col" value="${L0.color}"></div>
-        <div class="grp">Иконка <select class="pt-shape">${opts}</select></div>
-      </div>
-      <div class="pt-radius-block">
-        <div class="lyr-top" style="margin-top:10px">
-          <div class="cbx green pt-rad-cbx${L0.radiusOn ? ' on' : ''}" style="width:34px;height:19px" aria-label="Радиус охвата для «${esc(L0.name)}»"></div>
-          <div class="nm" style="font-size:11.5px;color:var(--mut)">Радиус охвата</div>
-        </div>
-        <div class="pt-radius-ctl" style="${L0.radiusOn ? '' : 'display:none'}">
-          <div class="grp full">
-            <span>Радиус</span>
-            <input type="range" class="full pt-rad-r" min="200" max="5000" step="100" value="${L0.radiusM}" style="--pct:${rPct}%">
-            <span class="sl-val pt-rad-rv">${fmtD(L0.radiusM)}</span>
-          </div>
-          <div class="grp full" style="margin-top:7px">
-            <span>Заливка</span>
-            <input type="range" class="full green pt-rad-o" min="0.03" max="0.5" step="0.01" value="${L0.radiusOpacity || .15}" style="--pct:${oPct}%">
-            <span class="sl-val pt-rad-ov">${Math.round((L0.radiusOpacity || .15) * 100)}%</span>
-          </div>
-          <div class="grp" style="margin-top:7px">Цвет радиуса <input type="color" class="pt-rad-col" value="${L0.radiusColor || L0.color}"></div>
-        </div>
-      </div>`;
-    card.querySelector('.cbx:not(.pt-rad-cbx)').addEventListener('click', e => { L0.visible = !L0.visible; e.target.classList.toggle('on', L0.visible); renderPoints(); saveState(); });
-    card.querySelector('.pt-col').addEventListener('input', e => { L0.color = e.target.value; renderPoints(); saveState(); });
-    card.querySelector('.pt-shape').addEventListener('change', e => { L0.shape = e.target.value; renderPoints(); saveState(); });
-    const radCtl = card.querySelector('.pt-radius-ctl');
-    card.querySelector('.pt-rad-cbx').addEventListener('click', e => {
-      L0.radiusOn = !L0.radiusOn; e.target.classList.toggle('on', L0.radiusOn);
-      radCtl.style.display = L0.radiusOn ? '' : 'none';
-      renderRadii(); saveState();
-    });
-    const rr = card.querySelector('.pt-rad-r'), rv = card.querySelector('.pt-rad-rv');
-    rr.addEventListener('input', e => {
-      L0.radiusM = +e.target.value; rv.textContent = fmtD(L0.radiusM);
-      e.target.style.setProperty('--pct', (L0.radiusM - 200) / (5000 - 200) * 100 + '%');
-      renderRadii(); saveState();
-    });
-    const ro = card.querySelector('.pt-rad-o'), ov = card.querySelector('.pt-rad-ov');
-    ro.addEventListener('input', e => {
-      L0.radiusOpacity = +e.target.value; ov.textContent = Math.round(L0.radiusOpacity * 100) + '%';
-      e.target.style.setProperty('--pct', L0.radiusOpacity / .5 * 100 + '%');
-      renderRadii(); saveState();
-    });
-    card.querySelector('.pt-rad-col').addEventListener('input', e => { L0.radiusColor = e.target.value; renderRadii(); saveState(); });
-    el.appendChild(card);
-  });
-  a11ySwitches();
-}
-
 function buildCityUI() {
   const el = document.getElementById('seg-city');
   el.innerHTML = '';
@@ -984,7 +879,7 @@ function buildCityUI() {
       el.querySelectorAll('button').forEach(x => { x.classList.remove('on'); x.setAttribute('aria-pressed', 'false'); });
       b.classList.add('on'); b.setAttribute('aria-pressed', 'true');
       city = val;
-      renderHeat(); renderPoints(); renderRecs();
+      renderHeat(); renderCustomPoints(); renderRecs();
       fitView();
     });
     el.appendChild(b);
@@ -1213,7 +1108,7 @@ function renderCityInfo() {
   const fmt = n => Math.round(n).toLocaleString('ru-RU');
 
   // live-метрика: число наших точек в городе (для «Курильщиков на 1 нашу точку»)
-  const ownN = (typeof own !== 'undefined' && own) ? own.filter(o => o.cityRu === city).length : 0;
+  const ownN = ourPtsInCity(city);
 
   let html = '';
   if (s) {
@@ -1277,9 +1172,8 @@ function renderCityInfo() {
   el.innerHTML = html;
 }
 
-/* Coordinates of everything currently drawn on the map (heat layers, own IQOS
-   points, custom point layers), filtered by the selected city where the layer
-   has a city tag. Used to frame the view — «по размеру» must show what the
+/* Coordinates of everything currently drawn on the map (heat layers and our
+   point layers), filtered by the selected city where the layer has a city tag. Used to frame the view — «по размеру» must show what the
    user actually sees, not the base dataset that isn't drawn at all. */
 function visiblePts() {
   const out = [];
@@ -1287,16 +1181,6 @@ function visiblePts() {
     const d = DS[k];
     if (!d || !d.visible || !d.recs) return;
     for (const r of d.recs) if (!city || r.fil === city) out.push([r.lat, r.lon]);
-  });
-  pointLayers.forEach(p => {
-    if (!p.visible) return;
-    for (const o of p.data) {
-      // База наших точек — узбекистанская и общая для всех карт. На карте другой
-      // страны она не должна утаскивать вид к Ташкенту: учитываем только точки,
-      // привязанные к городу активной страны.
-      if (city ? o.cityRu !== city : (COUNTRY !== 'uz' && !CITIES.includes(o.cityRu))) continue;
-      out.push([o.lat, o.lon]);
-    }
   });
   customPtLayers.forEach(l => {
     if (!l.visible) return;
@@ -1486,7 +1370,9 @@ function buildCustomPtUI() {
       if (!confirm(`Удалить слой «${l.name}»? Данные слоя будут потеряны.`)) return;
       customPtLayers = customPtLayers.filter(x => x.id !== id);
       addrLayer.clearLayers();
-      renderCustomPoints(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); saveState();
+      renderCustomPoints(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI();
+      reenrichAll();   // наших точек стало меньше — покрытие изменилось
+      renderCityInfo(); saveState();
       toast(`Слой «${l.name}» удалён`, 'info');
     });
   });
@@ -1513,69 +1399,12 @@ function toCustomPtRecs(rows) {
 function rebuildUpTarget() {
   const sel = document.getElementById('up-target');
   const cur = sel.value;
-  const heatOpts = heatKeys.map(k => `<option value="${k}">${esc(DS[k] ? DS[k].name : k)}</option>`).join('');
-  sel.innerHTML = heatOpts + '<option value="__own__">Наши точки · IQOS (BR / SE)</option>';
-  if (cur && (heatKeys.includes(cur) || cur === '__own__')) sel.value = cur;
-}
-
-// Parse uploaded rows into the "own" point format. Channel from a ch/канал
-// column (BR/SE); rows default to SE when unspecified.
-function toOwnRecs(rows) {
-  const out = [];
-  for (const r of rows) {
-    const la = parseFloat(('' + pick(r, ['lat', 'широт'])).replace(',', '.'));
-    const lo = parseFloat(('' + pick(r, ['lon', 'lng', 'долгот'])).replace(',', '.'));
-    if (!isFinite(la) || !isFinite(lo)) continue;
-    const chRaw = ('' + (pick(r, ['ch', 'channel', 'канал', 'тип']) || '')).toUpperCase();
-    const ch = chRaw.indexOf('BR') >= 0 ? 'BR' : 'SE';
-    const city = '' + (pick(r, ['city', 'город']) || '');
-    out.push({
-      ch, name: '' + (pick(r, ['name', 'назв', 'точк', 'title']) || ''),
-      city, code: '' + (pick(r, ['code', 'код', 'id']) || ''),
-      addr: '' + (pick(r, ['addr', 'address', 'адрес']) || ''),
-      hours: '' + (pick(r, ['hours', 'часы', 'время']) || ''),
-      lat: la, lon: lo,
-    });
-  }
-  return out;
-}
-
-// City tag for own points: explicit city column first, otherwise the nearest
-// map city — but only within 60 km, so points from another country's dataset
-// don't get glued to the wrong city bar / stats.
-function retagOwnCities() {
-  own.forEach(o => {
-    o.cityRu = OWN_RU[o.city] || o.city || '';
-    if (!CITIES.includes(o.cityRu)) {
-      const c = cityOf(o.lat, o.lon);
-      if (c && CC[c] && hav(o.lat, o.lon, CC[c][0], CC[c][1]) < 60000) o.cityRu = c;
-    }
-  });
-}
-
-// Replace the global own-points dataset in place and refresh derived state.
-function setOwn(newArr) {
-  own.length = 0; newArr.forEach(o => own.push(o));
-  own.forEach(o => { o.chk = o.ch === 'BR' ? 'BR' : 'SE'; });
-  retagOwnCities();
-  ownC.length = 0; own.forEach(o => ownC.push([o.lat, o.lon]));
-  const br = pointLayers.find(p => p.id === 'br'); if (br) br.data = own.filter(o => o.chk === 'BR');
-  const se = pointLayers.find(p => p.id === 'se'); if (se) se.data = own.filter(o => o.chk === 'SE');
-}
-
-// One shared entry point for uploading own IQOS points — used by both the
-// Points tab and the Данные tab so the flow and the template are identical.
-function applyOwnUpload(rows) {
-  const arr = toOwnRecs(rows);
-  if (!arr.length) { toast('Не найдено строк с lat/lon', 'err'); return false; }
-  setOwn(arr);
-  buildPtUI(); renderPoints(); renderRecs(); renderCityInfo();
-  saveState();
-  const br = own.filter(o => o.chk === 'BR').length;
-  toast(`Наши точки обновлены: ${own.length} (BR ${br}, 2nd SE ${own.length - br})`, 'ok', 4000);
-  if (isAdmin() && SERVER_KEY) pushDataset(null); // share the new base with everyone
-  else if (isAdmin()) toast('Чтобы сохранить точки для всех — введите ключ в «Данные → Доступ к записи»', 'err', 5500);
-  return true;
+  // Через «Данные» обновляются только тепловые слои: наши точки грузятся во
+  // вкладке «Точки», своим слоем и своим шаблоном.
+  sel.innerHTML = heatKeys.length
+    ? heatKeys.map(k => `<option value="${esc(k)}">${esc(DS[k] ? DS[k].name : k)}</option>`).join('')
+    : '<option value="">Нет слоёв — создайте на вкладке «Карта»</option>';
+  if (cur && heatKeys.includes(cur)) sel.value = cur;
 }
 
 /* ── TOAST NOTIFICATIONS ─────────────────────────────────────────────── */
@@ -1703,15 +1532,30 @@ function toRecs(rows) {
   return out;
 }
 
-function enrich(recs) {
-  // nd — расстояние до ближайшей нашей точки. Если наших точек нет вообще
-  // (KG-карта до загрузки точек) — расстояние неизвестно: Infinity честно
-  // означает «не покрыто», а в интерфейсе печатается как «—».
-  const ix = buildPtIndex(ownC);
+/* nd — расстояние до ближайшей НАШЕЙ точки (все слои вкладки «Точки»).
+   Пока наших точек нет, расстояние неизвестно: Infinity честно означает
+   «не покрыто», а в интерфейсе печатается как «—».
+   Вынесено отдельно, потому что пересчитывать это надо при каждом изменении
+   наших точек, а тяжёлый расчёт локального спроса (ld/lc) — не надо. */
+function enrichNd(recs, ix) {
+  ix = ix || buildPtIndex(ourPts());
   for (const s of recs) {
     const n = nearestPt(ix, s.lat, s.lon);
     s.nd = n ? Math.round(n.dist) : Infinity;
   }
+  return recs;
+}
+
+/* Наши точки изменились (загрузка/добавление/удаление слоя) — пересчитать
+   покрытие во всех тепловых слоях и обновить рекомендации. */
+function reenrichAll() {
+  const ix = buildPtIndex(ourPts());
+  heatKeys.forEach(k => { const d = DS[k]; if (d && d.recs) enrichNd(d.recs, ix); });
+  renderRecs();
+}
+
+function enrich(recs) {
+  enrichNd(recs);
   const grid = {};
   recs.forEach((s, i) => {
     const k = Math.round(s.lat * 100) + '_' + Math.round(s.lon * 100);
@@ -1765,11 +1609,9 @@ function buildStateSnapshot() {
     if (k.startsWith('custom_') || d._userData) { o.recs = slimRecs(d.recs); o._userData = true; }
     layers[k] = o;
   });
-  const pts = {};
-  pointLayers.forEach(p => pts[p.id] = { color: p.color, shape: p.shape, visible: p.visible, radiusOn: p.radiusOn, radiusM: p.radiusM, radiusColor: p.radiusColor, radiusOpacity: p.radiusOpacity });
   return {
     _v: 1, _app: 'hm-br', _savedAt: new Date().toISOString(), _date: new Date().toISOString().slice(0, 10),
-    heatKeys, layers, pts, incCol: { ...incCol },
+    heatKeys, layers, incCol: { ...incCol },
     city, covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
     addrSrcKey, addrRefKey, rtRadius, rtRadiusOp, rtVolOp, rtVolMode, rtVolCustom, rtExclRadius, rtExclOp, rtExclKeys,
     customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, shape: l.shape, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, recs: l.recs })),
@@ -1796,8 +1638,8 @@ function importState(file) {
     if (st._app !== 'hm-br') { toast('Это не файл настроек Heat Map', 'err'); return; }
     // Apply — reuse loadState logic
     applySnapshot(st);
-    buildCityUI(); buildHeatUI(); buildPtUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
-    renderHeat(); renderPoints(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
+    buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
+    renderHeat(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
     doSave(); // persist locally too
     toast('Настройки загружены', 'ok');
   };
@@ -1805,6 +1647,16 @@ function importState(file) {
 }
 
 function applySnapshot(st) {
+  // ВАЖНО: наши точки восстанавливаются ПЕРВЫМИ. От них считается nd в
+  // тепловых слоях ниже — при обратном порядке покрытие посчиталось бы по
+  // ещё не заменённому набору точек.
+  if (Array.isArray(st.customPtLayers)) {
+    // Wipe all existing custom-point markers — otherwise old groups stay
+    // orphaned on the map (overlapping new ones / impossible to toggle off).
+    cptRoot.clearLayers();
+    // Restore custom point layers without their Leaflet groups (re-created on render)
+    customPtLayers = st.customPtLayers.map(l => ({ ...l, _group: null }));
+  }
   // Only user-uploaded layers are shown; drop legacy cig/sticks/combined keys
   // that older saved states may still carry.
   if (Array.isArray(st.heatKeys)) heatKeys = st.heatKeys.filter(k => k.startsWith('custom_'));
@@ -1827,7 +1679,7 @@ function applySnapshot(st) {
       }
     }
   }
-  if (st.pts)              pointLayers.forEach(p => { const sv = st.pts[p.id]; if (sv) Object.assign(p, sv); });
+  // st.pts — настройки удалённых слоёв «Наши точки · IQOS», игнорируются.
   if (st.incCol)           Object.assign(incCol, st.incCol);
   if (typeof st.city       === 'string')  city         = st.city;
   if (typeof st.covR       === 'number')  covR         = st.covR;
@@ -1850,13 +1702,6 @@ function applySnapshot(st) {
   if (typeof st.rtExclRadius === 'number')  rtExclRadius = st.rtExclRadius;
   if (typeof st.rtExclOp     === 'string')  rtExclOp     = st.rtExclOp;
   if (Array.isArray(st.rtExclKeys))         rtExclKeys   = st.rtExclKeys.slice();
-  if (Array.isArray(st.customPtLayers)) {
-    // Wipe all existing custom-point markers — otherwise old groups stay
-    // orphaned on the map (overlapping new ones / impossible to toggle off).
-    cptRoot.clearLayers();
-    // Restore custom point layers without their Leaflet groups (re-created on render)
-    customPtLayers = st.customPtLayers.map(l => ({ ...l, _group: null }));
-  }
 }
 
 /* ── EXPORT RECS ─────────────────────────────────────────────────────── */
@@ -1959,27 +1804,27 @@ function buildAddrSrcSel() {
 function buildAddrRefSel() {
   const sel = document.getElementById('addr-ref-sel');
   if (!sel) return;
-  const opts = [{ key: '__own__', name: 'BR / IQOS (наши точки)' }];
+  // Ориентиром может быть любой слой наших точек (вкладка «Точки»).
+  const opts = [];
   customPtLayers.forEach(l => {
     if (l.recs.length) opts.push({ key: '__cpt__' + l.id, name: l.name });
   });
   // If current ref key no longer valid, reset
-  if (!opts.find(o => o.key === addrRefKey)) addrRefKey = '__own__';
-  sel.innerHTML = opts.map(o =>
-    `<option value="${o.key}"${o.key === addrRefKey ? ' selected' : ''}>${esc(o.name)}</option>`
-  ).join('');
+  if (!opts.find(o => o.key === addrRefKey)) addrRefKey = opts[0] ? opts[0].key : '';
+  sel.innerHTML = opts.length
+    ? opts.map(o => `<option value="${esc(o.key)}"${o.key === addrRefKey ? ' selected' : ''}>${esc(o.name)}</option>`).join('')
+    : '<option value="">Нет точек — загрузите на вкладке «Точки»</option>';
 }
 
 /* Returns reference layer name for display */
 function addrRefName() {
-  if (addrRefKey === '__own__') return 'BR/IQOS';
   const layer = customPtLayers.find(l => '__cpt__' + l.id === addrRefKey);
-  return layer ? layer.name : 'BR/IQOS';
+  return layer ? layer.name : 'наши точки';
 }
 
 /* Returns reference points array for distance calculation */
 function addrRefPoints() {
-  if (addrRefKey === '__own__') return own;
+  if (!addrRefKey.startsWith('__cpt__')) return [];
   const id = addrRefKey.slice(7);
   const layer = customPtLayers.find(l => l.id === id);
   return layer ? layer.recs : [];
@@ -2004,9 +1849,7 @@ function runAddrFilter() {
   let points = addrSrcRecs();
   if (city) points = points.filter(p => p.fil === city || !p.fil);
 
-  const refPts = addrRefKey === '__own__'
-    ? (city ? own.filter(o => o.cityRu === city) : own)
-    : addrRefPoints();
+  const refPts = addrRefPoints();
 
   // Attach nearest reference-point distance AND the ref point itself
   const refIx = buildPtIndex(refPts);
@@ -2024,7 +1867,7 @@ function runAddrFilter() {
     points = points.filter(p => cmpDist(p.vol_total || 0, volThresh, rtVolOp));
   }
 
-  // Distance to BR/IQOS filter
+  // Distance to the reference layer (our points)
   points = points.filter(p => cmpDist(p._distOwn, rtRadius, rtRadiusOp));
 
   // Exclusion (heat-layer sources)
@@ -2222,7 +2065,10 @@ async function pushDataset(btn) {
   if (!SERVER_KEY) { toast('Введите ключ администратора в «Данные → Доступ к записи»', 'err', 4500); return; }
   const dataset = {
     _app: 'hm-data', _v: 1,
-    own: DATA.own, cities: DATA.cities,
+    // own — легаси-поле: наши точки давно живут в слоях состояния, а не в базе.
+    // Пустой массив оставлен, чтобы старые вкладки (с закэшированным
+    // index.html и проверкой `!d.own`) продолжали грузиться.
+    own: [], cities: DATA.cities,
     cig:      { recs: DS.cig.recs,      stats: DS.cig.stats },
     sticks:   { recs: DS.sticks.recs,   stats: DS.sticks.stats },
     // combined is derived (cig + sticks) on the client — not stored.
@@ -2431,15 +2277,9 @@ function wireEvents() {
   $('layer-modal-input').addEventListener('keydown', e => { if (e.key === 'Enter') confirmLayerModal(); if (e.key === 'Escape') closeLayerModal(); });
   $('layer-modal-overlay').addEventListener('click', e => { if (e.target === $('layer-modal-overlay')) { pendingHeatRows = null; closeLayerModal(); } });
 
-  // Template downloads — one generator for all three upload flows, so the
-  // sample files always match what the corresponding parser expects.
+  // Template downloads — one generator for both upload flows, so the sample
+  // files always match what the corresponding parser expects.
   const TEMPLATES = {
-    own: {
-      rows: [['ch', 'name', 'city', 'code', 'addr', 'hours', 'lat', 'lon'],
-             ['BR', 'Пример BR', 'Tashkent', '1137', 'г.Ташкент, ул. Пример 1', '10:00-22:00', 41.311100, 69.279700],
-             ['SE', 'Пример SE', 'Samarkand', '2201', 'г.Самарканд, ул. Пример 2', '09:00-21:00', 39.654000, 66.959700]],
-      cols: [6, 20, 14, 8, 30, 14, 12, 12], file: 'shablon_nashi_tochki.xlsx',
-    },
     heat: {
       rows: [['name', 'lat', 'lon', 'value'], ['Пример ТТ', 41.311100, 69.279700, 12.5], ['Пример ТТ 2', 41.299000, 69.240000, 8]],
       cols: [22, 12, 12, 10], file: 'shablon_sloy_heatmap.xlsx',
@@ -2448,7 +2288,7 @@ function wireEvents() {
       rows: [['name', 'lat', 'lon', 'addr', 'hours', 'code'],
              ['Пример точки', 41.311100, 69.279700, 'г.Ташкент, ул. Пример 1', '10:00-22:00', 'A-01'],
              ['Пример точки 2', 41.299000, 69.240000, 'г.Ташкент, ул. Пример 2', '', '']],
-      cols: [22, 12, 12, 30, 14, 8], file: 'shablon_svoi_tochki.xlsx',
+      cols: [22, 12, 12, 30, 14, 8], file: 'shablon_nashi_tochki.xlsx',
     },
   };
   function downloadTemplate(kind) {
@@ -2461,22 +2301,8 @@ function wireEvents() {
       XLSX.writeFile(wb, t.file);
     }).catch(() => toast('Не удалось загрузить XLSX', 'err'));
   }
-  $('dl-tpl').addEventListener('click', () =>
-    downloadTemplate($('up-target').value === '__own__' ? 'own' : 'heat'));
-  const ownTpl = $('own-tpl'); if (ownTpl) ownTpl.addEventListener('click', () => downloadTemplate('own'));
+  $('dl-tpl').addEventListener('click', () => downloadTemplate('heat'));
   const cptTpl = $('cpt-tpl'); if (cptTpl) cptTpl.addEventListener('click', () => downloadTemplate('cpt'));
-
-  // Upload own IQOS points straight from the Points tab (same flow as Данные)
-  const ownFileInp = $('own-file');
-  if (ownFileInp) {
-    $('own-upload-btn').addEventListener('click', () => ownFileInp.click());
-    ownFileInp.addEventListener('change', () => {
-      const f = ownFileInp.files[0];
-      ownFileInp.value = '';
-      if (!f) return;
-      parseSheet(f, rows => applyOwnUpload(rows));
-    });
-  }
 
   // File upload (click + drag&drop)
   const fileInp = $('file'), fileBox = $('filebox');
@@ -2496,7 +2322,7 @@ function wireEvents() {
   function handleDataFile(f) {
     parseSheet(f, rows => {
       // Keep raw rows; final parse happens at "Обновить карту" once the
-      // target layer is known (heat layers vs own IQOS points differ).
+      // target heat layer is known.
       const probe = toRecs(rows);
       if (!probe.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
       pendingUpload = rows;
@@ -2518,12 +2344,7 @@ function wireEvents() {
       fileInp.value = '';
     };
 
-    if (tk === '__own__') {
-      if (applyOwnUpload(pendingUpload)) reset();
-      return;
-    }
-
-    const d = DS[tk]; if (!d) return;
+    const d = DS[tk]; if (!d) { toast('Выберите слой для загрузки', 'err'); return; }
     d.recs = enrich(toRecs(pendingUpload)); d.stats = statsOf(d.recs); d.visible = true; d._userData = true;
     reset();
     // The selected-city filter would otherwise silently hide points that fall
@@ -2704,7 +2525,9 @@ function wireEvents() {
       const recs = toCustomPtRecs(rows);
       if (!recs.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
       l.recs = recs;
-      buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); renderCustomPoints(); saveState();
+      buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); renderCustomPoints();
+      reenrichAll();   // добавились наши точки — пересчитать покрытие и рекомендации
+      renderCityInfo(); saveState();
       toast(`Слой «${l.name}» — загружено ${recs.length} точек`, 'ok');
     });
   });
@@ -2750,19 +2573,14 @@ async function startApp() {
   // Activate this map's country (cities, centroids, city stats) BEFORE any
   // state restore / render — cityOf() and the city bar depend on it.
   applyCountry(currentMap);
-  // Cities are known only now — tag own points so the city filter and
-  // «Курильщиков на 1 нашу точку» work even when the city column was empty.
-  retagOwnCities();
-  const brL = pointLayers.find(p => p.id === 'br'); if (brL) brL.data = own.filter(o => o.chk === 'BR');
-  const seL = pointLayers.find(p => p.id === 'se'); if (seL) seL.data = own.filter(o => o.chk === 'SE');
   // The «Районы» overlay (Tashkent districts) is Uzbekistan-only.
   const distBtn = document.getElementById('districts-toggle');
   if (distBtn) distBtn.style.display = COUNTRY === 'uz' ? '' : 'none';
 
   // Load local state first so UI is immediately responsive
   loadState();
-  buildCityUI(); buildHeatUI(); buildPtUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
-  renderHeat(); renderPoints(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
+  buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
+  renderHeat(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
   wireEvents();
   stateReady = true;
   setTimeout(() => { if (map && map.invalidateSize) map.invalidateSize(); }, 60);
@@ -2795,8 +2613,8 @@ async function startApp() {
   if (chosen) {
     applySnapshot(chosen);
     try { localStorage.setItem(storeKey(), JSON.stringify(chosen)); } catch (e) {}
-    buildCityUI(); buildHeatUI(); buildPtUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
-    renderHeat(); renderPoints(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
+    buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
+    renderHeat(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
     if (chosen === serverState) {
       const savedAt = serverState._savedAt
         ? new Date(serverState._savedAt).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })

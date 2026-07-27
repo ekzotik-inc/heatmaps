@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260726a"/>
+  <link rel="stylesheet" href="style.css?v=20260726b"/>
 </head>
 <body>
 
@@ -157,22 +157,13 @@
 
       <!-- TAB: ТОЧКИ -->
       <div class="tab-panel" id="tab-points">
-        <p class="tab-section-title">Наши точки · IQOS</p>
-        <div id="pt-list"></div>
-        <button class="add-layer-btn" id="own-upload-btn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Загрузить наши точки (файл)
-        </button>
-        <div style="text-align:center;margin-top:6px"><a class="lnk" id="own-tpl">⬇ Шаблон — наши точки</a></div>
-        <input type="file" id="own-file" accept=".csv,.xlsx,.xls" style="display:none"/>
-        <div class="tab-section-divider"></div>
-        <p class="tab-section-title">Свои точки</p>
+        <p class="tab-section-title">Наши точки</p>
         <div id="custom-pt-list"></div>
         <button class="add-layer-btn" id="add-custom-pt-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Добавить слой точек
         </button>
-        <div style="text-align:center;margin-top:6px"><a class="lnk" id="cpt-tpl">⬇ Шаблон — свои точки</a></div>
+        <div style="text-align:center;margin-top:6px"><a class="lnk" id="cpt-tpl">⬇ Шаблон — наши точки</a></div>
         <input type="file" id="cpt-file" accept=".csv,.xlsx,.xls" style="display:none"/>
       </div>
 
@@ -193,7 +184,7 @@
         <label class="chk"><div class="cbx green on" id="rec-show"></div><span>Показывать на карте</span></label>
         <div class="ctrl">
           <div class="row">
-            <label>Радиус покрытия наших ТТ <span class="tip-icon" data-tip="Зоны ближе этого расстояния от BR/IQOS исключаются из рекомендаций">ⓘ</span></label>
+            <label>Радиус покрытия наших ТТ <span class="tip-icon" data-tip="Зоны ближе этого расстояния от наших точек исключаются из рекомендаций">ⓘ</span></label>
             <span class="val" id="v-cov">600 м</span>
           </div>
           <input type="range" class="full green" id="s-cov" min="200" max="3000" step="50" value="600"/>
@@ -308,12 +299,12 @@
           <summary>Загрузка данных по шаблону<span class="chev">›</span></summary>
           <div class="adv-body">
             <a class="lnk" id="dl-tpl">⬇ Скачать шаблон (Excel)</a>
-            <div class="up-row">Слой для загрузки:&nbsp;<select id="up-target"><option value="cig">Сигареты</option><option value="sticks">Стики</option></select></div>
+            <div class="up-row">Слой для загрузки:&nbsp;<select id="up-target"></select></div>
             <div class="filebox" id="filebox">Выберите файл <b>CSV / XLSX</b></div>
             <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none"/>
             <div class="fname" id="fname" style="display:none"></div>
             <button class="btn" id="btn-update" disabled>Обновить карту</button>
-            <div class="foot">Шаблон меняется по выбранному слою: для тепловых слоёв — name/lat/lon/value, для «Наших точек · IQOS» — ch/name/city/…/lat/lon. Загруженные наши точки отображаются во вкладке «Точки» (BR и 2nd SE различаются цветом и формой) и попадают в рекомендации и адресную программу.</div>
+            <div class="foot">Здесь обновляются <b>тепловые слои</b> — колонки name / lat / lon / value. Наши точки загружаются во вкладке «Точки»: они рисуются на карте и служат отсчётом для рекомендаций и адресной программы.</div>
           </div>
         </details>
 
@@ -474,16 +465,18 @@
     started = true;
     window.DATA = d;
     var s = document.createElement('script');
-    s.src = 'app.js?v=20260726a'; // bump to bust cache when app.js changes
+    s.src = 'app.js?v=20260726b'; // bump to bust cache when app.js changes
     s.onload = function () { var b = document.getElementById('boot-overlay'); if (b) b.remove(); };
     document.body.appendChild(s);
   }
 
   // 1) Instant boot from the locally cached dataset, if we have one. The fresh
   //    copy is still fetched below and stored for next time (stale-while-revalidate).
+  //    Признак валидности — отсутствие флага empty: поля `own` в базе больше нет
+  //    (наши точки теперь живут в слоях состояния, а не в базовом датасете).
   try {
     var cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
-    if (cached && cached.own) { if (msg) msg.textContent = 'Загрузка карты…'; start(cached); }
+    if (cached && !cached.empty) { if (msg) msg.textContent = 'Загрузка карты…'; start(cached); }
   } catch (e) {}
 
   var wake = setTimeout(function () {
@@ -503,7 +496,7 @@
     .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function (d) {
       clearTimeout(wake);
-      if (!d || d.empty || !d.own) { if (!started) fail('На сервере нет базовых данных.'); return; }
+      if (!d || d.empty) { if (!started) fail('На сервере нет базовых данных.'); return; }
       try { localStorage.setItem(CACHE_KEY, JSON.stringify(d)); } catch (e) { /* quota — skip cache */ }
       start(d);                 // no-op if already booted from cache
     })

@@ -33,7 +33,7 @@
 
 | # | User Story | Expected Behaviour | Role | Status | Notes |
 |---|---|---|---|---|---|
-| N1 | Toggle "Радиус охвата" on own-point layer | Semi-transparent circle (default 1.5 km) drawn around each marker in `ptradius` pane | All | ✅ | |
+| N1 | Toggle "Радиус охвата" on a point layer | Semi-transparent circle (default 1.5 km) drawn around each marker in `ptradius` pane | All | ✅ | |
 | N2 | Adjust radius / fill opacity / radius color | Circles re-render live; persisted to server+localStorage | All | ✅ | |
 | N3 | Click solo (◉) on heat layer | Isolates that layer; re-click restores prior visibility | All | ✅ | Fixes 2-3 layer overlap mush |
 | N4 | Press keys 1-5 | Switches sidebar tabs (Карта/Точки/Анализ/Город/Данные); ignored while typing; skips hidden tabs | All | ✅ | Было 1-4 — вкладка «Город» была недостижима (исправлено 07.2026) |
@@ -117,18 +117,20 @@
 
 | # | User Story | Expected Behaviour | Role | Status | Notes |
 |---|---|---|---|---|---|
-| P1 | IQOS BR layer toggled ON | Teardrop markers appear on map | All | ✅ | |
-| P2 | IQOS SE layer toggled ON | Hex markers appear on map | All | ✅ | |
+| P1 | ~~IQOS BR layer~~ | — | — | 🗑 | Закреплённый раздел «Наши точки · IQOS» удалён 07.2026 |
+| P2 | ~~IQOS SE layer~~ | — | — | 🗑 | Все точки во вкладке «Точки» теперь и есть наши |
 | P3 | Point color changed | Markers re-render with new color immediately | All | ✅ | |
 | P4 | Point shape changed | Markers re-render with new shape immediately | All | ✅ | |
-| P5 | Point clicked | Popup shows: name, channel, city, address, hours | All | ✅ | |
-| P6 | Point hovered | Tooltip shows name + layer type | All | ✅ | |
-| P7 | Admin creates custom point layer | Modal; name + color; card appears in custom list | Admin | ✅ | |
-| P8 | Admin uploads custom point CSV | Points appear on map; count shows in card | Admin | ✅ | |
+| P5 | Point clicked | Popup shows: name, address, hours, code | All | ✅ | |
+| P6 | Point hovered | Tooltip shows name + layer name | All | ✅ | |
+| P7 | Admin creates point layer | Modal; name + color; card appears in list | Admin | ✅ | |
+| P8 | Admin uploads point CSV | Points appear on map; count shows in card; покрытие и рекомендации пересчитываются | Admin | ✅ | `reenrichAll()` |
 | P9 | Custom point layer visibility toggled | Points appear/disappear | All | ✅ | |
 | P10 | Custom point layer color changed | Markers re-color | All | ✅ | |
-| P11 | Admin deletes custom point layer | Card removed; markers cleared from map | Admin | ✅ | |
+| P11 | Admin deletes point layer | Card removed; markers cleared; покрытие пересчитано | Admin | ✅ | |
 | P12 | Points tab badge | Shows "N/M" (visible/total layers) | All | ✅ | |
+| P13 | Точки удалены/добавлены | `nd` во всех тепловых слоях пересчитывается, рекомендации и метрика города обновляются | Admin | ✅ | Сверено с брутфорсом |
+| P14 | Наших точек нет вообще | Расстояния «—», адресная сообщает «нет точек-ориентиров», метрика города «—» | All | ✅ | |
 
 ---
 
