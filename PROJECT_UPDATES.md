@@ -43,3 +43,5 @@ Before publication, run JavaScript syntax checks, ESLint, a clean dependency ins
 ### Local smoke test
 
 The local browser test produced 19 Uzbekistan city buttons including all 11 requested cities. Tashkent became selected and triggered the `is-flying` focus state. A rapid sequence of Chirchiq → Tashkent → Nukus ended on Nukus, reached approximately 42.460, 59.618 at zoom 12, and cleared the focus pulse after the short animation window.
+
+The style asset cache-buster was advanced to `20260813b` so the city-bar focus styling is fetched together with this release.
