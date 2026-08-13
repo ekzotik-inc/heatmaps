@@ -109,3 +109,11 @@ The final rapid-selection regression test ended on `Ташкент, Самарк
 ### Live framing/style test
 
 After deployment of `3f44e75`, the live browser test selected Tashkent, Samarkand, Nukus and Termez. All four centroids were inside the final map bounds at zoom 6.5. Computed live styles remained `Manrope` at 11px, with a 100px pill trigger and 16px project card-radius popover.
+
+## 2026-08-13 — All-cities heatmap performance check
+
+A read-only benchmark used the real Com Dep production dataset: 5,071 cigarette records plus 3,624 sticks records, 8,695 records total, rendered into two Leaflet heat canvases. All 18 available Uzbekistan cities were selected simultaneously.
+
+The combined city-selection update produced one `renderHeat` call of approximately 50 ms in the first run, one long task of 91 ms, a median RAF gap of 33.4 ms (~30 FPS), a 95th-percentile gap of 66.9 ms (~15 FPS) and a maximum observed gap of 66.9 ms during the 2.2-second observation window. Three direct `renderHeat` runs measured 54.0 ms, 34.8 ms and 30.5 ms (average 39.77 ms, maximum 54.0 ms). `renderCustomPoints` and `renderRecs` were below 1 ms in the combined run.
+
+Conclusion: the all-cities scenario completes without a freeze, but the first full redraw causes a visible frame drop on the test browser. The primary cost is rebuilding two heat canvases and normalising their points; the current selector also performs a city-name membership check for every record. No production code was changed during this audit. The live session could not load `/data` because the cross-site HttpOnly session cookie was not retained in the browser, so the benchmark used a temporary localhost read-only harness fed by the same production JSON retrieved via a read-only authenticated request. This preserves the real dataset and avoids production writes.
