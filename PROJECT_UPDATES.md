@@ -139,4 +139,10 @@ The city selector now uses the same Manrope, tokenized palette, 100px pill radiu
 
 ### Pre-deploy verification
 
-`node --check app.js`, `node --check server/server.js`, `npm run lint`, clean server dependency installation and `git diff --check` all pass. No production write endpoint was called during validation. The frontend and backend changes remain ready for the release commit and deployment.
+`node --check app.js`, `node --check server/server.js`, `npm run lint`, clean server dependency installation and `git diff --check` all passed. No production write endpoint was called during validation.
+
+### Live deployment verification
+
+Commit `097aeb4` (`Optimise heatmap render and add bearer auth fallback`) was published to `main`. GitHub CI and GitHub Pages both completed successfully. The published page serves `app.js?v=20260813f` and `style.css?v=20260813e`; computed live city-filter styles are Manrope, 12px, 7px 14px padding and a 100px pill radius, with no kicker element.
+
+The Render health endpoint reported PostgreSQL storage and configured authentication. A cross-origin preflight from `https://ekzotik-inc.github.io` now returns `Access-Control-Allow-Headers: Content-Type, Authorization, X-API-Key, Content-Encoding`, the GitHub Pages origin, credentials support and `GET, POST, OPTIONS`. No production login credentials or production write endpoint were used in this release session, so the normal user login → protected data smoke test remains a safe follow-up in an authenticated browser session.
