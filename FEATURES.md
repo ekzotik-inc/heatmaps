@@ -1,7 +1,7 @@
 # Heatmap App — Feature Tracking Spreadsheet
 
 > **Legend** — Status: ✅ OK · ❌ Bug · ⚠️ UX issue · 🔲 Not tested  
-> Last updated: 2026-07-26
+> Last updated: 2026-08-13
 
 ---
 
@@ -54,11 +54,12 @@
 | A4 | Admin picks map (both enabled) | Both cards clickable; picking either unlocks map and calls startApp | Admin | ✅ | |
 | A5 | Comdep picks map | Only "Com Dep" card clickable; "Другая" is `.locked` + disabled | Comdep | ✅ | |
 | A6 | Other picks map | Only "Другая" card clickable; "Com Dep" is `.locked` + disabled | Other | ✅ | |
-| A7 | User refreshes page after login | Session restored from sessionStorage; correct map opens without re-login | All | ✅ | |
+| A7 | User refreshes page after login | Session restored from the tab-scoped bearer token or retained cookie; correct map opens without re-login | All | ✅ | |
 | A8 | User clicks Logout | sessionStorage cleared, page reloaded, login screen shown | All | ✅ | |
 | A9 | Mode badge shown after login | Admin → "✏ Админ · [Map]" (blue); Viewer → "👁 [Map]" | All | ✅ | |
 | A10 | Viewer sees no Data tab | Tab "⚙ Данные" is hidden (`body.viewer`) | Viewer | ✅ | |
 | A11 | Viewer sees no upload/create/delete buttons | Upload btn, add-layer btn, layer delete btn, state import/export all hidden | Viewer | ✅ | Address program export intentionally visible to viewers (same as rec export) |
+| A12 | GitHub Pages ↔ Render cookie is blocked | Login response token is kept in sessionStorage and sent as `Authorization: Bearer`; cookie remains a compatible fallback | All | ✅ | Local login → bearer `/auth/me` smoke test passed |
 
 ---
 
@@ -82,7 +83,7 @@
 | # | User Story | Expected Behaviour | Role | Status | Notes |
 |---|---|---|---|---|---|
 | M1 | Map loads | 2GIS tile layer renders; initial center [41,67] zoom 6 or fits data bounds | All | ✅ | |
-| M2 | User opens city filter and selects one or more cities | Compact popover with search and checkbox multi-select; map uses a short smooth fly-to transition; heat/custom points/recs are filtered to the selected set | All | ✅ | Added 2026-08-13: multi-select, 620 ms navigation, combined City summary, 60 km custom-point guard |
+| M2 | User opens city filter and selects one or more cities | Compact popover with search and native pill multi-select; map uses a short smooth fly-to transition; heat/custom points/recs are filtered to the selected set | All | ✅ | Added 2026-08-13: Manrope/token-aligned pills, multi-select, 620 ms navigation, combined City summary, 60 km custom-point guard |
 | M3 | User clears the city filter | All cities shown; compact trigger returns to «Все города»; map fits all heat and custom-point bounds using the same smooth navigation helper | All | ✅ | Fixed: bounds now include own-points so «Все города» always refits |
 | M4 | Districts toggle ON | District polygons appear with fill + stroke; tooltip on hover | All | ✅ | |
 | M5 | Districts toggle OFF | Polygons removed from map | All | ✅ | |
@@ -110,6 +111,7 @@
 | H11 | 1 or 0 layers visible | Legend hidden | All | ✅ | |
 | H12 | Admin adds new layer | Modal opens; name entered; layer card created with auto-color | Admin | ✅ | |
 | H13 | Point count badge | Shows "Точек на карте: N" correctly after data load | All | ✅ | |
+| H14 | All cities selected with a large dataset | Full selection uses canonical fast path, reuses normalized points/heat max and keeps warm redraws below 10 ms in the local 8,695-record benchmark | All | ✅ | Cold 46.80 ms; warm median 0.00 ms; warm p95 0.10 ms across 30 redraws |
 
 ---
 
@@ -172,7 +174,7 @@
 
 | # | User Story | Expected Behaviour | Role | Status | Notes |
 |---|---|---|---|---|---|
-| S1 | App loads (server awake) | Badge: "Загрузка…" → "Обновлено HH:MM" within ~3 s | All | ✅ | |
+| S1 | App loads (server awake) | Badge: "Загрузка…" → "Обновлено HH:MM" within ~3 s | All | ✅ | Authenticated requests use authFetch with bearer token when available and cookie fallback |
 | S2 | App loads (server cold-start) | Badge: "Загрузка…" → "Сервер пробуждается…" after 5 s → "Обновлено" when done | All | ✅ | |
 | S3 | Admin changes any setting | State auto-saved to localStorage + pushed to server within 400 ms | Admin | ✅ | |
 | S4 | Sync success | Badge shows green dot + "Обновлено HH:MM DD.MM" | Admin | ✅ | |

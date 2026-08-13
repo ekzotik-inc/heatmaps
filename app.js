@@ -230,9 +230,16 @@ let heatRadius = 28;
 // explicitly selected city names. This keeps multi-select semantics unambiguous.
 let selectedCities = [], covR = 600, topN = 12, recShow = true, recBasis = '';
 function hasCityFilter() { return selectedCities.length > 0; }
-function cityMatches(name) { return !hasCityFilter() || selectedCities.includes(name); }
+function allCitiesSelected() {
+  return CITIES.length > 0 && selectedCities.length === CITIES.length;
+}
+function canonicalCities(list) {
+  const ordered = CITIES.filter(c => list.includes(c));
+  return ordered.length === CITIES.length ? [] : ordered;
+}
+function cityMatches(name) { return !hasCityFilter() || allCitiesSelected() || selectedCities.includes(name); }
 function selectedPointMatches(r) {
-  return !hasCityFilter() || selectedCities.some(c => pointInCity(r, c));
+  return !hasCityFilter() || allCitiesSelected() || selectedCities.some(c => pointInCity(r, c));
 }
 function cityPlural(n) { return n === 1 ? 'город' : n < 5 ? 'города' : 'городов'; }
 function selectedCityLabel() {
@@ -482,47 +489,110 @@ function refreshHeatMax() {
   heatKeys.forEach(k => {
     const d = DS[k];
     if (!d || !d._leaf || !d._pts || !d._pts.length) return;
-    d._leaf.setOptions({ max: heatCellMax(d._pts, map.getZoom()) });
+    d._heatMaxCache ||= new Map();
+    const key = `${d._heatRenderKey || ''}|${map.getZoom()}|${heatRadius}|${d._pts.length}`;
+    let heatMax = d._heatMaxCache.get(key);
+    if (heatMax == null) {
+      heatMax = heatCellMax(d._pts, map.getZoom());
+      d._heatMaxCache.set(key, heatMax);
+    }
+    d._leaf.setOptions({ max: heatMax });
     requestAnimationFrame(() => applyHeatCanvas(d));
   });
 }
 
 function renderHeat() {
   let total = 0;
+  let needsUiRefresh = false;
+  const selectionKey = !hasCityFilter() || allCitiesSelected() ? '*' : selectedCities.join('|');
   heatKeys.forEach(k => {
     const d = DS[k];
     if (!d) return;
-    if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
-    if (!d.visible) return;
-    const recs  = d.recs.filter(r => cityMatches(r.fil));
-    const sorted = recs.map(r => r.vol).sort((a, b) => a - b);
-    const p90idx = Math.max(0, Math.floor(sorted.length * 0.9) - 1);
-    const p90    = sorted.length ? (sorted[p90idx] || 0.01) : (d.stats.p90 || 0.01);
-    const scale  = Math.max(p90, 0.01);
+    const sourceRef = d.recs;
+    if (d._heatMaxCacheSource !== sourceRef) {
+      d._heatMaxCache = new Map();
+      d._heatMaxCacheSource = sourceRef;
+    }
+    const renderKey = [selectionKey, d.intensity || 1, heatRadius, d.ramp || '', d.color || '', d.opacity == null ? 1 : d.opacity].join('|');
+    const legendKey = [d.name || '', d.color || '', d.visible ? 1 : 0, d.recs.length].join('|');
+    if (d._legendKey !== legendKey) {
+      d._legendKey = legendKey;
+      needsUiRefresh = true;
+    }
+    const cached = d._heatCache;
+    const layerAlive = d._leaf && map.hasLayer(d._leaf);
+    if (!d.visible) {
+      if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; needsUiRefresh = true; }
+      d._heatCache = null;
+      return;
+    }
+    // Reuse the existing Leaflet heat layer when neither the source records nor
+    // the visual/filter inputs changed. This is the hot path for all-cities
+    // selection and avoids rebuilding canvases during repeated UI updates.
+    if (cached && cached.sourceRef === sourceRef && cached.key === renderKey && layerAlive) {
+      total += cached.count;
+      return;
+    }
+    needsUiRefresh = true;
+    const fullSelection = !hasCityFilter() || allCitiesSelected();
+    const recs = fullSelection ? d.recs : d.recs.filter(r => cityMatches(r.fil));
+    let scale;
+    if (fullSelection && d.stats && d.stats.p90) {
+      // Full-layer p90 is already available from the server/local stats; avoid
+      // sorting thousands of volumes again on the all-cities hot path.
+      scale = Math.max(d.stats.p90, 0.01);
+    } else {
+      const sorted = recs.map(r => r.vol).sort((a, b) => a - b);
+      const p90idx = Math.max(0, Math.floor(sorted.length * 0.9) - 1);
+      scale = Math.max(sorted.length ? (sorted[p90idx] || 0.01) : (d.stats.p90 || 0.01), 0.01);
+    }
     const boost = Math.max(d.intensity || 1, 0.1);
     // Auto per-layer normalisation: each layer is scaled to its own p90 so the
     // absolute magnitude of `value` doesn't matter — a layer of tiny values
     // looks as strong as one of huge values. A gamma lift + floor keep the
     // faintest points visible instead of washing out to nothing.
-    const pts = recs.map(r => {
-      const t = Math.min(r.vol / scale, 1);          // relative within layer (p90 → 1)
-      const g = Math.pow(t, 0.55);                    // lift low values
-      return [r.lat, r.lon, Math.min(Math.max(g, 0.18) * boost, 1)];
-    });
+    let pts;
+    const fullPtsCache = fullSelection && d._fullPtsCache;
+    if (fullPtsCache && fullPtsCache.sourceRef === sourceRef && fullPtsCache.scale === scale && fullPtsCache.boost === boost) {
+      pts = fullPtsCache.pts;
+    } else {
+      pts = recs.map(r => {
+        const t = Math.min(r.vol / scale, 1);
+        const g = Math.pow(t, 0.55);
+        return [r.lat, r.lon, Math.min(Math.max(g, 0.18) * boost, 1)];
+      });
+      if (fullSelection) d._fullPtsCache = { sourceRef, scale, boost, pts };
+    }
     total += recs.length;
     d._pts = pts;
     // Sparse layers get a wider brush so isolated points read as heat, not specks.
     const rMul = Math.min(Math.max(Math.pow(600 / Math.max(recs.length, 1), 0.18), 1), 1.6);
-    const rad  = Math.round(heatRadius * rMul);
-    d._leaf = L.heatLayer(pts, {
+    const rad = Math.round(heatRadius * rMul);
+    d._heatRenderKey = renderKey;
+    const maxKey = `${renderKey}|${map.getZoom()}|${heatRadius}|${pts.length}`;
+    d._heatMaxCache ||= new Map();
+    let heatMax = d._heatMaxCache.get(maxKey);
+    if (heatMax == null) {
+      heatMax = heatCellMax(pts, map.getZoom());
+      d._heatMaxCache.set(maxKey, heatMax);
+    }
+    const options = {
       radius: rad, blur: Math.round(rad * .8), minOpacity: .22,
-      max: heatCellMax(pts, map.getZoom()),
-      gradient: gradOf(d),
-    }).addTo(map);
+      max: heatMax, gradient: gradOf(d),
+    };
+    if (d._leaf && map.hasLayer(d._leaf) && typeof d._leaf.setLatLngs === 'function') {
+      d._leaf.setOptions(options);
+      d._leaf.setLatLngs(pts);
+    } else {
+      d._leaf = L.heatLayer(pts, options).addTo(map);
+    }
+    d._heatCache = { sourceRef, key: renderKey, count: recs.length };
     requestAnimationFrame(() => applyHeatCanvas(d));
   });
-  document.getElementById('b-count').textContent = total.toLocaleString('ru-RU');
-  updateLayerLegend();
+  const countText = total.toLocaleString('ru-RU');
+  const countEl = document.getElementById('b-count');
+  if (countEl && (needsUiRefresh || countEl.textContent !== countText)) countEl.textContent = countText;
+  if (needsUiRefresh) updateLayerLegend();
 }
 
 function updateLayerLegend() {
@@ -1000,7 +1070,7 @@ function toggleCitySelection(name) {
   const next = selectedCities.includes(name)
     ? selectedCities.filter(c => c !== name)
     : [...selectedCities, name];
-  selectedCities = CITIES.filter(c => next.includes(c));
+  selectedCities = canonicalCities(next);
   updateCityFilterSummary();
   scheduleCityFilterUpdate();
 }
@@ -1042,7 +1112,7 @@ function buildCityUI() {
     b.className = 'city-option';
     b.dataset.cityOption = all ? '__all__' : val;
     b.setAttribute('aria-pressed', all ? String(!hasCityFilter()) : String(selectedCities.includes(val)));
-    b.innerHTML = `<span class="city-check" aria-hidden="true"></span><span>${esc(lab)}</span>`;
+    b.innerHTML = `<span>${esc(lab)}</span>`;
     b.addEventListener('click', () => {
       if (all) selectedCities = [];
       else toggleCitySelection(val);
@@ -1360,7 +1430,7 @@ function applyCountry(mapId) {
   SMOKE_M = co.smokeM; SMOKE_F = co.smokeF; SMOKE_AVG = (SMOKE_M + SMOKE_F) / 2;
   WAGE_UNIT = co.wageUnit; WAGE_CUR = co.wageCur;
   CITIES = Object.keys(co.centers);
-  selectedCities = selectedCities.filter(c => CITIES.includes(c));
+  selectedCities = canonicalCities(selectedCities);
   CC = {};
   CITIES.forEach(c => {
     const a = (DATA.cig && DATA.cig.recs) ? DATA.cig.recs.filter(s => s.fil === c) : [];
@@ -1975,7 +2045,7 @@ function applySnapshot(st) {
   // st.pts — настройки удалённых слоёв «Наши точки · IQOS», игнорируются.
   if (st.incCol) Object.assign(incCol, st.incCol);
   if (Array.isArray(st.selectedCities)) {
-    selectedCities = CITIES.filter(c => st.selectedCities.includes(c));
+    selectedCities = canonicalCities(st.selectedCities);
   } else if (typeof st.city === 'string') {
     // Backward compatibility with the previous single-city export format.
     selectedCities = st.city && CITIES.includes(st.city) ? [st.city] : [];
@@ -2343,13 +2413,32 @@ const SERVER_URL = window._HM_SERVER_URL || '';
 let SERVER_KEY = '';
 try { SERVER_KEY = localStorage.getItem('hm_admin_key') || ''; } catch (e) {}
 
+// Cross-site HttpOnly cookies are retained when available, but some browsers
+// block third-party cookies between GitHub Pages and Render. The server also
+// returns the same signed short-lived session token; keep it only for this tab
+// and send it as a bearer credential when cookies are unavailable.
+let SESSION_TOKEN = '';
+try { SESSION_TOKEN = sessionStorage.getItem('hm_session_token') || ''; } catch (e) {}
+function authHeaders(extra = {}) {
+  return SESSION_TOKEN ? { ...extra, Authorization: `Bearer ${SESSION_TOKEN}` } : { ...extra };
+}
+function authFetch(url, options = {}) {
+  return fetch(url, { ...options, credentials: 'include', headers: authHeaders(options.headers || {}) });
+}
+function rememberSessionToken(token) {
+  SESSION_TOKEN = typeof token === 'string' ? token : '';
+  try {
+    if (SESSION_TOKEN) sessionStorage.setItem('hm_session_token', SESSION_TOKEN);
+    else sessionStorage.removeItem('hm_session_token');
+  } catch (e) {}
+}
+
 let _dataLoad = null;
 async function ensureData() {
   if (DATA && DATA._loaded) return DATA;
   if (!SERVER_URL) throw new Error('Сервер не настроен');
   if (!_dataLoad) {
-    _dataLoad = fetch(SERVER_URL + '/data', {
-      credentials: 'include',
+    _dataLoad = authFetch(SERVER_URL + '/data', {
       signal: AbortSignal.timeout(60000),
     }).then(async res => {
       if (res.status === 401) throw new Error('AUTH_REQUIRED');
@@ -2419,7 +2508,7 @@ async function pushDataset(btn) {
 let _gzipOk = typeof CompressionStream !== 'undefined';
 async function postJson(url, obj, timeoutMs) {
   const json = JSON.stringify(obj);
-  const headers = { 'Content-Type': 'application/json', 'X-API-Key': SERVER_KEY };
+  const headers = authHeaders({ 'Content-Type': 'application/json', 'X-API-Key': SERVER_KEY });
   let body = json;
   if (_gzipOk) {
     try {
@@ -2478,8 +2567,7 @@ async function fetchFromServer() {
   setSyncBadge('syncing', 'Загрузка…');
   const wakeHint = setTimeout(() => setSyncBadge('syncing', 'Сервер пробуждается…'), 5000);
   try {
-    const res = await fetch(SERVER_URL + '/state?map=' + encodeURIComponent(currentMap), {
-      credentials: 'include',
+    const res = await authFetch(SERVER_URL + '/state?map=' + encodeURIComponent(currentMap), {
       signal: AbortSignal.timeout(55000),
     });
     clearTimeout(wakeHint);
@@ -3013,11 +3101,15 @@ async function startApp() {
   // revalidated against the server, so a forged browser value is insufficient.
   const restoreSession = async () => {
     try {
-      const res = await fetch(SERVER_URL + '/auth/me', {
-        credentials: 'include', signal: AbortSignal.timeout(15000),
+      const res = await authFetch(SERVER_URL + '/auth/me', {
+        signal: AbortSignal.timeout(15000),
       });
-      if (!res.ok) throw new Error('AUTH_REQUIRED');
+      if (!res.ok) {
+        if (res.status === 401) rememberSessionToken('');
+        throw new Error('AUTH_REQUIRED');
+      }
       const me = await res.json();
+      if (me.token) rememberSessionToken(me.token);
       currentUser = me.username;
       currentRole = me.role;
       currentMap = sessionStorage.getItem('hm_map') || null;
@@ -3063,6 +3155,7 @@ async function startApp() {
       });
       if (!res.ok) throw new Error('LOGIN_FAILED');
       const me = await res.json();
+      if (me.token) rememberSessionToken(me.token);
       currentUser = me.username;
       currentRole = me.role;
       sessionStorage.setItem('hm_role', currentRole);
@@ -3085,7 +3178,8 @@ async function startApp() {
     card.addEventListener('click', () => { if (!card.disabled) enterMap(card.dataset.map); });
   });
   logoutBtn.addEventListener('click', async () => {
-    try { await fetch(SERVER_URL + '/auth/logout', { method: 'POST', credentials: 'include' }); } catch (_) {}
+    try { await authFetch(SERVER_URL + '/auth/logout', { method: 'POST' }); } catch (_) {}
+    rememberSessionToken('');
     sessionStorage.removeItem('hm_role');
     sessionStorage.removeItem('hm_map');
     currentUser = null; currentRole = null; currentMap = null;

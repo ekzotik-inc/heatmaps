@@ -117,3 +117,26 @@ A read-only benchmark used the real Com Dep production dataset: 5,071 cigarette 
 The combined city-selection update produced one `renderHeat` call of approximately 50 ms in the first run, one long task of 91 ms, a median RAF gap of 33.4 ms (~30 FPS), a 95th-percentile gap of 66.9 ms (~15 FPS) and a maximum observed gap of 66.9 ms during the 2.2-second observation window. Three direct `renderHeat` runs measured 54.0 ms, 34.8 ms and 30.5 ms (average 39.77 ms, maximum 54.0 ms). `renderCustomPoints` and `renderRecs` were below 1 ms in the combined run.
 
 Conclusion: the all-cities scenario completes without a freeze, but the first full redraw causes a visible frame drop on the test browser. The primary cost is rebuilding two heat canvases and normalising their points; the current selector also performs a city-name membership check for every record. No production code was changed during this audit. The live session could not load `/data` because the cross-site HttpOnly session cookie was not retained in the browser, so the benchmark used a temporary localhost read-only harness fed by the same production JSON retrieved via a read-only authenticated request. This preserves the real dataset and avoids production writes.
+
+
+## 2026-08-13 — All-cities render optimization, cross-site auth fallback and native city-filter polish
+
+### Heatmap rendering
+
+The all-cities state is now canonicalized to an empty `selectedCities` array, which makes the full-data path explicit and avoids repeated city-membership checks for every record. Heat layers reuse the existing Leaflet heat layer whenever the source records and visual/filter inputs are unchanged. On a cache miss, normalized points and heat-cell maxima are reused where possible, `d.stats.p90` is used for full-layer normalization, and the confirmed leaflet.heat 0.2.0 `setLatLngs`/`setOptions` API updates the existing canvas instead of rebuilding it.
+
+The warm path also skips repeated point-count and legend DOM work when no layer state changed. The existing read-only production audit remains the baseline: 8,695 records (5,071 cigarette + 3,624 sticks) previously produced an approximately 50 ms render, one 91 ms long task and a median around 30 FPS. The fresh local bundle was then benchmarked with 8,695 controlled records: cold render 46.80 ms, warm median 0.00 ms, warm p95 0.10 ms, and warm maximum 0.10 ms across 30 redraws. A partial-selection transition counted 4,348 records, returned to 8,695 for all cities, and retained the same Leaflet layer object across both transitions. Detailed evidence is recorded in `qa/performance-benchmark.md`.
+
+### GitHub Pages ↔ Render authorization
+
+The server now accepts a signed short-lived session token from `Authorization: Bearer <token>` before falling back to the HttpOnly `hm_session` cookie. CORS explicitly allows the `Authorization` header, and `/auth/login` returns the token alongside the existing session cookie. The frontend stores the token only in `sessionStorage`, sends it through `authFetch` for `/auth/me`, `/data`, `/state` and other authenticated requests, and clears it on logout. The cookie path remains supported for same-site browsers.
+
+An isolated local HTTP test passed the complete login → token response → bearer `/auth/me` flow and confirmed that the production data was not touched. The production login/data smoke test is part of the post-deploy verification because the real credentials are not stored in the repository.
+
+### City-filter visual language
+
+The city selector now uses the same Manrope, tokenized palette, 100px pill radius, 12px type, and 7px 14px padding as the existing `.cities button` controls. The separate kicker and checkbox icon treatment were removed; selected cities use the existing teal active-pill state, while search and popover surfaces retain the project card, border, radius and shadow tokens. Cache-busting was advanced to `style.css?v=20260813e` and `app.js?v=20260813f`.
+
+### Pre-deploy verification
+
+`node --check app.js`, `node --check server/server.js`, `npm run lint`, clean server dependency installation and `git diff --check` all pass. No production write endpoint was called during validation. The frontend and backend changes remain ready for the release commit and deployment.

@@ -117,9 +117,13 @@ function readCookie(req, name) {
   return '';
 }
 
-function readSession(req) {
-  if (!SESSION_SECRET) return null;
-  const token = readCookie(req, 'hm_session');
+function readBearer(req) {
+  const header = String(req.headers.authorization || '');
+  return /^Bearer\s+/i.test(header) ? header.slice(7).trim() : '';
+}
+
+function verifySessionToken(token) {
+  if (!SESSION_SECRET || !token) return null;
   const dot = token.indexOf('.');
   if (dot <= 0) return null;
   const payload = token.slice(0, dot), signature = token.slice(dot + 1);
@@ -135,6 +139,12 @@ function readSession(req) {
   } catch (_) {
     return null;
   }
+}
+
+function readSession(req) {
+  // Prefer the explicit bearer token for GitHub Pages ↔ Render, then fall back
+  // to the HttpOnly cookie for same-site or browsers that retain third-party cookies.
+  return verifySessionToken(readBearer(req)) || verifySessionToken(readCookie(req, 'hm_session'));
 }
 
 function isHttps(req) {
@@ -269,7 +279,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-API-Key', 'Content-Encoding'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'Content-Encoding'],
 }));
 app.use(compression());
 
@@ -283,8 +293,11 @@ app.post('/auth/login', express.json({ limit: '32kb' }), (req, res) => {
   if (!user || !SESSION_SECRET || !verifyPassword(password, user.passwordHash)) {
     return res.status(401).json({ error: 'Invalid username or password' });
   }
-  setSessionCookie(req, res, createSession(user));
-  res.json({ ok: true, username: user.username, role: user.role, expiresIn: SESSION_TTL_SEC });
+  const token = createSession(user);
+  setSessionCookie(req, res, token);
+  // The signed token is short-lived and the client keeps it only in sessionStorage
+  // as a fallback for browsers that block the cross-site HttpOnly cookie.
+  res.json({ ok: true, username: user.username, role: user.role, token, expiresIn: SESSION_TTL_SEC });
 });
 
 app.post('/auth/logout', (req, res) => {
