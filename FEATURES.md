@@ -82,8 +82,8 @@
 | # | User Story | Expected Behaviour | Role | Status | Notes |
 |---|---|---|---|---|---|
 | M1 | Map loads | 2GIS tile layer renders; initial center [41,67] zoom 6 or fits data bounds | All | ✅ | |
-| M2 | User clicks city button (e.g. Ташкент) | Map flies to city bounds; heat/points/recs filtered to that city | All | ✅ | |
-| M3 | User clicks "Все" city button | All cities shown; map fits all data bounds | All | ✅ | Fixed: bounds now include own-points so "Все" always refits |
+| M2 | User clicks city button (e.g. Ташкент) | Map uses a short smooth fly-to transition; heat/custom points/recs are filtered to that city; rapid clicks keep only the latest requested city | All | ✅ | Added 2026-08-13: 620 ms fly navigation, city focus pulse, 60 km custom-point guard |
+| M3 | User clicks "Все" city button | All cities shown; map fits all heat and custom-point bounds using the same smooth navigation helper | All | ✅ | Fixed: bounds now include own-points so "Все" always refits |
 | M4 | Districts toggle ON | District polygons appear with fill + stroke; tooltip on hover | All | ✅ | |
 | M5 | Districts toggle OFF | Polygons removed from map | All | ✅ | |
 | M6 | Sidebar collapse button clicked | Sidebar slides out; reopen button floats on left edge | Desktop | ✅ | |

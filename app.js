@@ -202,6 +202,13 @@ function cityOf(lat, lon) {
   return best;
 }
 
+// Uploaded point layers have no city column, so use the same nearest-centre
+// rule as the city summary and keep a 60 km guard against cross-city bleed.
+function pointInCity(r, c) {
+  if (!c || !CC[c] || !r) return !c;
+  return cityOf(r.lat, r.lon) === c && hav(r.lat, r.lon, CC[c][0], CC[c][1]) < 60000;
+}
+
 /* ── LAYER STATE ─────────────────────────────────────────────────────── */
 const DS = {
   cig:      Object.assign({ key: 'cig',      name: 'Сигареты', color: '#F4685C', intensity: 1, visible: true  }, DATA.cig),
@@ -877,6 +884,64 @@ function buildHeatUI() {
   a11ySwitches();
 }
 
+let cityRenderSeq = 0;
+let cityFlyTimer = null;
+
+function scheduleCityRender() {
+  const seq = ++cityRenderSeq;
+  const run = () => {
+    if (seq !== cityRenderSeq) return;
+    renderHeat(); renderCustomPoints(); renderRecs(); renderCityInfo(); saveState();
+  };
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(run, { timeout: 180 });
+  } else {
+    window.setTimeout(run, 0);
+  }
+}
+
+function focusCityView(pulse = true) {
+  const bar = document.getElementById('city-bar');
+  if (pulse && bar) {
+    bar.classList.remove('is-flying');
+    // Restart the short focus pulse even when the same city is clicked again.
+    void bar.offsetWidth;
+    bar.classList.add('is-flying');
+    window.clearTimeout(cityFlyTimer);
+    cityFlyTimer = window.setTimeout(() => bar.classList.remove('is-flying'), 760);
+  }
+
+  map.stop();
+  const pts = visiblePts();
+  const opts = { duration: .62, easeLinearity: .18, animate: true };
+  window.requestAnimationFrame(() => {
+    if (pts.length) {
+      map.flyToBounds(L.latLngBounds(pts).pad(.12), {
+        ...opts,
+        paddingTopLeft: [24, 92], paddingBottomRight: [24, 24], maxZoom: 13.5,
+      });
+    } else if (city && CC[city]) {
+      map.flyTo(CC[city], 12, opts);
+    } else if (CITIES[0] && CC[CITIES[0]]) {
+      map.flyTo(CC[CITIES[0]], 6, opts);
+    }
+  });
+}
+
+function selectCity(val, el) {
+  document.querySelectorAll('#seg-city button').forEach(x => {
+    const active = x === el;
+    x.classList.toggle('on', active);
+    x.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  city = val;
+  renderCityInfo();
+  // Start navigation immediately; defer expensive layer reconstruction so the
+  // first animation frame is never blocked by a large heat layer.
+  focusCityView(true);
+  scheduleCityRender();
+}
+
 function buildCityUI() {
   const el = document.getElementById('seg-city');
   el.innerHTML = '';
@@ -885,13 +950,7 @@ function buildCityUI() {
     b.dataset.city = val; b.textContent = lab;
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
     if (on) b.classList.add('on');
-    b.addEventListener('click', () => {
-      el.querySelectorAll('button').forEach(x => { x.classList.remove('on'); x.setAttribute('aria-pressed', 'false'); });
-      b.classList.add('on'); b.setAttribute('aria-pressed', 'true');
-      city = val;
-      renderHeat(); renderCustomPoints(); renderRecs();
-      fitView();
-    });
+    b.addEventListener('click', () => selectCity(val, b));
     el.appendChild(b);
   };
   mk('', 'Все', !city);
@@ -982,6 +1041,13 @@ const UZ_CENTERS = {
   'Ташкент':   [41.311, 69.280], 'Андижан': [40.783, 72.344], 'Бухара': [39.768, 64.421],
   'Самарканд': [39.654, 66.975], 'Коканд':  [40.529, 70.943], 'Фергана': [40.389, 71.783],
   'Навои':     [40.104, 65.373],
+  // Added from the Uzbekistan city request; coordinates are city centroids,
+  // not regional centroids. DATA.cig.recs remains the source of truth when
+  // records for a city are present.
+  'Гулистан':  [40.522, 68.780], 'Денау': [38.267, 67.899], 'Джизак': [40.133, 67.823],
+  'Зарафшан':  [41.572, 64.196], 'Карши': [38.841, 65.800], 'Наманган': [41.000, 71.673],
+  'Нукус':     [42.460, 59.618], 'Термез': [37.244, 67.283], 'Ургенч': [41.552, 60.631],
+  'Шахрисабз': [39.053, 66.828], 'Чирчик': [41.473, 69.581],
 };
 const KG_CENTERS = {
   'Бишкек':      [42.874, 74.598], 'Ош':      [40.529, 72.796], 'Джалал-Абад': [40.933, 72.997],
@@ -1194,21 +1260,14 @@ function visiblePts() {
   });
   customPtLayers.forEach(l => {
     if (!l.visible) return;
-    for (const r of l.recs) out.push([r.lat, r.lon]);
+    for (const r of l.recs) if (pointInCity(r, city)) out.push([r.lat, r.lon]);
   });
   return out;
 }
 
 /* Fit the map to what is visible (or the city centre when nothing is drawn). */
 function fitView() {
-  const pts = visiblePts();
-  if (pts.length) {
-    map.flyToBounds(L.latLngBounds(pts).pad(.12), { duration: .6 });
-  } else if (city && CC[city]) {
-    map.flyTo(CC[city], 12, { duration: .6 });   // no data yet — centre on city
-  } else if (CITIES[0] && CC[CITIES[0]]) {
-    map.flyTo(CC[CITIES[0]], 11, { duration: .6 });
-  }
+  focusCityView(false);
 }
 
 /* ── CUSTOM POINT LAYERS ─────────────────────────────────────────────── */
@@ -1223,10 +1282,11 @@ function renderCustomPoints() {
     if (!l.visible || !l.recs.length) return;
     const shape = l.shape || 'teardrop';
     const ic = shp(shape, l.color, 30);
+    const recs = l.recs.filter(r => pointInCity(r, city));
     // coverage radius circles (under markers)
     if (l.radiusOn) {
       const rc = l.radiusColor || l.color, rop = l.radiusOpacity == null ? 0.15 : l.radiusOpacity;
-      l.recs.forEach(r => {
+      recs.forEach(r => {
         L.circle([r.lat, r.lon], {
           renderer: radiusRenderer, pane: 'ptradius',
           radius: l.radiusM || 1500, color: rc, weight: 1.2,
@@ -1235,7 +1295,7 @@ function renderCustomPoints() {
         }).addTo(l._group);
       });
     }
-    l.recs.forEach(r => {
+    recs.forEach(r => {
       const m = L.marker([r.lat, r.lon], {
         icon: L.divIcon({ className: '', html: ic.html, iconSize: [30, 30], iconAnchor: ic.anchor }),
         zIndexOffset: 1500,
