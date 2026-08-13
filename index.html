@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260813b"/>
+  <link rel="stylesheet" href="style.css?v=20260813c"/>
 </head>
 <body>
 
@@ -373,7 +373,23 @@
   <div id="side-backdrop"></div>
   <div id="map"></div>
   <div id="city-bar">
-    <div class="cities" id="seg-city"></div>
+    <div id="city-filter" class="city-filter">
+      <button id="city-filter-trigger" class="city-filter-trigger" type="button" aria-haspopup="dialog" aria-expanded="false">
+        <span class="city-filter-icon" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M7 12h10M10 19h4"/></svg></span>
+        <span class="city-filter-copy"><span class="city-filter-kicker">Города</span><span id="city-filter-label">Все города</span></span>
+        <span id="city-filter-count" class="city-filter-count" aria-hidden="true"></span>
+        <svg class="city-filter-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div id="city-filter-popover" class="city-filter-popover" role="dialog" aria-label="Выбор городов" hidden>
+        <div class="city-filter-head">
+          <div><b>Фильтр по городам</b><span id="city-filter-subtitle">Показываются все города</span></div>
+          <button id="city-filter-clear" class="city-filter-clear" type="button">Сбросить</button>
+        </div>
+        <label class="city-filter-search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="city-filter-search" type="search" placeholder="Найти город…" autocomplete="off"/></label>
+        <div class="cities" id="seg-city" role="group" aria-label="Города"></div>
+        <div class="city-filter-foot">Можно выбрать несколько городов</div>
+      </div>
+    </div>
     <div class="city-bar-sep"></div>
     <button id="districts-toggle" class="city-extra-btn" title="Границы 12 районов Ташкента"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>Районы</button>
   </div>
@@ -457,7 +473,7 @@
   var msg = document.getElementById('boot-msg');
   try { localStorage.removeItem('hm_dataset_cache_v1'); } catch (e) {}
   var s = document.createElement('script');
-  s.src = 'app.js?v=20260813c'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20260813d'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();

@@ -228,38 +228,74 @@ html, body {
 /* ── CITY BAR (floating on map) ──────────────────────────────────────── */
 #city-bar {
   position: absolute; top: 14px;
-  /* Центр карты, а не экрана: при большом числе городов (в KG их девять)
-     плашка иначе уезжала левым краем под сайдбар. */
   left: calc(50% + (var(--side-w) + 14px) / 2); transform: translateX(-50%);
   max-width: calc(100vw - var(--side-w) - 84px);
-  overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
+  overflow: visible;
   z-index: 1100;
-  background: rgba(255,255,255,.95); backdrop-filter: blur(10px);
-  border: 1px solid var(--line2); border-radius: 100px;
+  background: rgba(255,255,255,.96); backdrop-filter: blur(12px);
+  border: 1px solid var(--line2); border-radius: 18px;
   padding: 5px 8px;
   box-shadow: var(--shadow-sm);
   display: flex; align-items: center; gap: 0;
 }
-#city-bar::-webkit-scrollbar { display: none; }
-#city-bar .cities { display: flex; flex-wrap: nowrap; gap: 4px; }
-#city-bar .cities button {
-  font-size: 11px; padding: 5px 13px;
-  border-radius: 100px; white-space: nowrap;
+.city-filter { position: relative; }
+.city-filter-trigger {
+  min-width: 178px; max-width: 255px; border: 0; border-radius: 12px;
+  background: transparent; color: var(--ink); padding: 5px 8px;
+  display: flex; align-items: center; gap: 8px; cursor: pointer; text-align: left;
+  transition: background .18s var(--ease), box-shadow .18s var(--ease);
 }
-#city-bar.is-flying {
-  box-shadow: 0 7px 28px rgba(28, 51, 92, .16), 0 0 0 4px rgba(18, 173, 193, .10);
+.city-filter-trigger:hover, #city-filter.open .city-filter-trigger { background: var(--card2); }
+.city-filter-icon { color: var(--acc); display: flex; flex: 0 0 auto; }
+.city-filter-copy { min-width: 0; display: grid; gap: 1px; line-height: 1.1; }
+.city-filter-kicker { color: var(--dim); font-size: 9px; font-weight: 800; letter-spacing: .75px; text-transform: uppercase; }
+#city-filter-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 800; }
+.city-filter-count {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--acc); color: #fff; font-size: 10px; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center;
 }
-#city-bar.is-flying .cities button.on {
-  animation: city-focus-pulse .72s var(--ease) both;
+.city-filter-chevron { margin-left: auto; transition: transform .2s var(--ease); flex: 0 0 auto; }
+#city-filter.open .city-filter-chevron { transform: rotate(180deg); }
+#city-filter-popover {
+  position: absolute; top: calc(100% + 10px); left: 0; width: min(340px, calc(100vw - 36px));
+  padding: 12px; background: rgba(255,255,255,.98); border: 1px solid var(--line2);
+  border-radius: 16px; box-shadow: 0 18px 48px rgba(28,51,92,.18); backdrop-filter: blur(16px);
 }
+#city-filter-popover[hidden] { display: none; }
+.city-filter-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.city-filter-head > div { display: grid; gap: 3px; }
+.city-filter-head b { font-size: 12px; }
+#city-filter-subtitle { color: var(--dim); font-size: 10px; }
+.city-filter-clear { border: 0; background: none; color: var(--acc); cursor: pointer; font: 700 10px "Manrope"; padding: 2px 0; white-space: nowrap; }
+.city-filter-clear:hover { color: var(--ink); }
+.city-filter-search {
+  display: flex; align-items: center; gap: 7px; border: 1px solid var(--line2);
+  border-radius: 10px; padding: 7px 9px; color: var(--dim); background: var(--card2); margin-bottom: 8px;
+}
+.city-filter-search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font: 11px "Manrope"; }
+.city-filter-search input::placeholder { color: var(--dim); }
+#city-filter-popover .cities { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; max-height: min(330px, 46vh); overflow-y: auto; padding: 2px; scrollbar-width: thin; }
+.city-option {
+  min-width: 0; border: 1px solid transparent; border-radius: 9px; padding: 7px 8px;
+  background: transparent; color: var(--mut); cursor: pointer; display: flex; align-items: center; gap: 7px;
+  text-align: left; font: 700 10px "Manrope"; transition: background .16s var(--ease), color .16s var(--ease), border-color .16s var(--ease);
+}
+.city-option:hover { background: var(--card2); color: var(--ink); }
+.city-option.on { background: rgba(18,173,193,.10); border-color: rgba(18,173,193,.26); color: var(--ink); }
+.city-option[hidden] { display: none; }
+.city-check { width: 14px; height: 14px; border: 1.5px solid var(--line2); border-radius: 4px; flex: 0 0 auto; position: relative; background: #fff; }
+.city-option.on .city-check { background: var(--acc); border-color: var(--acc); }
+.city-option.on .city-check::after { content: ""; position: absolute; left: 3px; top: 1px; width: 4px; height: 7px; border: solid #fff; border-width: 0 1.6px 1.6px 0; transform: rotate(45deg); }
+.city-filter-foot { margin-top: 8px; color: var(--dim); font-size: 9px; text-align: center; }
+#city-bar.is-flying { box-shadow: 0 7px 28px rgba(28, 51, 92, .16), 0 0 0 4px rgba(18, 173, 193, .10); }
+#city-bar.is-flying .city-filter-trigger { animation: city-focus-pulse .72s var(--ease) both; }
 @keyframes city-focus-pulse {
-  0% { box-shadow: 0 3px 10px rgba(18,173,193,.30); }
-  45% { box-shadow: 0 5px 18px rgba(18,173,193,.48), 0 0 0 4px rgba(18,173,193,.12); }
-  100% { box-shadow: 0 3px 10px rgba(18,173,193,.30); }
+  0% { box-shadow: 0 3px 10px rgba(18,173,193,.18); }
+  45% { box-shadow: 0 5px 18px rgba(18,173,193,.34), 0 0 0 4px rgba(18,173,193,.10); }
+  100% { box-shadow: 0 3px 10px rgba(18,173,193,.18); }
 }
-@media (prefers-reduced-motion: reduce) {
-  #city-bar.is-flying .cities button.on { animation: none; }
-}
+@media (prefers-reduced-motion: reduce) { #city-bar.is-flying .city-filter-trigger { animation: none; } }
 .city-bar-sep { width: 1px; height: 20px; background: var(--line2); margin: 0 5px; flex: 0 0 auto; }
 .city-extra-btn {
   font-family: "Manrope"; font-size: 11px; font-weight: 700; white-space: nowrap;
@@ -966,20 +1002,16 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
   /* Point count badge: shift right of burger button */
   .badge { top: 14px; left: 70px; right: auto; }
 
-  /* City bar: scrollable row on small screens */
+  /* Compact city multi-select: the list opens above the bottom toolbar. */
   #city-bar {
     top: auto; bottom: 70px;
     left: 50%; transform: translateX(-50%);
-    max-width: calc(100vw - 28px);
-    overflow-x: auto; -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+    max-width: calc(100vw - 28px); width: max-content;
   }
-  #city-bar::-webkit-scrollbar { display: none; }
-  #city-bar .cities { flex-wrap: nowrap; }
-  #city-bar .cities button {
-    font-size: 12px; padding: 8px 14px; /* bigger touch target */
-  }
-  .city-extra-btn { font-size: 12px; padding: 8px 14px; }
+  #city-filter-popover { top: auto; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
+  .city-filter-trigger { min-width: 172px; padding: 7px 8px; }
+  .city-extra-btn { font-size: 12px; padding: 8px 12px; }
+  #city-filter-popover .cities { max-height: min(330px, 48vh); }
 
   /* Hide legend on mobile — too cramped */
   #layer-legend { display: none; }

@@ -226,7 +226,20 @@ let heatBlend = 'multiply';   // multiply makes overlapping layers mix like ink 
 let heatRadius = 28;
 
 // UI state
-let city = '', covR = 600, topN = 12, recShow = true, recBasis = '';
+// An empty selection means «Все города»; otherwise the array contains the
+// explicitly selected city names. This keeps multi-select semantics unambiguous.
+let selectedCities = [], covR = 600, topN = 12, recShow = true, recBasis = '';
+function hasCityFilter() { return selectedCities.length > 0; }
+function cityMatches(name) { return !hasCityFilter() || selectedCities.includes(name); }
+function selectedPointMatches(r) {
+  return !hasCityFilter() || selectedCities.some(c => pointInCity(r, c));
+}
+function cityPlural(n) { return n === 1 ? 'город' : n < 5 ? 'города' : 'городов'; }
+function selectedCityLabel() {
+  if (!hasCityFilter()) return 'Все города';
+  if (selectedCities.length === 1) return selectedCities[0];
+  return `${selectedCities.length} ${cityPlural(selectedCities.length)}`;
+}
 
 // Address-program state
 let addrSrcKey  = ''; // uploaded heat-layer key or '__cpt__<id>' (set to first layer at boot)
@@ -481,7 +494,7 @@ function renderHeat() {
     if (!d) return;
     if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
     if (!d.visible) return;
-    const recs  = d.recs.filter(r => !city || r.fil === city);
+    const recs  = d.recs.filter(r => cityMatches(r.fil));
     const sorted = recs.map(r => r.vol).sort((a, b) => a - b);
     const p90idx = Math.max(0, Math.floor(sorted.length * 0.9) - 1);
     const p90    = sorted.length ? (sorted[p90idx] || 0.01) : (d.stats.p90 || 0.01);
@@ -599,7 +612,7 @@ function renderRecs() {
 
   // Compute candidates
   const cand = d.recs
-    .filter(s => (!city || s.fil === city) && s.nd > covR)
+    .filter(s => cityMatches(s.fil) && s.nd > covR)
     .sort((a, b) => b.ld - a.ld || b.vol - a.vol);
 
   // Greedy suppression O(n log n) via Set
@@ -617,7 +630,7 @@ function renderRecs() {
 
   // Summary
   const uncSum    = cand.reduce((a, s) => a + s.vol, 0);
-  const cityTotal = d.recs.filter(s => !city || s.fil === city).reduce((a, s) => a + s.vol, 0) || 1;
+  const cityTotal = d.recs.filter(s => cityMatches(s.fil)).reduce((a, s) => a + s.vol, 0) || 1;
   document.getElementById('rec-count').textContent = recs.length;
   document.getElementById('rec-lbl').innerHTML =
     `зон для новой <b>BR</b> · основа: <b>${esc(d.name).toLowerCase()}</b> · вне покрытия <b>${Math.round(uncSum).toLocaleString('ru-RU')}</b> ед. (<b>${Math.round(uncSum / cityTotal * 100)}%</b>)`;
@@ -904,7 +917,7 @@ function focusCityView(pulse = true) {
   const bar = document.getElementById('city-bar');
   if (pulse && bar) {
     bar.classList.remove('is-flying');
-    // Restart the short focus pulse even when the same city is clicked again.
+    // Restart the short focus pulse even when the same selection is clicked again.
     void bar.offsetWidth;
     bar.classList.add('is-flying');
     window.clearTimeout(cityFlyTimer);
@@ -920,41 +933,118 @@ function focusCityView(pulse = true) {
         ...opts,
         paddingTopLeft: [24, 92], paddingBottomRight: [24, 24], maxZoom: 13.5,
       });
-    } else if (city && CC[city]) {
-      map.flyTo(CC[city], 12, opts);
+      return;
+    }
+    const centers = selectedCities.map(c => CC[c]).filter(Boolean);
+    if (centers.length > 1) {
+      map.flyToBounds(L.latLngBounds(centers).pad(.25), {
+        ...opts,
+        paddingTopLeft: [24, 92], paddingBottomRight: [24, 24], maxZoom: 11.5,
+      });
+    } else if (centers.length === 1) {
+      map.flyTo(centers[0], 12, opts);
     } else if (CITIES[0] && CC[CITIES[0]]) {
       map.flyTo(CC[CITIES[0]], 6, opts);
     }
   });
 }
 
-function selectCity(val, el) {
-  document.querySelectorAll('#seg-city button').forEach(x => {
-    const active = x === el;
-    x.classList.toggle('on', active);
-    x.setAttribute('aria-pressed', active ? 'true' : 'false');
+let cityFilterBound = false;
+
+function setCityPopover(open) {
+  const pop = document.getElementById('city-filter-popover');
+  const trigger = document.getElementById('city-filter-trigger');
+  if (!pop || !trigger) return;
+  pop.hidden = !open;
+  trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  document.getElementById('city-filter')?.classList.toggle('open', open);
+  if (open) window.setTimeout(() => document.getElementById('city-filter-search')?.focus(), 0);
+}
+
+function updateCityFilterSummary() {
+  const label = document.getElementById('city-filter-label');
+  const count = document.getElementById('city-filter-count');
+  if (label) {
+    label.textContent = selectedCities.length === 0
+      ? 'Все города'
+      : selectedCities.length === 1 ? selectedCities[0] : selectedCities[0] + ` + ${selectedCities.length - 1}`;
+  }
+  if (count) count.textContent = selectedCities.length > 1 ? String(selectedCities.length) : '';
+  document.querySelectorAll('#seg-city [data-city-option]').forEach(b => {
+    const isAll = b.dataset.cityOption === '__all__';
+    const active = isAll ? !hasCityFilter() : selectedCities.includes(b.dataset.cityOption);
+    b.classList.toggle('on', active);
+    b.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
-  city = val;
+  const sub = document.getElementById('city-filter-subtitle');
+  if (sub) sub.textContent = hasCityFilter() ? `Выбрано: ${selectedCities.length} ${cityPlural(selectedCities.length)}` : 'Показываются все города';
+}
+
+function scheduleCityFilterUpdate() {
   renderCityInfo();
-  // Start navigation immediately; defer expensive layer reconstruction so the
-  // first animation frame is never blocked by a large heat layer.
   focusCityView(true);
   scheduleCityRender();
 }
 
+function toggleCitySelection(name) {
+  const next = selectedCities.includes(name)
+    ? selectedCities.filter(c => c !== name)
+    : [...selectedCities, name];
+  selectedCities = CITIES.filter(c => next.includes(c));
+  updateCityFilterSummary();
+  scheduleCityFilterUpdate();
+}
+
+function bindCityFilter() {
+  if (cityFilterBound) return;
+  cityFilterBound = true;
+  document.getElementById('city-filter-trigger')?.addEventListener('click', () => {
+    const pop = document.getElementById('city-filter-popover');
+    setCityPopover(Boolean(pop?.hidden));
+  });
+  document.getElementById('city-filter-clear')?.addEventListener('click', () => {
+    selectedCities = [];
+    updateCityFilterSummary();
+    scheduleCityFilterUpdate();
+  });
+  document.getElementById('city-filter-search')?.addEventListener('input', e => {
+    const q = e.target.value.trim().toLocaleLowerCase('ru');
+    document.querySelectorAll('#seg-city [data-city-option]:not([data-city-option="__all__"])').forEach(b => {
+      b.hidden = q && !b.dataset.cityOption.toLocaleLowerCase('ru').includes(q);
+    });
+  });
+  document.addEventListener('click', e => {
+    const wrap = document.getElementById('city-filter');
+    if (wrap && !wrap.contains(e.target)) setCityPopover(false);
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') setCityPopover(false);
+  });
+}
+
 function buildCityUI() {
   const el = document.getElementById('seg-city');
+  if (!el) return;
   el.innerHTML = '';
-  const mk = (val, lab, on) => {
+  const mk = (val, lab, all = false) => {
     const b = document.createElement('button');
-    b.dataset.city = val; b.textContent = lab;
-    b.setAttribute('aria-pressed', on ? 'true' : 'false');
-    if (on) b.classList.add('on');
-    b.addEventListener('click', () => selectCity(val, b));
+    b.type = 'button';
+    b.className = 'city-option';
+    b.dataset.cityOption = all ? '__all__' : val;
+    b.setAttribute('aria-pressed', all ? String(!hasCityFilter()) : String(selectedCities.includes(val)));
+    b.innerHTML = `<span class="city-check" aria-hidden="true"></span><span>${esc(lab)}</span>`;
+    b.addEventListener('click', () => {
+      if (all) selectedCities = [];
+      else toggleCitySelection(val);
+      updateCityFilterSummary();
+      if (all) scheduleCityFilterUpdate();
+    });
     el.appendChild(b);
   };
-  mk('', 'Все', !city);
-  CITIES.forEach(c => mk(c, c, city === c));
+  mk('', 'Все города', true);
+  CITIES.forEach(c => mk(c, c));
+  bindCityFilter();
+  updateCityFilterSummary();
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1260,6 +1350,7 @@ function applyCountry(mapId) {
   SMOKE_M = co.smokeM; SMOKE_F = co.smokeF; SMOKE_AVG = (SMOKE_M + SMOKE_F) / 2;
   WAGE_UNIT = co.wageUnit; WAGE_CUR = co.wageCur;
   CITIES = Object.keys(co.centers);
+  selectedCities = selectedCities.filter(c => CITIES.includes(c));
   CC = {};
   CITIES.forEach(c => {
     const a = (DATA.cig && DATA.cig.recs) ? DATA.cig.recs.filter(s => s.fil === c) : [];
@@ -1269,23 +1360,44 @@ function applyCountry(mapId) {
   });
 }
 
+function selectedStats() {
+  if (selectedCities.length === 1) return CITY_STATS[selectedCities[0]] || null;
+  if (!selectedCities.length) return null;
+  const rows = selectedCities.map(c => CITY_STATS[c]).filter(Boolean);
+  if (!rows.length) return null;
+  const pop = rows.reduce((sum, r) => sum + r.pop, 0);
+  const adult = rows.reduce((sum, r) => sum + r.pop * r.adult, 0) / pop;
+  const wage = rows.reduce((sum, r) => sum + r.pop * r.wage, 0) / pop;
+  const names = selectedCities.join(', ');
+  return {
+    pop, adult, wage,
+    region: 'сводно по выбранным городам',
+    popNote: `агрегация: ${rows.length} города`,
+    tags: [
+      `В выборке: ${names}`,
+      `Суммарное население выбранных городов — ${Math.round(pop).toLocaleString('ru-RU')}`,
+      `Средняя региональная зарплата по выборке — ${wage.toFixed(2).replace('.', ',')} млн сум/мес`,
+    ],
+  };
+}
+
 function renderCityInfo() {
   const el = document.getElementById('city-info');
   if (!el) return;
-  if (!city) {
+  if (!hasCityFilter()) {
     el.innerHTML = `<div class="ci-hint">
       <div class="ci-hint-icon">
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><line x1="9" y1="9" x2="9" y2="9.01"/><line x1="9" y1="12" x2="9" y2="12.01"/><line x1="9" y1="15" x2="9" y2="15.01"/><line x1="9" y1="18" x2="9" y2="18.01"/></svg>
       </div>
-      Выберите город на плашке сверху карты, чтобы получить краткую
-      информацию о населении этого города и потенциале рынка.</div>`;
+      Выберите один или несколько городов в компактном фильтре сверху карты, чтобы получить краткую
+      информацию о населении и потенциале выбранной территории.</div>`;
     return;
   }
-  const s   = CITY_STATS[city];
+  const s   = selectedStats();
   const fmt = n => Math.round(n).toLocaleString('ru-RU');
 
-  // live-метрика: число наших точек в городе (для «Курильщиков на 1 нашу точку»)
-  const ownN = ourPtsInCity(city);
+  // live-метрика: число наших точек в выбранном наборе городов
+  const ownN = selectedCities.reduce((sum, c) => sum + ourPtsInCity(c), 0);
 
   let html = '';
   if (s) {
@@ -1296,7 +1408,7 @@ function renderCityInfo() {
     <div class="ci-card">
       <div class="ci-head">
         <div>
-          <div class="ci-city">${esc(city)}</div>
+          <div class="ci-city">${esc(selectedCityLabel())}</div>
           <div class="ci-region">${esc(s.region)}</div>
         </div>
       </div>
@@ -1315,7 +1427,7 @@ function renderCityInfo() {
     html += `
     <div class="ci-card">
       <div class="ci-head"><div>
-        <div class="ci-city">${esc(city)}</div>
+        <div class="ci-city">${esc(selectedCityLabel())}</div>
         <div class="ci-region">нет справочных данных по этому городу</div>
       </div></div>
     </div>`;
@@ -1354,11 +1466,11 @@ function visiblePts() {
   heatKeys.forEach(k => {
     const d = DS[k];
     if (!d || !d.visible || !d.recs) return;
-    for (const r of d.recs) if (!city || r.fil === city) out.push([r.lat, r.lon]);
+    for (const r of d.recs) if (cityMatches(r.fil)) out.push([r.lat, r.lon]);
   });
   customPtLayers.forEach(l => {
     if (!l.visible) return;
-    for (const r of l.recs) if (pointInCity(r, city)) out.push([r.lat, r.lon]);
+    for (const r of l.recs) if (selectedPointMatches(r)) out.push([r.lat, r.lon]);
   });
   return out;
 }
@@ -1380,7 +1492,7 @@ function renderCustomPoints() {
     if (!l.visible || !l.recs.length) return;
     const shape = l.shape || 'teardrop';
     const ic = shp(shape, l.color, 30);
-    const recs = l.recs.filter(r => pointInCity(r, city));
+    const recs = l.recs.filter(r => selectedPointMatches(r));
     // coverage radius circles (under markers)
     if (l.radiusOn) {
       const rc = l.radiusColor || l.color, rop = l.radiusOpacity == null ? 0.15 : l.radiusOpacity;
@@ -1625,9 +1737,9 @@ function confirmLayerModal() {
 // Re-render everything after a layer's data changes, then fly the map to it.
 function focusNewLayer(key) {
   const d = DS[key]; if (!d) return;
-  if (city && d.recs.length && !d.recs.some(r => r.fil === city)) { city = ''; buildCityUI(); }
+  if (hasCityFilter() && d.recs.length && !d.recs.some(r => cityMatches(r.fil))) { selectedCities = []; buildCityUI(); }
   buildHeatUI(); rebuildUpTarget(); buildAddrSrcSel(); buildRecBasisSel(); renderHeat(); renderRecs(); saveState();
-  const bpts = d.recs.filter(r => !city || r.fil === city).map(r => [r.lat, r.lon]);
+  const bpts = d.recs.filter(r => cityMatches(r.fil)).map(r => [r.lat, r.lon]);
   if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6 });
 }
 
@@ -1780,7 +1892,10 @@ function buildStateSnapshot() {
   return {
     _v: 1, _app: 'hm-br', _savedAt: new Date().toISOString(), _date: new Date().toISOString().slice(0, 10),
     heatKeys, layers, incCol: { ...incCol },
-    city, covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
+    selectedCities: selectedCities.slice(),
+    // Keep the legacy field for older consumers; it represents only a single selection.
+    city: selectedCities.length === 1 ? selectedCities[0] : '',
+    covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
     addrSrcKey, addrRefKey, rtRadius, rtRadiusOp, rtVolOp, rtVolMode, rtVolCustom, rtExclRadius, rtExclOp, rtExclKeys,
     customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, shape: l.shape, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, recs: l.recs })),
   };
@@ -1848,8 +1963,13 @@ function applySnapshot(st) {
     }
   }
   // st.pts — настройки удалённых слоёв «Наши точки · IQOS», игнорируются.
-  if (st.incCol)           Object.assign(incCol, st.incCol);
-  if (typeof st.city       === 'string')  city         = st.city;
+  if (st.incCol) Object.assign(incCol, st.incCol);
+  if (Array.isArray(st.selectedCities)) {
+    selectedCities = CITIES.filter(c => st.selectedCities.includes(c));
+  } else if (typeof st.city === 'string') {
+    // Backward compatibility with the previous single-city export format.
+    selectedCities = st.city && CITIES.includes(st.city) ? [st.city] : [];
+  }
   if (typeof st.covR       === 'number')  covR         = st.covR;
   if (typeof st.topN       === 'number')  topN         = st.topN;
   if (typeof st.recBasis   === 'string' && DS[st.recBasis]) recBasis = st.recBasis;
@@ -2015,7 +2135,7 @@ function runAddrFilter() {
   const srcName = addrSrcOptions().find(o => o.key === addrSrcKey)?.name || addrSrcKey;
 
   let points = addrSrcRecs();
-  if (city) points = points.filter(p => p.fil === city || !p.fil);
+  if (hasCityFilter()) points = points.filter(p => cityMatches(p.fil) || !p.fil);
 
   const refPts = addrRefPoints();
 
@@ -2175,7 +2295,7 @@ function exportRetraffic() {
       ['Расстояние до исключ. слоя', opLabel(rtExclOp) + ' ' + fmtD(rtExclRadius)],
       ['Исключено точек', excluded],
     ] : []),
-    ['Город', city || 'все'],
+    ['Город', selectedCityLabel()],
     ['Дата выгрузки', new Date().toLocaleDateString('ru')],
     [],
     ['Итого точек в файле', points.length],
@@ -2549,10 +2669,10 @@ function wireEvents() {
     reset();
     // The selected-city filter would otherwise silently hide points that fall
     // in other cities — reset to "Все" so the freshly uploaded layer is visible.
-    if (city && !d.recs.some(r => r.fil === city)) { city = ''; buildCityUI(); }
+    if (hasCityFilter() && !d.recs.some(r => cityMatches(r.fil))) { selectedCities = []; buildCityUI(); }
     buildHeatUI(); renderHeat(); renderRecs(); buildRtExclUI();
     // Frame the map on the new data so it's obvious it loaded.
-    const bpts = d.recs.filter(r => !city || r.fil === city).map(r => [r.lat, r.lon]);
+    const bpts = d.recs.filter(r => cityMatches(r.fil)).map(r => [r.lat, r.lon]);
     if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6 });
     saveState();
     toast(`Слой «${d.name}» обновлён (${d.stats.n} точек)`, 'ok');
@@ -2794,7 +2914,7 @@ async function startApp() {
 
   // Only fit bounds on first load (no saved city): frame what is actually drawn
   // (uploaded layers + our points); fall back to the country's first city.
-  if (!city) {
+  if (!hasCityFilter()) {
     const framePts = visiblePts();
     if (framePts.length) map.fitBounds(L.latLngBounds(framePts).pad(.05));
     else if (CITIES[0] && CC[CITIES[0]]) map.setView(CC[CITIES[0]], 11);
