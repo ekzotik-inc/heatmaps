@@ -5,8 +5,7 @@
   "globals": {
     "L": "readonly",
     "Papa": "readonly",
-    "XLSX": "readonly",
-    "DATA": "writable"
+    "XLSX": "readonly"
   },
   "extends": "eslint:recommended",
   "ignorePatterns": ["server/**", "fonts/**"],

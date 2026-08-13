@@ -14,6 +14,16 @@ function _reportError(label, err) {
 window.addEventListener('error', e => _reportError('error', e.error || e.message));
 window.addEventListener('unhandledrejection', e => _reportError('unhandled promise', e.reason));
 
+// The HTML shell loads the application before login with an empty, safe shape.
+// The real dataset is fetched only after /auth/me or /auth/login succeeds.
+let DATA = window.DATA || {
+  cities: [],
+  cig: { recs: [], stats: {} },
+  sticks: { recs: [], stats: {} },
+  districts: [],
+  field: null,
+};
+
 /* Escape user-supplied text before inserting into innerHTML / Leaflet popups
    and tooltips. Layer names and point fields come from uploaded files and free
    text, so they must never be rendered as raw HTML (XSS guard). */
@@ -2027,23 +2037,51 @@ function exportRetraffic() {
 /* ── ROLE / MAP ──────────────────────────────────────────────────────── */
 // currentMap: 'comdep' | 'other'  ·  currentRole: 'admin' | 'comdep' | 'other'
 let currentMap  = sessionStorage.getItem('hm_map')  || null;
-let currentRole = sessionStorage.getItem('hm_role') || null;
+let currentRole = null; // populated only from the server session
+let currentUser = null; // populated only from the server session
 const isAdmin = () => currentRole === 'admin';
 
 /* ── PERSISTENCE ─────────────────────────────────────────────────────── */
 // State is stored per-map so the two departments never overwrite each other.
-const storeKey = () => 'hm_state_' + (currentMap || 'main');
+const storeKey = () => 'hm_state_' + encodeURIComponent(currentUser || 'anonymous') + '_' + (currentMap || 'main');
 
 // ── Server sync config ───────────────────────────────────────────────────
 // Set SERVER_URL to your VPS API root, e.g. 'https://api.example.com'
 // Set SERVER_KEY to the API_KEY you configured in server/.env
 // Leave SERVER_URL empty to skip server sync and use localStorage only.
 const SERVER_URL = window._HM_SERVER_URL || '';
-// Write key is never bundled — the owner enters it once and it lives only in
-// this browser's localStorage. Without it, this client can only read + edit
-// locally; it cannot write shared data to the server.
+// The owner-only API key is still entered separately and is never bundled.
+// Login/session authorization is handled by the server; this key only gates writes.
 let SERVER_KEY = '';
 try { SERVER_KEY = localStorage.getItem('hm_admin_key') || ''; } catch (e) {}
+
+let _dataLoad = null;
+async function ensureData() {
+  if (DATA && DATA._loaded) return DATA;
+  if (!SERVER_URL) throw new Error('Сервер не настроен');
+  if (!_dataLoad) {
+    _dataLoad = fetch(SERVER_URL + '/data', {
+      credentials: 'include',
+      signal: AbortSignal.timeout(60000),
+    }).then(async res => {
+      if (res.status === 401) throw new Error('AUTH_REQUIRED');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      if (!data || data.empty) throw new Error('На сервере нет базовых данных');
+      DATA = Object.assign(data, { _loaded: true });
+      Object.assign(DS.cig, data.cig || {});
+      Object.assign(DS.sticks, data.sticks || {});
+      DS.cig.ramp = DS.cig.ramp || 'warm';
+      DS.sticks.ramp = DS.sticks.ramp || 'cool';
+      Object.values(DS).forEach(d => { d.opacity = d.opacity == null ? 1 : d.opacity; });
+      return DATA;
+    }).catch(err => {
+      _dataLoad = null;
+      throw err;
+    });
+  }
+  return _dataLoad;
+}
 
 let stateReady = false, _saveTimer = null;
 
@@ -2102,7 +2140,10 @@ async function postJson(url, obj, timeoutMs) {
     } catch (e) { _gzipOk = false; body = json; }
   }
   try {
-    return await fetch(url, { method: 'POST', headers, body, signal: AbortSignal.timeout(timeoutMs) });
+    return await fetch(url, {
+      method: 'POST', headers, body, credentials: 'include',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
   } catch (e) {
     if (headers['Content-Encoding']) _gzipOk = false; // CORS/proxy may not accept gzip — retry plain
     throw e;
@@ -2150,6 +2191,7 @@ async function fetchFromServer() {
   const wakeHint = setTimeout(() => setSyncBadge('syncing', 'Сервер пробуждается…'), 5000);
   try {
     const res = await fetch(SERVER_URL + '/state?map=' + encodeURIComponent(currentMap), {
+      credentials: 'include',
       signal: AbortSignal.timeout(55000),
     });
     clearTimeout(wakeHint);
@@ -2565,10 +2607,17 @@ function applyRoleUI() { document.body.classList.toggle('viewer', !isAdmin()); }
 /* ── START APP (runs once a map is chosen) ───────────────────────────── */
 let _appStarted = false;
 async function startApp() {
+  if (_appStarted) return;
+  try {
+    await ensureData();
+  } catch (e) {
+    if (e.message !== 'AUTH_REQUIRED') toast('Не удалось загрузить базу данных', 'err', 5000);
+    console.warn('Could not load authenticated dataset:', e.message);
+    return;
+  }
+  _appStarted = true;
   applyRoleUI();
   showRoleBadge();
-  if (_appStarted) return;
-  _appStarted = true;
 
   // Activate this map's country (cities, centroids, city stats) BEFORE any
   // state restore / render — cityOf() and the city bar depend on it.
@@ -2633,17 +2682,8 @@ async function startApp() {
 
 /* ── AUTH ────────────────────────────────────────────────────────────── */
 (function initAuth() {
-  // NOTE: client-side credentials are a light gate, not real security — they
-  // are visible in the bundle. The server API key protects writes to the map.
-  const CREDS = [
-    { u: 'hm_root', p: 'Zx7$Kp9-Lm2@Rt',   role: 'admin'  },
-    { u: 'comdep',  p: 'ComDep-2026!view',  role: 'comdep' },
-    { u: 'otdel',   p: 'Otdel-2026!view',   role: 'other'  },
-    { u: 'kg',      p: 'KG-2026!view',      role: 'kg'     },
-  ];
-  const SK = 'hm_auth_ok';
-
-  // Год в подвале экрана входа — из системной даты, иначе он молча устаревает.
+  // Authentication is server-side. The browser stores only the HttpOnly session
+  // cookie; usernames, passwords and roles are never shipped in this bundle.
   const year = new Date().getFullYear();
   document.querySelectorAll('.auth-footer').forEach(el => {
     el.textContent = 'Аналитика торговых точек · ' + year;
@@ -2658,16 +2698,13 @@ async function startApp() {
   const logoutBtn = document.getElementById('logout-btn');
 
   const unlock = () => { screen.classList.add('hidden'); document.body.style.overflow = ''; };
-  const lock   = () => {
+  const lock = () => {
     screen.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
     stepLogin.style.display = '';
     stepMap.style.display = 'none';
   };
-
   const mapCards = () => Array.from(document.querySelectorAll('#auth-step-map .map-card'));
-
-  // Show the map picker; enable only the cards this role may open (admin = both)
   const showMapStep = () => {
     stepLogin.style.display = 'none';
     stepMap.style.display = '';
@@ -2677,7 +2714,6 @@ async function startApp() {
       card.disabled = !allowed;
     });
   };
-
   const enterMap = m => {
     currentMap = m;
     sessionStorage.setItem('hm_map', m);
@@ -2685,39 +2721,70 @@ async function startApp() {
     startApp();
   };
 
-  // Restore session
-  if (sessionStorage.getItem(SK) === '1' && currentRole) {
-    if (currentMap) { unlock(); startApp(); }
-    else showMapStep();
-  } else {
-    currentRole = null; currentMap = null;
-    lock();
-  }
-
-  form.addEventListener('submit', e => {
-    e.preventDefault();
-    const u   = document.getElementById('auth-user').value.trim().toLowerCase();
-    const p   = document.getElementById('auth-pass').value;
-    const hit = CREDS.find(c => c.u === u && c.p === p);
-    if (hit) {
-      currentRole = hit.role;
-      sessionStorage.setItem(SK, '1');
-      sessionStorage.setItem('hm_role', hit.role);
-      submitBtn.disabled = true; submitBtn.textContent = 'Входим…';
-      setTimeout(showMapStep, 320);
-    } else {
-      errEl.classList.add('show');
-      ['auth-user', 'auth-pass'].forEach(id => {
-        const inp = document.getElementById(id);
-        inp.classList.remove('err'); void inp.offsetWidth; // force reflow so shake re-fires on repeat attempts
-        inp.classList.add('err');
+  // sessionStorage remembers the last map only. Authentication is always
+  // revalidated against the server, so a forged browser value is insufficient.
+  const restoreSession = async () => {
+    try {
+      const res = await fetch(SERVER_URL + '/auth/me', {
+        credentials: 'include', signal: AbortSignal.timeout(15000),
       });
-      document.getElementById('auth-pass').value = '';
-      document.getElementById('auth-pass').focus();
-      setTimeout(() => {
-        errEl.classList.remove('show');
-        ['auth-user', 'auth-pass'].forEach(id => document.getElementById(id).classList.remove('err'));
-      }, 3000);
+      if (!res.ok) throw new Error('AUTH_REQUIRED');
+      const me = await res.json();
+      currentUser = me.username;
+      currentRole = me.role;
+      currentMap = sessionStorage.getItem('hm_map') || null;
+      if (!isAdmin() && currentMap !== currentRole) currentMap = null;
+      sessionStorage.setItem('hm_role', currentRole);
+      if (currentMap) { unlock(); startApp(); } else showMapStep();
+    } catch (e) {
+      currentUser = null;
+      currentRole = null;
+      currentMap = null;
+      sessionStorage.removeItem('hm_role');
+      sessionStorage.removeItem('hm_map');
+      lock();
+      if (e.message !== 'AUTH_REQUIRED') console.warn('Auth session check failed:', e.message);
+    }
+  };
+  const showLoginError = () => {
+    errEl.classList.add('show');
+    ['auth-user', 'auth-pass'].forEach(id => {
+      const inp = document.getElementById(id);
+      inp.classList.remove('err'); void inp.offsetWidth; inp.classList.add('err');
+    });
+    document.getElementById('auth-pass').value = '';
+    document.getElementById('auth-pass').focus();
+    setTimeout(() => {
+      errEl.classList.remove('show');
+      ['auth-user', 'auth-pass'].forEach(id => document.getElementById(id).classList.remove('err'));
+    }, 3000);
+  };
+
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const username = document.getElementById('auth-user').value.trim().toLowerCase();
+    const password = document.getElementById('auth-pass').value;
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Входим…';
+    try {
+      const res = await fetch(SERVER_URL + '/auth/login', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) throw new Error('LOGIN_FAILED');
+      const me = await res.json();
+      currentUser = me.username;
+      currentRole = me.role;
+      sessionStorage.setItem('hm_role', currentRole);
+      showMapStep();
+    } catch (err) {
+      showLoginError();
+      if (err.message !== 'LOGIN_FAILED') console.warn('Login request failed:', err.message);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Войти';
     }
   });
 
@@ -2726,16 +2793,16 @@ async function startApp() {
       this.classList.remove('err'); errEl.classList.remove('show');
     });
   });
-
   mapCards().forEach(card => {
     card.addEventListener('click', () => { if (!card.disabled) enterMap(card.dataset.map); });
   });
-
-  logoutBtn.addEventListener('click', () => {
-    sessionStorage.removeItem(SK);
+  logoutBtn.addEventListener('click', async () => {
+    try { await fetch(SERVER_URL + '/auth/logout', { method: 'POST', credentials: 'include' }); } catch (_) {}
     sessionStorage.removeItem('hm_role');
     sessionStorage.removeItem('hm_map');
-    currentRole = null; currentMap = null;
-    location.reload(); // cleanest full reset of in-memory state
+    currentUser = null; currentRole = null; currentMap = null;
+    location.reload();
   });
+
+  restoreSession();
 })();
