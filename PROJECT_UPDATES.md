@@ -93,3 +93,15 @@ The multi-select release advances the asset versions to `app.js?v=20260813d` and
 ### Live multi-select test
 
 After Pages deployment for commit `8313cef`, the published browser bundle passed the same scenario: 19 city options, Tashkent + Samarkand + Nukus selected together, count badge `3`, aggregate City-tab summary rendered, and clear returned the trigger to `Все города` with an empty selection.
+
+### Frame and style regression test
+
+The post-render framing test selected Tashkent, Termez and Nukus and confirmed all three city centroids were inside the final map bounds (`zoom 6.5`) after the deferred layer rebuild. Computed styles confirmed `Manrope`, a 100px native pill trigger radius, and the project card radius (16px) for the popover with the standard shadow token.
+
+## 2026-08-13 — Multi-city framing and native visual language
+
+The multi-city navigation now rebuilds filtered layers first and only then calculates map bounds. The frame includes all visible points plus the centroid of every selected city, so selected cities remain inside the viewport even when one of them has no loaded records. Rapid changes still use the latest render sequence and keep the short 620 ms animation.
+
+The city selector was restyled to match the existing project language: Manrope typography, tokenized palette, native pill radius and active state, standard project shadow, card radius, border colors and teal accent. The previous stronger glassmorphism and bespoke rounded treatment were removed.
+
+The final rapid-selection regression test ended on `Ташкент, Самарканд, Нукус, Термез`; all four centroids were inside the final map bounds at zoom 6.5. Computed styles remained `Manrope`, 11px trigger text and a 100px pill radius.

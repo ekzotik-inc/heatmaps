@@ -900,17 +900,26 @@ function buildHeatUI() {
 let cityRenderSeq = 0;
 let cityFlyTimer = null;
 
-function scheduleCityRender() {
+function scheduleCityRender(after) {
   const seq = ++cityRenderSeq;
   const run = () => {
     if (seq !== cityRenderSeq) return;
     renderHeat(); renderCustomPoints(); renderRecs(); renderCityInfo(); saveState();
+    if (after) after();
   };
   if (typeof window.requestIdleCallback === 'function') {
     window.requestIdleCallback(run, { timeout: 180 });
   } else {
     window.setTimeout(run, 0);
   }
+}
+
+function selectedFramePoints() {
+  const pts = visiblePts();
+  // Always include every selected city centroid. This guarantees that a city
+  // with no currently loaded records is still inside the automatic frame.
+  if (hasCityFilter()) selectedCities.forEach(c => { if (CC[c]) pts.push(CC[c]); });
+  return pts;
 }
 
 function focusCityView(pulse = true) {
@@ -925,7 +934,7 @@ function focusCityView(pulse = true) {
   }
 
   map.stop();
-  const pts = visiblePts();
+  const pts = selectedFramePoints();
   const opts = { duration: .62, easeLinearity: .18, animate: true };
   window.requestAnimationFrame(() => {
     if (pts.length) {
@@ -982,8 +991,9 @@ function updateCityFilterSummary() {
 
 function scheduleCityFilterUpdate() {
   renderCityInfo();
-  focusCityView(true);
-  scheduleCityRender();
+  // Frame only after the selected layers have been rebuilt; otherwise visiblePts()
+  // still describes the previous city selection.
+  scheduleCityRender(() => focusCityView(true));
 }
 
 function toggleCitySelection(name) {
