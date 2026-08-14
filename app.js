@@ -2640,6 +2640,26 @@ async function fetchStateManifest() {
   if (!data || data.empty || data._app !== 'hm-br') return null;
   return data;
 }
+let _stateRevisionRefresh = null;
+async function refreshStateRevision() {
+  if (!SERVER_URL) return false;
+  if (!_stateRevisionRefresh) {
+    const before = _activeStateRevision;
+    _stateRevisionRefresh = (async () => {
+      const fresh = await fetchStateManifest();
+      const next = stateRevision(fresh);
+      if (!next || next === before) return false;
+      _activeStateRevision = next;
+      await cacheStateMeta(fresh);
+      pruneOldLayerRevisions(next);
+      return true;
+    })().finally(() => { _stateRevisionRefresh = null; });
+  }
+  return _stateRevisionRefresh;
+}
+function isStaleLayerError(err) {
+  return err && (err.message === 'STALE_LAYER' || err.message === 'STALE_LAYER_CHUNK');
+}
 function hydrateLayerRecords(key, recs, stats, ownPointIndex, complete = true) {
   const d = DS[key];
   if (!d) return;
@@ -2696,49 +2716,69 @@ async function fetchLayerChunk(key, offset) {
 }
 async function loadChunkedLayer(key, ownPointIndex, firstResolve, firstReject) {
   const d = DS[key];
-  const fullCacheKey = cacheKey('state-layer', _activeStateRevision + ':' + key);
-  const fullCached = await cacheGet(fullCacheKey);
-  if (fullCached && Array.isArray(fullCached.recs)) {
-    hydrateLayerRecords(key, fullCached.recs, fullCached.stats, ownPointIndex);
-    d._recordsLoading = false; d._recordsLoaded = true;
-    firstResolve();
-    d._recordsReady = null;
-    d._recordsLoad = null;
-    return;
-  }
-  let offset = 0, first = true, rows = [];
+  let revisionRetried = false;
+  let firstResolved = false;
   try {
     while (true) {
-      const payload = await fetchLayerChunk(key, offset);
-      rows = rows.concat(expandLayerChunk(payload));
-      hydrateLayerRecords(key, rows, d.stats, ownPointIndex, payload.nextOffset == null);
-      d._recordsLoading = payload.nextOffset != null;
-      if (first) { first = false; firstResolve(); }
-      else if (d.visible) renderHeat();
-      if (key === recBasis && !first) renderRecs();
-      if (payload.nextOffset == null) break;
-      offset = payload.nextOffset;
-      await yieldToBrowser();
+      const fullCacheKey = cacheKey('state-layer', _activeStateRevision + ':' + key);
+      const fullCached = await cacheGet(fullCacheKey);
+      if (fullCached && Array.isArray(fullCached.recs)) {
+        hydrateLayerRecords(key, fullCached.recs, fullCached.stats, ownPointIndex);
+        d._recordsLoading = false; d._recordsLoaded = true;
+        if (!firstResolved) { firstResolved = true; firstResolve(); }
+        d._recordsReady = null;
+        d._recordsLoad = null;
+        return;
+      }
+      let offset = 0, first = true, rows = [];
+      try {
+        while (true) {
+          const payload = await fetchLayerChunk(key, offset);
+          rows = rows.concat(expandLayerChunk(payload));
+          hydrateLayerRecords(key, rows, d.stats, ownPointIndex, payload.nextOffset == null);
+          d._recordsLoading = payload.nextOffset != null;
+          if (first) {
+            first = false;
+            if (!firstResolved) { firstResolved = true; firstResolve(); }
+            else if (d.visible) renderHeat();
+          } else if (d.visible) renderHeat();
+          if (key === recBasis && !first) renderRecs();
+          if (payload.nextOffset == null) break;
+          offset = payload.nextOffset;
+          await yieldToBrowser();
+        }
+        d._recordsLoaded = true;
+        d._recordsLoading = false;
+        d._recordsReady = null;
+        d._recordsLoad = null;
+        if (d.visible) renderHeat();
+        if (key === recBasis) renderRecs();
+        return;
+      } catch (err) {
+        if (isStaleLayerError(err) && !revisionRetried && await refreshStateRevision()) {
+          revisionRetried = true;
+          d.recs = [];
+          d._recordsLoaded = false;
+          d._recordsLoading = true;
+          continue;
+        }
+        throw err;
+      }
     }
-    d._recordsLoaded = true;
-    d._recordsLoading = false;
-    d._recordsReady = null;
-    d._recordsLoad = null;
-    if (d.visible) renderHeat();
-    if (key === recBasis) renderRecs();
   } catch (err) {
     d._recordsLoading = false;
     d._recordsReady = null;
     d._recordsLoad = null;
-    if (first) firstReject(err);
+    if (!firstResolved) firstReject(err);
     else console.warn('Progressive layer load failed after partial data:', err.message);
   }
 }
-async function ensureLayerRecords(keys) {
+async function ensureLayerRecords(keys, allowRevisionRecovery = true) {
   const todo = [...new Set((Array.isArray(keys) ? keys : [keys]).filter(k => DS[k] && !DS[k]._recordsLoaded))];
   if (!todo.length) return;
   const ownPointIndex = buildPtIndex(ourPts());
-  await Promise.all(todo.map(async key => {
+  try {
+    await Promise.all(todo.map(async key => {
     const d = DS[key];
     if (d._recordsReady) return d._recordsReady;
     if (d._recordsLoad) return d._recordsLoad;
@@ -2766,8 +2806,14 @@ async function ensureLayerRecords(keys) {
       }
       hydrateLayerRecords(key, payload.recs, payload.stats, ownPointIndex);
     })();
-    try { await d._recordsLoad; } finally { d._recordsLoad = null; }
-  }));
+      try { await d._recordsLoad; } finally { d._recordsLoad = null; }
+    }));
+  } catch (err) {
+    if (allowRevisionRecovery && isStaleLayerError(err) && await refreshStateRevision()) {
+      return ensureLayerRecords(todo, false);
+    }
+    throw err;
+  }
 }
 function eagerStateLayers() {
   const keys = heatKeys.filter(k => DS[k] && DS[k].visible);

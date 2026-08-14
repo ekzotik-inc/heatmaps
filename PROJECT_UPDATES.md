@@ -243,3 +243,16 @@ The isolated API regression test passed compact response shape, `nextOffset`, di
 CI and GitHub Pages completed successfully, Render `/health` remained healthy, and the live client served `app.js?v=20260814d`. In a read-only authenticated browser test, the previously cached full HST record entry was removed only from that browser’s IndexedDB. The real HST CC layer then used ten protected `/state/layer/chunk` requests of 4,000 rows, with a final 3,525-row batch. The first 4,000 records became available after 6.22 seconds; subsequent batches completed in 1.12–1.69 seconds, and the final in-memory layer contained exactly 39,525 records. No full `/state/layer` request was made and no production write endpoint was called.
 
 Compared with the previous 30.31-second single response, the compact progressive path improves time-to-first-use by allowing the first subset to render while the remaining records arrive. The remaining first-chunk delay is now primarily server/database response time, not JSON hydration; the client reconstructed and enriched the received rows without a client-side bottleneck.
+
+
+## 2026-08-14 — Recovery for stale lazy-layer revisions
+
+### Production incident
+
+After the progressive chunk release, an open browser could retain an older metadata manifest while another session updated the shared map. The affected session held `_activeStateRevision = 2026-08-14T05:08:40.824Z`; the current `/state/meta?map=comdep` and `/state/layer?map=comdep&layer=custom_1785931072257` responses had revision `2026-08-14T05:39:22.038Z`. The layer endpoint itself returned HTTP 200 and all 6,871 records, but the strict client revision guard converted the valid response into `STALE_LAYER`, producing the toast «Не удалось загрузить данные слоя».
+
+### Fix
+
+The client now recognizes `STALE_LAYER` and `STALE_LAYER_CHUNK`, refreshes `/state/meta` once through a coalesced request, updates only the active revision and revisioned read cache, and retries the requested layer once. Current visibility, map position, city filter and other UI settings are not replaced during this recovery. The compact chunk path and the legacy small-layer path use the same bounded recovery policy; malformed responses and a second mismatch still fail normally instead of retrying indefinitely. The application cache-buster advances to `app.js?v=20260814e`.
+
+The recovery path performs no save or write operation. A read-only production control scenario manually reconciled the stale manifest and successfully hydrated `Точки с инвестициями` with exactly 6,871 records. Detailed evidence is in `qa/lazy-layer-revision-regression.md`.
