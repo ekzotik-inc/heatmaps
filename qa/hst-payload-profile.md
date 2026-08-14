@@ -38,3 +38,9 @@ Full aggregate statistics continue to arrive in `/state/meta`, so legends, point
 Against an isolated authenticated server with 20,000 deterministic records, the new client requested five 4,000-record batches. The first batch became available to `ensureLayerRecords()` in **66.6 ms** and contained 4,000 records; all five requests completed within the 2-second observation window and the layer ended with `_recordsLoaded: true`, `_recordsLoading: false` and 20,000 expanded records. Local resource durations were 46.2 ms for the first chunk and 8.7–13.5 ms for subsequent chunks. The exact tuple/dictionary expansion restored `lat`, `lon`, `vol` and repeated `name` values; no full `/state/layer` request was used.
 
 The local exactness check returned 20,000 records, 80 unique repeated names, first row `{lat:41.2, lon:69.1, name:"Outlet 00", vol:1}` and last row `{lat:41.2199, lon:69.1099, name:"Outlet 79", vol:500}`. All five chunk requests were present and the final layer flag was loaded.
+
+## Production compact-chunk smoke test — 2026-08-14
+
+After commit `6e36649`, production served `app.js?v=20260814d`. The cached full HST entry was removed only from the current browser’s IndexedDB; visibility and server state were not changed. The real HST CC layer then used ten compact `/state/layer/chunk` requests of 4,000 rows (the final batch had 3,525 rows). The first 4,000 records became available in **6.22 s**, while subsequent requests completed in **1.12–1.69 s** each; the layer reached `_recordsLoaded: true` with exactly **39,525** records. No full `/state/layer` request was made.
+
+This is a clear first-use improvement over the previous single 30.31-second request: the map can show the first HST subset after the first chunk, and the remaining batches arrive progressively. The remaining 6.22-second first-chunk latency is dominated by Render/DB response time for the first batch and should be treated separately from client hydration.

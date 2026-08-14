@@ -236,3 +236,10 @@ The client uses 4,000-record chunks for layers with at least 12,000 records. `en
 ### Verification
 
 The isolated API regression test passed compact response shape, `nextOffset`, dictionary indexes, exact row values and the existing lazy-save merge. A browser test against a 20,000-record fixture requested five 4,000-record chunks; the first 4,000 records became available in 66.6 ms, all five requests completed, the final layer contained exactly 20,000 records and 80 repeated names were reconstructed correctly. No full `/state/layer` request was used in the progressive path.
+
+
+### Final production verification — commit `6e36649`
+
+CI and GitHub Pages completed successfully, Render `/health` remained healthy, and the live client served `app.js?v=20260814d`. In a read-only authenticated browser test, the previously cached full HST record entry was removed only from that browser’s IndexedDB. The real HST CC layer then used ten protected `/state/layer/chunk` requests of 4,000 rows, with a final 3,525-row batch. The first 4,000 records became available after 6.22 seconds; subsequent batches completed in 1.12–1.69 seconds, and the final in-memory layer contained exactly 39,525 records. No full `/state/layer` request was made and no production write endpoint was called.
+
+Compared with the previous 30.31-second single response, the compact progressive path improves time-to-first-use by allowing the first subset to render while the remaining records arrive. The remaining first-chunk delay is now primarily server/database response time, not JSON hydration; the client reconstructed and enriched the received rows without a client-side bottleneck.
