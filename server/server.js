@@ -41,6 +41,28 @@ function loadAuthUsers() {
       if (!u || !value || typeof value.passwordHash !== 'string' || !AUTH_ROLES.has(value.role)) continue;
       users.set(u, { username: u, role: value.role, passwordHash: value.passwordHash });
     }
+    // Optional isolated reset path for the Kyrgyzstan account. Render can
+    // rotate this one credential without exposing or rewriting the shared
+    // AUTH_USERS_JSON value that contains the other roles.
+    const kgOverride = process.env.KG_AUTH_USER_JSON || '';
+    if (kgOverride) {
+      try {
+        const override = JSON.parse(kgOverride);
+        const entries = Object.entries(override);
+        if (entries.length !== 1) throw new Error('expected one user');
+        const [username, value] = entries[0];
+        const u = username.trim().toLowerCase();
+        if (!u || !value || value.role !== 'kg' || typeof value.passwordHash !== 'string') {
+          throw new Error('expected one kg user with passwordHash');
+        }
+        for (const [existing, account] of users) {
+          if (account.role === 'kg') users.delete(existing);
+        }
+        users.set(u, { username: u, role: 'kg', passwordHash: value.passwordHash });
+      } catch (e) {
+        console.error('Invalid KG_AUTH_USER_JSON override:', e.message);
+      }
+    }
     return users;
   } catch (e) {
     console.error('Invalid AUTH_USERS_JSON:', e.message);
