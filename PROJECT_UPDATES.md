@@ -219,3 +219,20 @@ On the first authenticated production run, `/state/meta?map=comdep` returned in 
 The production repeat-load trace made only `/auth/login`, `/auth/me`, `/state/meta?map=comdep` and `/data/meta` requests. It made no full `/data`, full `/state` or `/state/layer` request. The two previously used layers were restored from IndexedDB, while the other four stayed unloaded. This confirms revision-based cache reuse and removal of duplicate hydration in the authenticated browser.
 
 A read-only on-demand probe of HST CC confirmed that the 39,525-record payload still takes 30.31 s to transfer/read on selection; client hydration after arrival took 0.2 ms. The deferred design keeps that cost out of first paint, while payload splitting or a server-side compact representation remains the next separate optimization for users who explicitly enable HST CC.
+
+
+## 2026-08-14 — Progressive compact delivery for large heat layers
+
+### Payload profile
+
+The production HST CC sample contains 39,525 rows with `lat`, `lon`, `vol` and `name`; address, code and hours are empty. Current object JSON measured 2,592,893 characters and approximately 107 KB gzip in the browser profile. Tuple packing reduced raw JSON to 1,604,768 characters, while geometry/value-only tuples measured 862,743 characters and 73.6 KB gzip. Because compression is already active, the dominant UX improvement comes from progressive delivery rather than a single smaller response.
+
+### Protocol
+
+The server now exposes an additive protected `GET /state/layer/chunk?map=…&layer=…&offset=…&limit=…` route. It returns `_app: "hm-layer-chunk"`, the state revision, total count, offset/nextOffset, per-batch dictionaries for repeated `name`/`addr`/`code`/`hours` values and rows encoded as `[lat, lon, vol, nameIndex, addrIndex, codeIndex, hoursIndex]`. The request is limited to 500–5,000 rows and the layer key must belong to the requested map. The original `/state/layer` object response is unchanged for legacy clients, exports and small-layer compatibility.
+
+The client uses 4,000-record chunks for layers with at least 12,000 records. `ensureLayerRecords()` resolves after the first chunk is available, so a visible preview can render immediately; remaining chunks are requested through the same protected route with `requestIdleCallback`/timer yields between batches. Records are expanded back to the existing object shape before city filtering, nearest-point enrichment, recommendations or exports. Chunk payloads are stored in the revisioned IndexedDB cache and old layer/chunk revisions are pruned.
+
+### Verification
+
+The isolated API regression test passed compact response shape, `nextOffset`, dictionary indexes, exact row values and the existing lazy-save merge. A browser test against a 20,000-record fixture requested five 4,000-record chunks; the first 4,000 records became available in 66.6 ms, all five requests completed, the final layer contained exactly 20,000 records and 80 repeated names were reconstructed correctly. No full `/state/layer` request was used in the progressive path.

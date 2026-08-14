@@ -186,6 +186,8 @@
 | S10 | Authenticated startup with large custom layers | `/data` and `/state` start concurrently; local state remains usable while the server snapshot hydrates; exact nearest-point lookup uses VP-tree and hidden-layer density is deferred | All | ✅ | Live bundle `20260814a`; 64,777 records loaded, 0 nearest-distance mismatches |
 | S11 | Repeat authenticated startup | IndexedDB restores cached dataset, compact state manifest and already-used layers; server only revalidates `/data/meta` and `/state/meta` when revisions match | All | ✅ | Local end-to-end trace has no full `/data`, `/state` or `/state/layer` on repeat open |
 | S12 | Map has hidden custom layers | `/state/meta` returns settings/stats only; records reach the browser only for visible layers, current recommendation basis, Solo or an explicit toggle | All | ✅ | Protected `/state/layer` and lazy save merge regression tests passed |
+| S13 | User enables a large heat layer | Compact `/state/layer/chunk` batches return a first usable subset quickly, append in the background, preserve exact row values and finish with the full record count | All | ✅ | 20,000-record local fixture: first 4,000 in 66.6 ms, five chunks, exact 20,000 reconstruction |
+| S14 | Legacy client requests full layer | Existing `/state/layer` remains available with the original object-record response | All | ✅ | Compact route is additive and protected by the same session/map access middleware |
 
 ---
 

@@ -169,6 +169,8 @@ function noStore(res) {
 // Storage — PostgreSQL (persistent) or atomic file fallback.
 // ---------------------------------------------------------------------------
 let db = null;
+const STATE_CACHE_TTL_MS = 30_000;
+const stateReadCache = new Map();
 
 async function initDb() {
   if (!DATABASE_URL) return;
@@ -195,23 +197,28 @@ function stateFileFor(key) {
 }
 
 async function readState(key) {
+  const hit = stateReadCache.get(key);
+  if (hit && Date.now() - hit.at < STATE_CACHE_TTL_MS) return hit.value;
+  let value = null;
   if (db) {
     try {
       const r = await db.query('SELECT json FROM app_state WHERE key = $1', [key]);
-      if (r.rows.length === 0) return null;
-      return JSON.parse(r.rows[0].json);
+      value = r.rows.length ? JSON.parse(r.rows[0].json) : null;
     } catch (e) {
       console.error('DB read error:', e.message);
-      return null;
+      value = null;
+    }
+  } else {
+    try {
+      const f = stateFileFor(key);
+      if (fs.existsSync(f)) value = JSON.parse(fs.readFileSync(f, 'utf8'));
+    } catch (e) {
+      console.error('Failed to read state file:', e.message);
+      value = null;
     }
   }
-  try {
-    const f = stateFileFor(key);
-    if (fs.existsSync(f)) return JSON.parse(fs.readFileSync(f, 'utf8'));
-  } catch (e) {
-    console.error('Failed to read state file:', e.message);
-  }
-  return null;
+  if (value) stateReadCache.set(key, { value, at: Date.now() });
+  return value;
 }
 
 async function writeState(key, data) {
@@ -223,11 +230,13 @@ async function writeState(key, data) {
        ON CONFLICT (key) DO UPDATE SET json = $2, updated_at = $3`,
       [key, json, new Date().toISOString()]
     );
+    stateReadCache.delete(key);
     return;
   }
   const f = stateFileFor(key), tmp = f + '.tmp';
   fs.writeFileSync(tmp, json, 'utf8');
   fs.renameSync(tmp, f);
+  stateReadCache.delete(key);
 }
 
 function verifyKey(req) {
@@ -403,6 +412,58 @@ app.get('/state/meta', requireSession, requireMapAccess, async (req, res) => {
   const state = await readState(req.map);
   if (!state) return res.json({ empty: true });
   res.json(stateMetadata(state));
+});
+
+function compactLayerChunk(recs, offset, limit, revision, key, map) {
+  const source = Array.isArray(recs) ? recs : [];
+  const total = source.length;
+  const start = Math.max(0, Math.min(Number(offset) || 0, total));
+  const size = Math.max(500, Math.min(Number(limit) || 4000, 5000));
+  const end = Math.min(start + size, total);
+  const dictionaries = { name: [], addr: [], code: [], hours: [] };
+  const indexes = Object.fromEntries(Object.keys(dictionaries).map(field => [field, new Map()]));
+  const dictIndex = (field, value) => {
+    const text = value == null ? '' : String(value);
+    if (!text) return -1;
+    const mapForField = indexes[field];
+    if (mapForField.has(text)) return mapForField.get(text);
+    const index = dictionaries[field].length;
+    dictionaries[field].push(text);
+    mapForField.set(text, index);
+    return index;
+  };
+  const rows = [];
+  for (let i = start; i < end; i += 1) {
+    const r = source[i] || {};
+    rows.push([
+      Math.round((Number(r.lat) || 0) * 100000) / 100000,
+      Math.round((Number(r.lon) || 0) * 100000) / 100000,
+      Number(r.vol) || 0,
+      dictIndex('name', r.name),
+      dictIndex('addr', r.addr),
+      dictIndex('code', r.code),
+      dictIndex('hours', r.hours),
+    ]);
+  }
+  return {
+    _app: 'hm-layer-chunk', map, key, _revision: revision,
+    total, offset: start, limit: size, nextOffset: end < total ? end : null,
+    dictionaries, rows,
+  };
+}
+
+// Progressive compact records for large layers. The current full endpoint below
+// remains the compatibility path for small layers, exports and legacy tabs.
+app.get('/state/layer/chunk', requireSession, requireMapAccess, async (req, res) => {
+  noStore(res);
+  const state = await readState(req.map);
+  if (!state) return res.json({ empty: true });
+  const key = String(req.query.layer || '');
+  if (!Array.isArray(state.heatKeys) || !state.heatKeys.includes(key) || !state.layers || !state.layers[key]) {
+    return res.status(404).json({ error: 'Layer not found' });
+  }
+  const layer = state.layers[key];
+  res.json(compactLayerChunk(layer.recs, req.query.offset, req.query.limit, state._savedAt || '', key, req.map));
 });
 
 // Records for one heat layer. The requested key must exist in this map's saved

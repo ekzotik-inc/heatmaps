@@ -2523,15 +2523,16 @@ async function cachePut(key, value) {
 }
 async function pruneOldLayerRevisions(revision) {
   const db = await openReadCache(); if (!db || !revision) return;
-  const prefix = cacheKey('state-layer') + ':';
-  const keepPrefix = cacheKey('state-layer', revision + ':');
+  const prefixes = [cacheKey('state-layer') + ':', cacheKey('state-chunk') + ':'];
+  const keepPrefixes = [cacheKey('state-layer', revision + ':'), cacheKey('state-chunk', revision + ':')];
   await new Promise(resolve => {
     try {
       const store = db.transaction(HM_CACHE_STORE, 'readwrite').objectStore(HM_CACHE_STORE);
       const req = store.getAllKeys();
       req.onsuccess = () => {
         (req.result || []).forEach(key => {
-          if (typeof key === 'string' && key.startsWith(prefix) && !key.startsWith(keepPrefix)) store.delete(key);
+          const oldLayer = typeof key === 'string' && prefixes.some((prefix, i) => key.startsWith(prefix) && !key.startsWith(keepPrefixes[i]));
+          if (oldLayer) store.delete(key);
         });
         resolve();
       };
@@ -2639,7 +2640,7 @@ async function fetchStateManifest() {
   if (!data || data.empty || data._app !== 'hm-br') return null;
   return data;
 }
-function hydrateLayerRecords(key, recs, stats, ownPointIndex) {
+function hydrateLayerRecords(key, recs, stats, ownPointIndex, complete = true) {
   const d = DS[key];
   if (!d) return;
   const rows = Array.isArray(recs) ? recs : [];
@@ -2648,10 +2649,90 @@ function hydrateLayerRecords(key, recs, stats, ownPointIndex) {
   enrichNd(rows, ownPointIndex || buildPtIndex(ourPts()));
   rows._densityReady = false;
   d.stats = stats || statsOf(rows);
-  d._recordsLoaded = true;
+  d._recordsLoaded = complete;
+  d._recordsLoading = !complete;
   d._heatCache = null;
   d._fullPtsCache = null;
   d._heatMaxCache = null;
+}
+const CHUNK_LAYER_MIN_RECORDS = 12000;
+const CHUNK_SIZE = 4000;
+function yieldToBrowser() {
+  return new Promise(resolve => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(resolve, { timeout: 250 });
+    else setTimeout(resolve, 0);
+  });
+}
+function expandLayerChunk(payload) {
+  const dict = payload.dictionaries || {};
+  const value = (field, index) => index == null || index < 0 ? '' : (dict[field] && dict[field][index]) || '';
+  return (payload.rows || []).map(row => {
+    const r = { lat: +row[0], lon: +row[1], vol: Number(row[2]) || 0 };
+    const name = value('name', row[3]);
+    const addr = value('addr', row[4]);
+    const code = value('code', row[5]);
+    const hours = value('hours', row[6]);
+    if (name) r.name = name;
+    if (addr) r.addr = addr;
+    if (code) r.code = code;
+    if (hours) r.hours = hours;
+    return r;
+  });
+}
+async function fetchLayerChunk(key, offset) {
+  const chunkKey = cacheKey('state-chunk', _activeStateRevision + ':' + key + ':' + offset);
+  const cached = await cacheGet(chunkKey);
+  if (cached && cached.payload) return cached.payload;
+  const res = await authFetch(SERVER_URL + '/state/layer/chunk?map=' + encodeURIComponent(currentMap) + '&layer=' + encodeURIComponent(key) + '&offset=' + offset + '&limit=' + CHUNK_SIZE, {
+    signal: AbortSignal.timeout(55000),
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const payload = await res.json();
+  if (!payload || payload._app !== 'hm-layer-chunk' || payload.key !== key || payload._revision !== _activeStateRevision) {
+    throw new Error('STALE_LAYER_CHUNK');
+  }
+  await cachePut(chunkKey, { revision: payload._revision, payload, cachedAt: Date.now() });
+  return payload;
+}
+async function loadChunkedLayer(key, ownPointIndex, firstResolve, firstReject) {
+  const d = DS[key];
+  const fullCacheKey = cacheKey('state-layer', _activeStateRevision + ':' + key);
+  const fullCached = await cacheGet(fullCacheKey);
+  if (fullCached && Array.isArray(fullCached.recs)) {
+    hydrateLayerRecords(key, fullCached.recs, fullCached.stats, ownPointIndex);
+    d._recordsLoading = false; d._recordsLoaded = true;
+    firstResolve();
+    d._recordsReady = null;
+    d._recordsLoad = null;
+    return;
+  }
+  let offset = 0, first = true, rows = [];
+  try {
+    while (true) {
+      const payload = await fetchLayerChunk(key, offset);
+      rows = rows.concat(expandLayerChunk(payload));
+      hydrateLayerRecords(key, rows, d.stats, ownPointIndex, payload.nextOffset == null);
+      d._recordsLoading = payload.nextOffset != null;
+      if (first) { first = false; firstResolve(); }
+      else if (d.visible) renderHeat();
+      if (key === recBasis && !first) renderRecs();
+      if (payload.nextOffset == null) break;
+      offset = payload.nextOffset;
+      await yieldToBrowser();
+    }
+    d._recordsLoaded = true;
+    d._recordsLoading = false;
+    d._recordsReady = null;
+    d._recordsLoad = null;
+    if (d.visible) renderHeat();
+    if (key === recBasis) renderRecs();
+  } catch (err) {
+    d._recordsLoading = false;
+    d._recordsReady = null;
+    d._recordsLoad = null;
+    if (first) firstReject(err);
+    else console.warn('Progressive layer load failed after partial data:', err.message);
+  }
 }
 async function ensureLayerRecords(keys) {
   const todo = [...new Set((Array.isArray(keys) ? keys : [keys]).filter(k => DS[k] && !DS[k]._recordsLoaded))];
@@ -2659,7 +2740,16 @@ async function ensureLayerRecords(keys) {
   const ownPointIndex = buildPtIndex(ourPts());
   await Promise.all(todo.map(async key => {
     const d = DS[key];
+    if (d._recordsReady) return d._recordsReady;
     if (d._recordsLoad) return d._recordsLoad;
+    if ((d.stats && d.stats.n || 0) >= CHUNK_LAYER_MIN_RECORDS) {
+      let resolveFirst, rejectFirst;
+      d._recordsReady = new Promise((resolve, reject) => { resolveFirst = resolve; rejectFirst = reject; });
+      d._recordsLoading = true;
+      d._recordsLoad = loadChunkedLayer(key, ownPointIndex, resolveFirst, rejectFirst);
+      await d._recordsReady;
+      return;
+    }
     d._recordsLoad = (async () => {
       const layerCacheKey = cacheKey('state-layer', _activeStateRevision + ':' + key);
       let payload = await cacheGet(layerCacheKey);
