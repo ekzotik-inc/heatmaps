@@ -261,3 +261,10 @@ The recovery path performs no save or write operation. A read-only production co
 ### Published recovery verification
 
 CI succeeded for `b96e775`, and GitHub Pages served `app.js?v=20260814e`. A deliberate stale-revision test on `Точки с инвестициями` changed the active client revision back to `2026-08-14T05:08:40.824Z` while production was at `2026-08-14T05:39:22.038Z`. The client made the original layer request, fetched fresh `/state/meta`, retried once and hydrated exactly 6,871 records in 769 ms. A second test forced the same mismatch on HST CC; the compact path refreshed once, exposed the first 4,000 records progressively and completed the background load with exactly 39,525 records across offsets 0 through 36,000. No production write endpoint was called in either test.
+
+
+## 2026-08-14 — Isolated Kyrgyzstan access reset
+
+The server now supports an optional protected `KG_AUTH_USER_JSON` environment override. When present, startup removes any existing account with role `kg` from the base `AUTH_USERS_JSON` set and adds exactly one validated `kg` account from the override. This lets Render rotate the Kyrgyzstan credential without exposing or rewriting the shared admin/comdep/other account configuration. The password hash is stored only in Render Environment; no plaintext password or hash was committed to the repository.
+
+The new override was configured in Render and the service was rebuilt from commit `947cb2e`. A production smoke test returned: login HTTP 200, bearer token issued, `/auth/me` HTTP 200 with role `kg`, `/state/meta?map=kg` HTTP 200, and `/state/meta?map=comdep` HTTP 403. The test did not call any write endpoint or modify map data.
