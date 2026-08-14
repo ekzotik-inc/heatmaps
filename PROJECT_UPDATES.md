@@ -256,3 +256,8 @@ After the progressive chunk release, an open browser could retain an older metad
 The client now recognizes `STALE_LAYER` and `STALE_LAYER_CHUNK`, refreshes `/state/meta` once through a coalesced request, updates only the active revision and revisioned read cache, and retries the requested layer once. Current visibility, map position, city filter and other UI settings are not replaced during this recovery. The compact chunk path and the legacy small-layer path use the same bounded recovery policy; malformed responses and a second mismatch still fail normally instead of retrying indefinitely. The application cache-buster advances to `app.js?v=20260814e`.
 
 The recovery path performs no save or write operation. A read-only production control scenario manually reconciled the stale manifest and successfully hydrated `Точки с инвестициями` with exactly 6,871 records. Detailed evidence is in `qa/lazy-layer-revision-regression.md`.
+
+
+### Published recovery verification
+
+CI succeeded for `b96e775`, and GitHub Pages served `app.js?v=20260814e`. A deliberate stale-revision test on `Точки с инвестициями` changed the active client revision back to `2026-08-14T05:08:40.824Z` while production was at `2026-08-14T05:39:22.038Z`. The client made the original layer request, fetched fresh `/state/meta`, retried once and hydrated exactly 6,871 records in 769 ms. A second test forced the same mismatch on HST CC; the compact path refreshed once, exposed the first 4,000 records progressively and completed the background load with exactly 39,525 records across offsets 0 through 36,000. No production write endpoint was called in either test.
