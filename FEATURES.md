@@ -98,7 +98,7 @@
 
 | # | User Story | Expected Behaviour | Role | Status | Notes |
 |---|---|---|---|---|---|
-| H1 | Layer visibility checkbox toggled ON | Heat layer appears on map; legend updated | All | ✅ | |
+| H1 | Layer visibility checkbox toggled ON | Heat layer appears on map; legend updated; if records were intentionally deferred, they are fetched once before the layer becomes visible | All | ✅ | Lazy-on-toggle smoke test passed |
 | H2 | Layer visibility checkbox toggled OFF | Heat layer removed from map; legend updated | All | ✅ | |
 | H3 | Opacity slider moved | Canvas opacity changes in real-time | All | ✅ | |
 | H4 | Intensity slider moved | Heat point scaling changes; re-renders immediately | All | ✅ | |
@@ -140,7 +140,7 @@
 
 | # | User Story | Expected Behaviour | Role | Status | Notes |
 |---|---|---|---|---|---|
-| R1 | Recs basis changed (cig/sticks/combined) | Pins re-render; summary panel updates; list updates | All | ✅ | |
+| R1 | Recs basis changed (cig/sticks/combined) | Pins re-render; summary panel updates; list updates; deferred records are fetched once before calculation | All | ✅ | |
 | R2 | Coverage radius slider moved | Zones re-computed; summary updates | All | ✅ | |
 | R3 | Top-N slider moved | Pin count changes on map + in list | All | ✅ | |
 | R4 | Show-on-map toggle ON | Green numbered pins appear | All | ✅ | |
@@ -176,14 +176,16 @@
 |---|---|---|---|---|---|
 | S1 | App loads (server awake) | Badge: "Загрузка…" → "Обновлено HH:MM" within ~3 s | All | ✅ | Authenticated requests use authFetch with bearer token when available and cookie fallback |
 | S2 | App loads (server cold-start) | Badge: "Загрузка…" → "Сервер пробуждается…" after 5 s → "Обновлено" when done | All | ✅ | |
-| S3 | Admin changes any setting | State auto-saved to localStorage + pushed to server within 400 ms | Admin | ✅ | |
+| S3 | Admin changes any setting | Compact manifest auto-saved to localStorage, loaded records stored versioned in IndexedDB, and shared state pushed to server | Admin | ✅ | Lazy omitted records are preserved server-side |
 | S4 | Sync success | Badge shows green dot + "Обновлено HH:MM DD.MM" | Admin | ✅ | |
 | S5 | Sync fails (network) | Badge shows red dot + "Сервер недоступен"; retries in 6 s | Admin | ✅ | |
 | S6 | Server empty, admin has local copy | Admin's local state pushed to server on load | Admin | ✅ | |
 | S7 | Viewer loads (server has data) | Server state applied; toast "Настройки загружены с сервера" | Viewer | ✅ | |
-| S8 | Viewer loads (server fails) | Falls back to localStorage; badge "Локальные данные" | Viewer | ✅ | |
+| S8 | Viewer loads (server fails) | Falls back to IndexedDB manifest/layer cache and compact localStorage compatibility snapshot; badge «Локальные данные» | Viewer | ✅ | |
 | S9 | Server times out (55 s) | Badge "Сервер не отвечает (перезагрузите)" | All | ✅ | |
 | S10 | Authenticated startup with large custom layers | `/data` and `/state` start concurrently; local state remains usable while the server snapshot hydrates; exact nearest-point lookup uses VP-tree and hidden-layer density is deferred | All | ✅ | Live bundle `20260814a`; 64,777 records loaded, 0 nearest-distance mismatches |
+| S11 | Repeat authenticated startup | IndexedDB restores cached dataset, compact state manifest and already-used layers; server only revalidates `/data/meta` and `/state/meta` when revisions match | All | ✅ | Local end-to-end trace has no full `/data`, `/state` or `/state/layer` on repeat open |
+| S12 | Map has hidden custom layers | `/state/meta` returns settings/stats only; records reach the browser only for visible layers, current recommendation basis, Solo or an explicit toggle | All | ✅ | Protected `/state/layer` and lazy save merge regression tests passed |
 
 ---
 

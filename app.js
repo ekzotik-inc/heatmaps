@@ -816,17 +816,18 @@ function updateAccBadges() {
 
 /* Solo / isolate a single heat layer to fix the "overlap mush" problem */
 let _soloKey = null, _preSolo = null;
-function toggleSolo(k) {
+async function toggleSolo(k) {
   if (_soloKey === k) {
     // restore previous visibility
     if (_preSolo) heatKeys.forEach(kk => { if (DS[kk] && _preSolo[kk] != null) DS[kk].visible = _preSolo[kk]; });
     _soloKey = null; _preSolo = null;
   } else {
+    try { await ensureLayerRecords(k); } catch (_) { toast('Не удалось загрузить данные слоя', 'err'); return; }
     if (!_preSolo) { _preSolo = {}; heatKeys.forEach(kk => { if (DS[kk]) _preSolo[kk] = DS[kk].visible; }); }
     heatKeys.forEach(kk => { if (DS[kk]) DS[kk].visible = (kk === k); });
     _soloKey = k;
   }
-  buildHeatUI(); renderHeat(); updateAccBadges();
+  buildHeatUI(); renderHeat(); updateAccBadges(); saveState();
 }
 
 /* ── UI BUILDERS ─────────────────────────────────────────────────────── */
@@ -893,8 +894,15 @@ function buildHeatUI() {
     };
     drawPreview();
 
-    card.querySelector('.cbx').addEventListener('click', e => {
-      d.visible = !d.visible; e.target.classList.toggle('on', d.visible); renderHeat(); updateAccBadges();
+    card.querySelector('.cbx').addEventListener('click', async e => {
+      if (!d.visible) {
+        e.target.classList.add('loading');
+        try { await ensureLayerRecords(k); } catch (_) { toast('Не удалось загрузить данные слоя', 'err'); e.target.classList.remove('loading'); return; }
+        e.target.classList.remove('loading');
+      }
+      d.visible = !d.visible;
+      e.target.classList.toggle('on', d.visible);
+      renderHeat(); updateAccBadges(); saveState();
     });
     card.querySelector('.lyr-solo').addEventListener('click', () => toggleSolo(k));
     rampSel.addEventListener('change', e => {
@@ -1972,12 +1980,17 @@ function buildStateSnapshot() {
   const layers = {};
   heatKeys.forEach(k => {
     const d = DS[k]; if (!d) return;
-    const o = { name: d.name, color: d.color, ramp: d.ramp, opacity: d.opacity, intensity: d.intensity, visible: d.visible };
-    if (k.startsWith('custom_') || d._userData) { o.recs = slimRecs(d.recs); o._userData = true; }
+    const o = { name: d.name, color: d.color, ramp: d.ramp, opacity: d.opacity, intensity: d.intensity, visible: d.visible, stats: d.stats };
+    if (k.startsWith('custom_') || d._userData) {
+      o._userData = true;
+      if (d._recordsLoaded === false) o._recordsOmitted = true;
+      else o.recs = slimRecs(d.recs);
+    }
     layers[k] = o;
   });
   return {
     _v: 1, _app: 'hm-br', _savedAt: new Date().toISOString(), _date: new Date().toISOString().slice(0, 10),
+    _lazy: heatKeys.some(k => DS[k] && DS[k]._recordsLoaded === false),
     heatKeys, layers, incCol: { ...incCol },
     selectedCities: selectedCities.slice(),
     // Keep the legacy field for older consumers; it represents only a single selection.
@@ -2037,10 +2050,15 @@ function applySnapshot(st) {
     for (const k of heatKeys) {
       const sv = st.layers[k]; if (!sv) continue;
       if (!DS[k]) DS[k] = { key: k };
-      Object.assign(DS[k], { name: sv.name, color: sv.color, intensity: sv.intensity, visible: sv.visible });
+      Object.assign(DS[k], {
+        name: sv.name || DS[k].name || k,
+        color: sv.color || DS[k].color || '#12ADC1',
+        intensity: typeof sv.intensity === 'number' ? sv.intensity : (DS[k].intensity || 1),
+        visible: typeof sv.visible === 'boolean' ? sv.visible : Boolean(DS[k].visible),
+      });
       if (typeof sv.ramp    === 'string') DS[k].ramp    = sv.ramp;
       if (typeof sv.opacity === 'number') DS[k].opacity = sv.opacity;
-      if (sv.recs) {
+      if (Array.isArray(sv.recs)) {
         // Saved recs are slim (see slimRecs). Rebuild city and nearest-own-point
         // fields during hydration; defer expensive local-demand (`ld/lc`) work
         // until this layer is selected as the recommendation basis.
@@ -2048,7 +2066,15 @@ function applySnapshot(st) {
         DS[k].recs = sv.recs;
         enrichNd(DS[k].recs, ownPointIndex);
         DS[k].recs._densityReady = false;
-        DS[k].stats = statsOf(DS[k].recs);
+        DS[k].stats = sv.stats || statsOf(DS[k].recs);
+        DS[k]._recordsLoaded = true;
+        DS[k]._userData = true;
+      } else if (st._meta) {
+        // A metadata-first manifest must never inherit stale records from the
+        // previous map/session. They arrive lazily through `/state/layer`.
+        DS[k].recs = [];
+        DS[k].stats = sv.stats || { n: sv.recordCount || 0, sum: 0, max: 0, p50: 0, p90: 0.01 };
+        DS[k]._recordsLoaded = false;
         DS[k]._userData = true;
       } else if (!DS[k].recs) {
         DS[k].recs = []; DS[k].stats = { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 };
@@ -2446,31 +2472,217 @@ function rememberSessionToken(token) {
   } catch (e) {}
 }
 
+// Persistent read cache for authenticated payloads. IndexedDB holds multi-megabyte
+// snapshots without the localStorage quota pressure that caused the old cache to
+// be removed at boot. Entries are scoped to the authenticated user and map.
+const HM_CACHE_DB = 'hm-read-cache-v2';
+const HM_CACHE_STORE = 'entries';
+let _cacheDb = null;
+function cacheScope() {
+  return encodeURIComponent(currentUser || 'anonymous') + ':' + encodeURIComponent(currentMap || 'main');
+}
+function cacheKey(kind, extra = '') {
+  return kind + ':' + cacheScope() + (extra ? ':' + encodeURIComponent(extra) : '');
+}
+function openReadCache() {
+  if (!('indexedDB' in window)) return Promise.resolve(null);
+  if (_cacheDb) return Promise.resolve(_cacheDb);
+  return new Promise(resolve => {
+    let done = false;
+    const finish = db => { if (!done) { done = true; resolve(db); } };
+    try {
+      const req = indexedDB.open(HM_CACHE_DB, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(HM_CACHE_STORE)) db.createObjectStore(HM_CACHE_STORE);
+      };
+      req.onsuccess = () => { _cacheDb = req.result; _cacheDb.onversionchange = () => { _cacheDb.close(); _cacheDb = null; }; finish(_cacheDb); };
+      req.onerror = req.onblocked = () => finish(null);
+    } catch (_) { finish(null); }
+  });
+}
+async function cacheGet(key) {
+  const db = await openReadCache(); if (!db) return null;
+  return new Promise(resolve => {
+    try {
+      const req = db.transaction(HM_CACHE_STORE, 'readonly').objectStore(HM_CACHE_STORE).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch (_) { resolve(null); }
+  });
+}
+async function cachePut(key, value) {
+  const db = await openReadCache(); if (!db) return false;
+  return new Promise(resolve => {
+    try {
+      const req = db.transaction(HM_CACHE_STORE, 'readwrite').objectStore(HM_CACHE_STORE).put(value, key);
+      req.onsuccess = () => resolve(true);
+      req.onerror = () => resolve(false);
+    } catch (_) { resolve(false); }
+  });
+}
+async function pruneOldLayerRevisions(revision) {
+  const db = await openReadCache(); if (!db || !revision) return;
+  const prefix = cacheKey('state-layer') + ':';
+  const keepPrefix = cacheKey('state-layer', revision + ':');
+  await new Promise(resolve => {
+    try {
+      const store = db.transaction(HM_CACHE_STORE, 'readwrite').objectStore(HM_CACHE_STORE);
+      const req = store.getAllKeys();
+      req.onsuccess = () => {
+        (req.result || []).forEach(key => {
+          if (typeof key === 'string' && key.startsWith(prefix) && !key.startsWith(keepPrefix)) store.delete(key);
+        });
+        resolve();
+      };
+      req.onerror = () => resolve();
+    } catch (_) { resolve(); }
+  });
+}
+function dataRevision(data) { return (data && (data._savedAt || data._revision)) || ''; }
+function applyData(data) {
+  DATA = Object.assign(data, { _loaded: true });
+  Object.assign(DS.cig, data.cig || {});
+  Object.assign(DS.sticks, data.sticks || {});
+  DS.cig.ramp = DS.cig.ramp || 'warm';
+  DS.sticks.ramp = DS.sticks.ramp || 'cool';
+  Object.values(DS).forEach(d => { d.opacity = d.opacity == null ? 1 : d.opacity; });
+  return DATA;
+}
+async function fetchDataMeta() {
+  const res = await authFetch(SERVER_URL + '/data/meta', { signal: AbortSignal.timeout(20000) });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+async function fetchDataset() {
+  const res = await authFetch(SERVER_URL + '/data', { signal: AbortSignal.timeout(60000) });
+  if (res.status === 401) throw new Error('AUTH_REQUIRED');
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  if (!data || data.empty) throw new Error('На сервере нет базовых данных');
+  return data;
+}
 let _dataLoad = null;
 async function ensureData() {
   if (DATA && DATA._loaded) return DATA;
   if (!SERVER_URL) throw new Error('Сервер не настроен');
   if (!_dataLoad) {
-    _dataLoad = authFetch(SERVER_URL + '/data', {
-      signal: AbortSignal.timeout(60000),
-    }).then(async res => {
-      if (res.status === 401) throw new Error('AUTH_REQUIRED');
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
-      if (!data || data.empty) throw new Error('На сервере нет базовых данных');
-      DATA = Object.assign(data, { _loaded: true });
-      Object.assign(DS.cig, data.cig || {});
-      Object.assign(DS.sticks, data.sticks || {});
-      DS.cig.ramp = DS.cig.ramp || 'warm';
-      DS.sticks.ramp = DS.sticks.ramp || 'cool';
-      Object.values(DS).forEach(d => { d.opacity = d.opacity == null ? 1 : d.opacity; });
-      return DATA;
-    }).catch(err => {
+    _dataLoad = (async () => {
+      const key = cacheKey('dataset');
+      const cached = await cacheGet(key);
+      if (cached && cached.data) {
+        // Show the last verified dataset immediately. A tiny metadata request
+        // revalidates it in the background without delaying first paint.
+        const ready = applyData(cached.data);
+        fetchDataMeta().then(async meta => {
+          if (meta && !meta.empty && meta._revision !== cached.revision) {
+            const fresh = await fetchDataset();
+            await cachePut(key, { revision: dataRevision(fresh), data: fresh, cachedAt: Date.now() });
+            // Do not replace an already interactive map mid-session. The new
+            // dataset is ready for the next open and the current state remains coherent.
+          }
+        }).catch(() => {});
+        return ready;
+      }
+      const fresh = await fetchDataset();
+      await cachePut(key, { revision: dataRevision(fresh), data: fresh, cachedAt: Date.now() });
+      return applyData(fresh);
+    })().catch(err => {
       _dataLoad = null;
       throw err;
     });
   }
   return _dataLoad;
+}
+
+function stateRevision(state) { return (state && (state._revision || state._savedAt)) || ''; }
+let _activeStateRevision = '';
+
+async function readCachedStateMeta() {
+  const cached = await cacheGet(cacheKey('state-meta'));
+  return cached && cached.meta && cached.meta._app === 'hm-br' ? cached.meta : null;
+}
+async function cacheStateMeta(meta) {
+  if (!meta || meta.empty || meta._app !== 'hm-br') return false;
+  return cachePut(cacheKey('state-meta'), { revision: stateRevision(meta), meta, cachedAt: Date.now() });
+}
+function snapshotManifest(snapshot) {
+  const layers = {};
+  for (const [key, layer] of Object.entries(snapshot.layers || {})) {
+    const { recs, ...meta } = layer || {};
+    layers[key] = {
+      ...meta,
+      recordCount: Array.isArray(recs) ? recs.length : (meta.stats && meta.stats.n) || 0,
+    };
+  }
+  return { ...snapshot, layers, _meta: true, _revision: snapshot._savedAt || '' };
+}
+function cacheStateSnapshot(snapshot) {
+  const revision = stateRevision(snapshot);
+  if (!revision) return;
+  cacheStateMeta(snapshotManifest(snapshot));
+  pruneOldLayerRevisions(revision);
+  for (const [key, layer] of Object.entries(snapshot.layers || {})) {
+    if (!Array.isArray(layer && layer.recs)) continue;
+    cachePut(cacheKey('state-layer', revision + ':' + key), {
+      revision, recs: layer.recs, stats: layer.stats, cachedAt: Date.now(),
+    });
+  }
+}
+async function fetchStateManifest() {
+  if (!SERVER_URL) return null;
+  const res = await authFetch(SERVER_URL + '/state/meta?map=' + encodeURIComponent(currentMap), {
+    signal: AbortSignal.timeout(55000),
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  if (!data || data.empty || data._app !== 'hm-br') return null;
+  return data;
+}
+function hydrateLayerRecords(key, recs, stats, ownPointIndex) {
+  const d = DS[key];
+  if (!d) return;
+  const rows = Array.isArray(recs) ? recs : [];
+  rows.forEach(r => { r.fil = cityOf(r.lat, r.lon); });
+  d.recs = rows;
+  enrichNd(rows, ownPointIndex || buildPtIndex(ourPts()));
+  rows._densityReady = false;
+  d.stats = stats || statsOf(rows);
+  d._recordsLoaded = true;
+  d._heatCache = null;
+  d._fullPtsCache = null;
+  d._heatMaxCache = null;
+}
+async function ensureLayerRecords(keys) {
+  const todo = [...new Set((Array.isArray(keys) ? keys : [keys]).filter(k => DS[k] && !DS[k]._recordsLoaded))];
+  if (!todo.length) return;
+  const ownPointIndex = buildPtIndex(ourPts());
+  await Promise.all(todo.map(async key => {
+    const d = DS[key];
+    if (d._recordsLoad) return d._recordsLoad;
+    d._recordsLoad = (async () => {
+      const layerCacheKey = cacheKey('state-layer', _activeStateRevision + ':' + key);
+      let payload = await cacheGet(layerCacheKey);
+      if (!payload || !Array.isArray(payload.recs)) {
+        const res = await authFetch(SERVER_URL + '/state/layer?map=' + encodeURIComponent(currentMap) + '&layer=' + encodeURIComponent(key), {
+          signal: AbortSignal.timeout(55000),
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        payload = await res.json();
+        if (!payload || payload._app !== 'hm-layer' || payload.key !== key || payload._revision !== _activeStateRevision) {
+          throw new Error('STALE_LAYER');
+        }
+        await cachePut(layerCacheKey, { revision: payload._revision, recs: payload.recs, stats: payload.stats, cachedAt: Date.now() });
+      }
+      hydrateLayerRecords(key, payload.recs, payload.stats, ownPointIndex);
+    })();
+    try { await d._recordsLoad; } finally { d._recordsLoad = null; }
+  }));
+}
+function eagerStateLayers() {
+  const keys = heatKeys.filter(k => DS[k] && DS[k].visible);
+  if (recBasis && DS[recBasis]) keys.push(recBasis);
+  return keys;
 }
 
 let stateReady = false, _saveTimer = null;
@@ -2560,6 +2772,14 @@ async function pushToServer(snapshot, isRetry = false) {
       console.warn('Server sync error:', res.status);
       if (res.status === 413) toast('Данные слишком большие для сервера', 'err');
     } else {
+      const saved = await res.json().catch(() => null);
+      if (saved && saved.savedAt) {
+        snapshot._savedAt = saved.savedAt;
+        _activeStateRevision = saved.savedAt;
+        const manifest = snapshotManifest(snapshot);
+        try { localStorage.setItem(storeKey(), JSON.stringify(manifest)); } catch (_) {}
+        cacheStateSnapshot(snapshot);
+      }
       const now = new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
       setSyncBadge('ok', 'Сохранено ' + now);
     }
@@ -2575,27 +2795,23 @@ async function pushToServer(snapshot, isRetry = false) {
 
 async function fetchFromServer() {
   if (!SERVER_URL) return null;
-  // Render free tier wakes up on first request and can take ~45s to respond.
-  // We show a "waking up" hint after 5s so the user knows it's not frozen.
   setSyncBadge('syncing', 'Загрузка…');
   const wakeHint = setTimeout(() => setSyncBadge('syncing', 'Сервер пробуждается…'), 5000);
   try {
-    const res = await authFetch(SERVER_URL + '/state?map=' + encodeURIComponent(currentMap), {
-      signal: AbortSignal.timeout(55000),
-    });
+    const data = await fetchStateManifest();
     clearTimeout(wakeHint);
-    if (!res.ok) { setSyncBadge('err', 'Ошибка загрузки'); return null; }
-    const data = await res.json();
-    if (!data || data.empty || data._app !== 'hm-br') {
+    if (!data) {
       setSyncBadge('ok', 'Нет данных на сервере');
       return null;
     }
+    await cacheStateMeta(data);
+    pruneOldLayerRevisions(stateRevision(data));
     return data;
   } catch (e) {
     clearTimeout(wakeHint);
     const msg = e.name === 'TimeoutError' ? 'Сервер не отвечает (перезагрузите)' : 'Сервер недоступен';
     setSyncBadge('err', msg);
-    console.warn('Could not load from server, using local state:', e.message);
+    console.warn('Could not load state manifest, using local cache:', e.message);
     return null;
   }
 }
@@ -2603,9 +2819,11 @@ async function fetchFromServer() {
 function doSave() {
   const snapshot = buildStateSnapshot();
   snapshot._clientTs = Date.now(); // local edit timestamp (used to resolve vs server)
-  try {
-    localStorage.setItem(storeKey(), JSON.stringify(snapshot));
-  } catch (e) { /* quota exceeded or private mode */ }
+  const manifest = snapshotManifest(snapshot);
+  // Keep only compact settings in localStorage as a compatibility/offline
+  // fallback. Full layer records are versioned in IndexedDB instead.
+  try { localStorage.setItem(storeKey(), JSON.stringify(manifest)); } catch (e) {}
+  cacheStateSnapshot(snapshot);
   pushToServer(snapshot);
 }
 
@@ -2613,12 +2831,6 @@ function saveState() {
   if (!stateReady) return;
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(doSave, 1500);   // batch rapid edits — state can be several MB
-}
-
-function loadState() {
-  let st;
-  try { const raw = localStorage.getItem(storeKey()); if (!raw) return; st = JSON.parse(raw); } catch (e) { return; }
-  applySnapshot(st);
 }
 
 function syncControls() {
@@ -2651,7 +2863,11 @@ function wireEvents() {
   const $ = id => document.getElementById(id);
 
   // Rec basis — pick which uploaded layer drives the recommendations
-  $('rec-basis-sel').addEventListener('change', e => { recBasis = e.target.value; renderRecs(); });
+  $('rec-basis-sel').addEventListener('change', async e => {
+    recBasis = e.target.value;
+    try { await ensureLayerRecords(recBasis); } catch (_) { toast('Не удалось загрузить данные слоя', 'err'); return; }
+    renderRecs();
+  });
 
   $('rec-show').addEventListener('click', e => { recShow = !recShow; e.target.classList.toggle('on', recShow); renderRecs(); });
   $('s-cov').addEventListener('input', e => { covR = +e.target.value; $('v-cov').textContent = fmtD(covR); fillSlider(e.target); renderRecs(); });
@@ -2995,13 +3211,38 @@ function applyRoleUI() { document.body.classList.toggle('viewer', !isAdmin()); }
 
 /* ── START APP (runs once a map is chosen) ───────────────────────────── */
 let _appStarted = false;
+function readLocalSnapshot() {
+  try {
+    const raw = localStorage.getItem(storeKey());
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) { return null; }
+}
+function renderCurrentState() {
+  buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
+  renderHeat(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
+}
+function fitInitialBounds() {
+  if (hasCityFilter()) return;
+  const framePts = visiblePts();
+  if (framePts.length) map.fitBounds(L.latLngBounds(framePts).pad(.05));
+  else if (CITIES[0] && CC[CITIES[0]]) map.setView(CC[CITIES[0]], 11);
+}
+async function applyStartupSnapshot(snapshot) {
+  if (!snapshot) return false;
+  _activeStateRevision = stateRevision(snapshot);
+  applySnapshot(snapshot);
+  renderCurrentState();
+  // The map becomes useful as soon as the visible layer and recommendation
+  // basis are ready; hidden records wait for a deliberate user action.
+  await ensureLayerRecords(eagerStateLayers());
+  renderCurrentState();
+  fitInitialBounds();
+  return true;
+}
 async function startApp() {
   if (_appStarted) return;
-  // The saved custom layers live in `/state`, while base data lives in `/data`.
-  // Start both authenticated reads immediately: the former only needs currentMap,
-  // whereas rendering still waits for `/data` and country activation. This removes
-  // the previous sequential network wait from the post-login critical path.
   const serverStatePromise = fetchFromServer();
+  const cachedStatePromise = readCachedStateMeta();
   try {
     await ensureData();
   } catch (e) {
@@ -3012,65 +3253,57 @@ async function startApp() {
   _appStarted = true;
   applyRoleUI();
   showRoleBadge();
-
-  // Activate this map's country (cities, centroids, city stats) BEFORE any
-  // state restore / render — cityOf() and the city bar depend on it.
   applyCountry(currentMap);
-  // The «Районы» overlay (Tashkent districts) is Uzbekistan-only.
   const distBtn = document.getElementById('districts-toggle');
   if (distBtn) distBtn.style.display = COUNTRY === 'uz' ? '' : 'none';
 
-  // Load local state first so UI is immediately responsive
-  loadState();
-  buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
-  renderHeat(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
+  const legacyLocal = readLocalSnapshot();
+  const cachedState = await cachedStatePromise;
+  // Prefer a newer unsynchronised legacy edit; otherwise the IndexedDB manifest
+  // is the fastest safe first paint for this user and map.
+  const initial = legacyLocal && legacyLocal._clientTs > Date.parse((cachedState && cachedState._savedAt) || '')
+    ? legacyLocal : (cachedState || legacyLocal);
+  let initialRevision = '';
+  if (initial) {
+    initialRevision = stateRevision(initial);
+    await applyStartupSnapshot(initial);
+  } else {
+    renderCurrentState();
+  }
   wireEvents();
   stateReady = true;
   setTimeout(() => { if (map && map.invalidateSize) map.invalidateSize(); }, 60);
 
-  // Only fit bounds on first load (no saved city): frame what is actually drawn
-  // (uploaded layers + our points); fall back to the country's first city.
-  if (!hasCityFilter()) {
-    const framePts = visiblePts();
-    if (framePts.length) map.fitBounds(L.latLngBounds(framePts).pad(.05));
-    else if (CITIES[0] && CC[CITIES[0]]) map.setView(CC[CITIES[0]], 11);
-  }
-
-  // Hydrate from server. The request started alongside `/data`; newer local
-  // edits (by timestamp) still win over the server exactly as before.
   const serverState = await serverStatePromise;
-  let local = null;
-  try { local = JSON.parse(localStorage.getItem(storeKey())); } catch (e) {}
   const serverTs = serverState && serverState._savedAt ? Date.parse(serverState._savedAt) : 0;
-  const localTs  = local && local._clientTs ? local._clientTs : 0;
+  const localTs  = legacyLocal && legacyLocal._clientTs ? legacyLocal._clientTs : 0;
   const hasLayers = st => !!(st && Array.isArray(st.heatKeys) && st.heatKeys.some(k => k.startsWith('custom_')));
-  const localHasLayers  = hasLayers(local);
+  const localHasLayers = hasLayers(legacyLocal || cachedState);
   const serverHasLayers = hasLayers(serverState);
-  // Guard against the last-write-wins trap: a stale/empty local snapshot must
-  // not clobber a server state that still holds the uploaded layers (and vice
-  // versa). Only fall back to timestamps when both (or neither) have layers.
   let chosen;
-  if (serverHasLayers && !localHasLayers)      chosen = serverState;
-  else if (localHasLayers && !serverHasLayers) chosen = local;
-  else chosen = (localTs > serverTs && local) ? local : (serverState || null);
+  if (serverHasLayers && !localHasLayers) chosen = serverState;
+  else if (localHasLayers && !serverHasLayers) chosen = legacyLocal || cachedState;
+  else chosen = (localTs > serverTs && legacyLocal) ? legacyLocal : (serverState || cachedState || legacyLocal);
 
+  const chosenRevision = stateRevision(chosen);
+  if (chosen && chosenRevision !== initialRevision) {
+    await applyStartupSnapshot(chosen);
+  }
   if (chosen) {
-    applySnapshot(chosen);
-    try { localStorage.setItem(storeKey(), JSON.stringify(chosen)); } catch (e) {}
-    buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
-    renderHeat(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
+    // Keep legacy localStorage only as a compatibility/fallback snapshot. New
+    // startup reads use IndexedDB manifest and per-layer records instead.
+    if (!chosen._meta) {
+      try { localStorage.setItem(storeKey(), JSON.stringify(chosen)); } catch (_) {}
+    }
     if (chosen === serverState) {
       const savedAt = serverState._savedAt
         ? new Date(serverState._savedAt).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
         : '';
       setSyncBadge('ok', 'Обновлено' + (savedAt ? ' ' + savedAt : ''));
-      toast('Настройки загружены с сервера', 'ok');
     } else {
-      // local data was used (server unavailable or newer local edit) — update badge
       setSyncBadge('ok', 'Локальные данные');
     }
-  } else if (SERVER_URL && local && isAdmin()) {
-    // Server is empty (e.g. restarted) but admin has a local copy — restore it
+  } else if (SERVER_URL && legacyLocal && isAdmin()) {
     pushToServer(buildStateSnapshot());
   }
 }

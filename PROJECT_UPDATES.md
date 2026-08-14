@@ -181,3 +181,30 @@ Authenticated production was profiled on `app.js?v=20260814a` after the Render s
 The authenticated `/state?map=comdep` response returned HTTP 200 with 4,041,217 characters, six custom layers and a 1,215 ms response-header time; body read was 758 ms and JSON parsing 29 ms. The live client held 64,777 heat records and 6,871 visible points.
 
 Client-side rendering is no longer the bottleneck: cold visible `renderHeat()` was 24.8 ms, warm cached redraw 0.2 ms, custom markers 16.5 ms, recommendations 28.4 ms and UI rebuild 7.0 ms. The next meaningful improvements are a safe versioned IndexedDB cache for `/data`/`/state`, avoiding duplicate local/server hydration when snapshots match, and optionally splitting large saved-layer payloads into a lightweight first-paint representation plus lazy metadata.
+
+
+## 2026-08-14 — Metadata-first cache and lazy heat-layer loading
+
+### Purpose
+
+The authenticated client already rendered quickly after data reached the browser, but the protected startup still transferred a 1.52 MB `/data` object and a 4.04 MB full `/state` object on every new page load. This release replaces the state bootstrap with a revision-aware metadata manifest and on-demand layer records, while retaining the existing bearer/cookie authorization, legacy `/state` compatibility, exports and server-side state format.
+
+### Read API and revision model
+
+The server now exposes three protected read endpoints in addition to the unchanged legacy full-state route. `/data/meta` returns the dataset revision, `/state/meta?map=…` returns all UI settings, custom-point layers, heat-layer visual settings, stats and `recordCount` but omits every `recs` array, and `/state/layer?map=…&layer=…` returns records for exactly one saved heat layer. All three routes use `requireSession`; state routes retain `requireMapAccess`. The revision is the server `_savedAt` value, and the layer endpoint rejects keys not contained in the requested map’s saved `heatKeys`.
+
+The client stores the authenticated read cache in `hm-read-cache-v2` IndexedDB. Entries are scoped by authenticated user and map. The cache has separate versioned entries for the dataset, state manifest and each loaded layer, so a revision mismatch cannot combine settings from one server snapshot with records from another.
+
+### Startup and hydration behavior
+
+A repeat visit applies the cached dataset and compact state manifest immediately, then performs only lightweight `/data/meta` and `/state/meta` revalidation. When revisions match, it does not apply the snapshot a second time and does not re-download `/data`, full `/state`, or any previously cached layer records. The first visit obtains the compact state manifest and hydrates only layers that are visible or selected as the recommendation basis. Hidden heat layers remain as cards with server-provided point count and statistics, but their records are fetched once only when the user enables the layer, isolates it with Solo, or selects it as a recommendation basis.
+
+Autosave now keeps a compact manifest in localStorage for backward-compatible/offline fallback and writes full loaded layer arrays to IndexedDB. When an admin saves after a lazy startup, omitted records are explicitly marked. The server merges those omitted layers with its current state before writing, so changing a filter or UI setting cannot erase a hidden layer’s points. A successful save updates the local cache to the server-issued revision.
+
+### Compatibility and verification
+
+The full `/state` endpoint and full export/import snapshots are unchanged. Compact manifests preserve legacy visual defaults if an older layer omits an optional colour, ramp or opacity value. The asset cache-buster is now `app.js?v=20260814c`.
+
+An isolated local authenticated regression server tested login, compact manifest content, per-layer access control, lazy-save merge and record preservation. A browser smoke test verified: initial manifest with one visible Alpha layer and one hidden Beta layer; Alpha’s two records appeared immediately while Beta had `_recordsLoaded: false` and zero in-memory records; toggling Beta fetched and rendered its one record; and after removing the legacy localStorage snapshot, a repeat load requested only `/auth/me`, `/state/meta` and `/data/meta`. It made no full `/data`, full `/state` or `/state/layer` request and did not repeat hydration for the matching revision. Detailed evidence is in `qa/lazy-startup-test.md`.
+
+The client also prunes obsolete per-layer record entries for the current authenticated user/map whenever a newer state revision is cached, preventing retained multi-megabyte layers from accumulating across revisions.

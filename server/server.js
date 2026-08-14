@@ -332,6 +332,13 @@ app.get('/health', (_req, res) => {
 });
 
 // All data reads now require a valid server-side session.
+app.get('/data/meta', requireSession, async (_req, res) => {
+  noStore(res);
+  const data = await readState('dataset');
+  if (!data) return res.json({ empty: true });
+  res.json({ _app: 'hm-data-meta', _revision: data._savedAt || '', _v: data._v || 1 });
+});
+
 app.get('/data', requireSession, async (_req, res) => {
   noStore(res);
   const data = await readState('dataset');
@@ -355,12 +362,93 @@ app.post('/data', requireSession, requireAdmin, async (req, res) => {
   }
 });
 
+function layerStats(recs) {
+  const values = (Array.isArray(recs) ? recs : []).map(r => Number(r.vol) || 0).sort((a, b) => a - b);
+  const n = values.length;
+  const sum = values.reduce((total, value) => total + value, 0);
+  return {
+    n,
+    sum: Math.round(sum * 10) / 10,
+    max: values[n - 1] || 0,
+    p50: values[Math.floor(n * 0.5)] || 0,
+    p90: values[Math.floor(n * 0.9)] || 0.01,
+  };
+}
+
+function stateMetadata(state) {
+  const layers = {};
+  for (const [key, layer] of Object.entries(state.layers || {})) {
+    const { recs, ...meta } = layer || {};
+    layers[key] = {
+      ...meta,
+      recordCount: Array.isArray(recs) ? recs.length : 0,
+      // Snapshots written by the current client carry stats. Derive them for
+      // older snapshots so the metadata API stays backward compatible.
+      stats: meta.stats || layerStats(recs),
+    };
+  }
+  return {
+    ...state,
+    layers,
+    _meta: true,
+    _revision: state._savedAt || '',
+  };
+}
+
+// Compact startup manifest. It carries UI settings and layer summaries but not
+// the potentially multi-megabyte `recs` arrays; the client asks for visible or
+// requested layers separately.
+app.get('/state/meta', requireSession, requireMapAccess, async (req, res) => {
+  noStore(res);
+  const state = await readState(req.map);
+  if (!state) return res.json({ empty: true });
+  res.json(stateMetadata(state));
+});
+
+// Records for one heat layer. The requested key must exist in this map's saved
+// state, so callers cannot access arbitrary storage keys.
+app.get('/state/layer', requireSession, requireMapAccess, async (req, res) => {
+  noStore(res);
+  const state = await readState(req.map);
+  if (!state) return res.json({ empty: true });
+  const key = String(req.query.layer || '');
+  if (!Array.isArray(state.heatKeys) || !state.heatKeys.includes(key) || !state.layers || !state.layers[key]) {
+    return res.status(404).json({ error: 'Layer not found' });
+  }
+  const layer = state.layers[key];
+  res.json({
+    _app: 'hm-layer',
+    map: req.map,
+    key,
+    _revision: state._savedAt || '',
+    recs: Array.isArray(layer.recs) ? layer.recs : [],
+    stats: layer.stats || layerStats(layer.recs),
+  });
+});
+
+// Full-state response remains available for legacy tabs and state export flows.
 app.get('/state', requireSession, requireMapAccess, async (req, res) => {
   noStore(res);
   const state = await readState(req.map);
   if (!state) return res.json({ empty: true });
   res.json(state);
 });
+
+function mergeLazyState(previous, incoming) {
+  if (!incoming || !incoming._lazy || !previous || !previous.layers) return incoming;
+  const layers = { ...(incoming.layers || {}) };
+  for (const [key, nextLayer] of Object.entries(layers)) {
+    if (!nextLayer || !nextLayer._recordsOmitted) continue;
+    const previousLayer = previous.layers[key];
+    // Keep current records for a layer the browser intentionally did not fetch.
+    // The incoming metadata/settings still win, so this is safe for lazy startup.
+    if (previousLayer && Array.isArray(previousLayer.recs)) {
+      layers[key] = { ...previousLayer, ...nextLayer, recs: previousLayer.recs };
+    }
+    delete layers[key]._recordsOmitted;
+  }
+  return { ...incoming, layers, _lazy: false };
+}
 
 app.post('/state', requireSession, requireAdmin, requireMapAccess, async (req, res) => {
   noStore(res);
@@ -370,8 +458,10 @@ app.post('/state', requireSession, requireAdmin, requireMapAccess, async (req, r
   }
   body._savedAt = new Date().toISOString();
   try {
-    await writeState(req.map, body);
-    res.json({ ok: true, savedAt: body._savedAt });
+    const previous = body._lazy ? await readState(req.map) : null;
+    const next = mergeLazyState(previous, body);
+    await writeState(req.map, next);
+    res.json({ ok: true, savedAt: next._savedAt });
   } catch (e) {
     console.error('Write error:', e.message);
     res.status(500).json({ error: 'Failed to write state' });
