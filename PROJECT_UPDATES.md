@@ -146,3 +146,10 @@ The city selector now uses the same Manrope, tokenized palette, 100px pill radiu
 Commit `097aeb4` (`Optimise heatmap render and add bearer auth fallback`) was published to `main`. GitHub CI and GitHub Pages both completed successfully. The published page serves `app.js?v=20260813f` and `style.css?v=20260813e`; computed live city-filter styles are Manrope, 12px, 7px 14px padding and a 100px pill radius, with no kicker element.
 
 The Render health endpoint reported PostgreSQL storage and configured authentication. A cross-origin preflight from `https://ekzotik-inc.github.io` now returns `Access-Control-Allow-Headers: Content-Type, Authorization, X-API-Key, Content-Encoding`, the GitHub Pages origin, credentials support and `GET, POST, OPTIONS`. No production login credentials or production write endpoint were used in this release session, so the normal user login → protected data smoke test remains a safe follow-up in an authenticated browser session.
+
+
+### Final authenticated production smoke test — 2026-08-14
+
+After the user opened the authenticated browser session, the live client retained a tab-scoped session token and read `/auth/me` and `/data` successfully with status 200. The runtime loaded 6 heat layers, 64,777 heat-layer records and all 18 configured Uzbekistan cities.
+
+The city popover displayed 19 options including `Все города` and all 11 newly added cities. Tashkent and Nukus were selected together; the trigger displayed `Ташкент + 1` with count `2`, the City tab rendered a two-city aggregate, recommendations were limited to the selected cities, and the point badge changed to 2,602. Clearing the filter restored `Все города`, 6,871 visible points, an empty `selectedCities` snapshot and a green sync badge. The temporary UI selection was not left active.
