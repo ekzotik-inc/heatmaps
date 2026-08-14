@@ -153,3 +153,22 @@ The Render health endpoint reported PostgreSQL storage and configured authentica
 After the user opened the authenticated browser session, the live client retained a tab-scoped session token and read `/auth/me` and `/data` successfully with status 200. The runtime loaded 6 heat layers, 64,777 heat-layer records and all 18 configured Uzbekistan cities.
 
 The city popover displayed 19 options including `Все города` and all 11 newly added cities. Tashkent and Nukus were selected together; the trigger displayed `Ташкент + 1` with count `2`, the City tab rendered a two-city aggregate, recommendations were limited to the selected cities, and the point badge changed to 2,602. Clearing the filter restored `Все города`, 6,871 visible points, an empty `selectedCities` snapshot and a green sync badge. The temporary UI selection was not left active.
+
+
+## 2026-08-14 — Faster authenticated layer startup
+
+### Root cause
+
+Authenticated Com Dep startup was delayed by two large reads and a client-side hydration bottleneck. The browser measured a 1.52 MB `/data` payload and a 4.04 MB `/state` payload containing six custom layers and 64,777 heat records. The earlier path requested `/state` only after `/data` and the first local render. In addition, it recalculated the nearest own point (`nd`) and the local-demand density (`ld`/`lc`) for every saved record during each state hydration.
+
+The nearest-point profiler found 12.64 seconds of CPU work for 64,777 records with 103 own points; 7.36 seconds belonged to the 39,525-record HST CC layer. The old grid fell back to long repeated Haversine scans for records far from the own-point network.
+
+### Changes
+
+`startApp()` now starts authenticated `/data` and `/state` reads in parallel after a map is chosen. The app still renders available local state first and retains the existing server/local timestamp resolution; only the network wait was removed from the critical path.
+
+Nearest-own-point lookup now uses an exact VP-tree over the Haversine metric. The live validation compared every new `nd` value against the existing production values for all 64,777 records: zero mismatches, maximum delta 0, and 48.7 ms for the full pass after a 0.5 ms tree build. The local-demand grid is also finer (0.005°) and its calculated `ld`/`lc` values matched the previous exact 700 m result for all 39,525 HST CC records. Hydration defers that density work until a layer is selected as the recommendation basis, so hidden layers do not block first map paint.
+
+### Live verification
+
+Commit `555921f` was published successfully through GitHub CI and Pages. The live `app.js?v=20260814a` bundle loaded all six custom layers and 64,777 records. After the authentication response, `/data` and `/state?map=comdep` began together at approximately 5,847 ms and completed at 8,073 ms and 7,963 ms; the previous sequential startup could not overlap these large reads. The observed session then showed a started app with 6,871 visible points. Render wake-up time remains dependent on the Render free service, but data transfer and layer hydration no longer add the former long client-side computation.

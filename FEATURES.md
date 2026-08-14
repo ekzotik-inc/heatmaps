@@ -1,7 +1,7 @@
 # Heatmap App — Feature Tracking Spreadsheet
 
 > **Legend** — Status: ✅ OK · ❌ Bug · ⚠️ UX issue · 🔲 Not tested  
-> Last updated: 2026-08-13
+> Last updated: 2026-08-14
 
 ---
 
@@ -183,6 +183,7 @@
 | S7 | Viewer loads (server has data) | Server state applied; toast "Настройки загружены с сервера" | Viewer | ✅ | |
 | S8 | Viewer loads (server fails) | Falls back to localStorage; badge "Локальные данные" | Viewer | ✅ | |
 | S9 | Server times out (55 s) | Badge "Сервер не отвечает (перезагрузите)" | All | ✅ | |
+| S10 | Authenticated startup with large custom layers | `/data` and `/state` start concurrently; local state remains usable while the server snapshot hydrates; exact nearest-point lookup uses VP-tree and hidden-layer density is deferred | All | ✅ | Live bundle `20260814a`; 64,777 records loaded, 0 nearest-distance mismatches |
 
 ---
 
