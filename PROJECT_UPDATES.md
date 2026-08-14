@@ -172,3 +172,12 @@ Nearest-own-point lookup now uses an exact VP-tree over the Haversine metric. Th
 ### Live verification
 
 Commit `555921f` was published successfully through GitHub CI and Pages. The live `app.js?v=20260814a` bundle loaded all six custom layers and 64,777 records. After the authentication response, `/data` and `/state?map=comdep` began together at approximately 5,847 ms and completed at 8,073 ms and 7,963 ms; the previous sequential startup could not overlap these large reads. The observed session then showed a started app with 6,871 visible points. Render wake-up time remains dependent on the Render free service, but data transfer and layer hydration no longer add the former long client-side computation.
+
+
+## 2026-08-14 — Production load profile after Render Starter
+
+Authenticated production was profiled on `app.js?v=20260814a` after the Render service moved to Starter. Three no-store reads of `/data` returned HTTP 200 with a 1,515,178-character JSON payload. The first response took 5,604 ms during residual warm-up; subsequent samples took 1,168 ms and 981 ms to response headers. Body reads took 575–902 ms and JSON parsing 8–13 ms.
+
+The authenticated `/state?map=comdep` response returned HTTP 200 with 4,041,217 characters, six custom layers and a 1,215 ms response-header time; body read was 758 ms and JSON parsing 29 ms. The live client held 64,777 heat records and 6,871 visible points.
+
+Client-side rendering is no longer the bottleneck: cold visible `renderHeat()` was 24.8 ms, warm cached redraw 0.2 ms, custom markers 16.5 ms, recommendations 28.4 ms and UI rebuild 7.0 ms. The next meaningful improvements are a safe versioned IndexedDB cache for `/data`/`/state`, avoiding duplicate local/server hydration when snapshots match, and optionally splitting large saved-layer payloads into a lightweight first-paint representation plus lazy metadata.
