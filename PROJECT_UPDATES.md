@@ -208,3 +208,14 @@ The full `/state` endpoint and full export/import snapshots are unchanged. Compa
 An isolated local authenticated regression server tested login, compact manifest content, per-layer access control, lazy-save merge and record preservation. A browser smoke test verified: initial manifest with one visible Alpha layer and one hidden Beta layer; Alpha’s two records appeared immediately while Beta had `_recordsLoaded: false` and zero in-memory records; toggling Beta fetched and rendered its one record; and after removing the legacy localStorage snapshot, a repeat load requested only `/auth/me`, `/state/meta` and `/data/meta`. It made no full `/data`, full `/state` or `/state/layer` request and did not repeat hydration for the matching revision. Detailed evidence is in `qa/lazy-startup-test.md`.
 
 The client also prunes obsolete per-layer record entries for the current authenticated user/map whenever a newer state revision is cached, preventing retained multi-megabyte layers from accumulating across revisions.
+
+
+### Final production verification — commit `873b149`
+
+GitHub CI and Pages completed successfully, Render `/health` returned PostgreSQL-backed healthy status, and unauthenticated `/data/meta` and `/state/meta?map=comdep` correctly returned 401. The live bundle served `app.js?v=20260814c`.
+
+On the first authenticated production run, `/state/meta?map=comdep` returned in 1.71 s and `/data` in 5.01 s. Only the visible `Точки с инвестициями` layer (6,871 records) and recommendation basis `отгрузка | сигареты` layer (10,608 records) were fetched through `/state/layer`; the other four layers remained deferred. No full `/state` request occurred.
+
+The production repeat-load trace made only `/auth/login`, `/auth/me`, `/state/meta?map=comdep` and `/data/meta` requests. It made no full `/data`, full `/state` or `/state/layer` request. The two previously used layers were restored from IndexedDB, while the other four stayed unloaded. This confirms revision-based cache reuse and removal of duplicate hydration in the authenticated browser.
+
+A read-only on-demand probe of HST CC confirmed that the 39,525-record payload still takes 30.31 s to transfer/read on selection; client hydration after arrival took 0.2 ms. The deferred design keeps that cost out of first paint, while payload splitting or a server-side compact representation remains the next separate optimization for users who explicitly enable HST CC.
