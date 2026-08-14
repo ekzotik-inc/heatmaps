@@ -99,66 +99,53 @@ function fmtD(m) {
 }
 
 /* ── SPATIAL INDEX (nearest-point lookups) ────────────────────────────────
-   Наивный поиск ближайшей точки — O(записей × наших точек); при 20k записей и
-   1k точек это десятки миллионов haversine на каждую загрузку слоя И на каждую
-   гидрацию состояния. Грид по ~0.05° (≈5,5 км) сводит это к нескольким ячейкам
-   вокруг запроса. Обход по «кольцам» останавливается, только когда найденное
-   расстояние заведомо меньше всего, что может лежать за кольцом, — результат
-   совпадает с брутфорсом. */
-const IX_CELL = 0.05, M_PER_DEG = 111320;
+   Hydrating a saved map needs the nearest of our points for every heat record.
+   The old degree-grid fell back to a full scan whenever a record was far from
+   our network, which turned 64k records into millions of Haversine calls. A
+   VP-tree uses Haversine itself as the metric: triangle-inequality pruning keeps
+   the nearest result exact while making sparse, far-away records inexpensive. */
+function buildVpTree(points) {
+  if (!points.length) return null;
+  const point = points[points.length - 1];
+  if (points.length === 1) return { point, radius: 0, inner: null, outer: null };
+  const ranked = points.slice(0, -1)
+    .map(p => ({ point: p, dist: hav(point.lat, point.lon, p.lat, p.lon) }))
+    .sort((a, b) => a.dist - b.dist);
+  const mid = Math.floor(ranked.length / 2);
+  return {
+    point,
+    radius: ranked[mid].dist,
+    inner: buildVpTree(ranked.slice(0, mid + 1).map(x => x.point)),
+    outer: buildVpTree(ranked.slice(mid + 1).map(x => x.point)),
+  };
+}
 function buildPtIndex(pts) {
-  const cells = new Map(), arr = [];
-  let maxAbsLat = 0;
+  const arr = [];
   for (const p of pts) {
     const la = Array.isArray(p) ? p[0] : p.lat, lo = Array.isArray(p) ? p[1] : p.lon;
-    if (!isFinite(la) || !isFinite(lo)) continue;
-    if (Math.abs(la) > maxAbsLat) maxAbsLat = Math.abs(la);
-    const i = arr.push({ lat: la, lon: lo, ref: p }) - 1;
-    const key = Math.floor(la / IX_CELL) + '|' + Math.floor(lo / IX_CELL);
-    const c = cells.get(key);
-    if (c) c.push(i); else cells.set(key, [i]);
+    if (isFinite(la) && isFinite(lo)) arr.push({ lat: la, lon: lo, ref: p });
   }
-  // Самая «северная» точка индекса задаёт минимальный масштаб долготы — только
-  // с ним нижняя оценка расстояния до следующих колец остаётся корректной.
-  return { cells, arr, minCos: Math.cos(maxAbsLat * Math.PI / 180) };
+  return { arr, tree: buildVpTree(arr) };
 }
 function nearestPt(ix, lat, lon) {
-  const { cells, arr } = ix;
-  if (!arr.length) return null;
-  const ci = Math.floor(lat / IX_CELL), cj = Math.floor(lon / IX_CELL);
-  // Долгота «сжимается» с широтой — берём самый слабый (безопасный) масштаб
-  // из широты запроса и самой северной точки индекса.
-  const lonScale = Math.max(Math.min(Math.cos(lat * Math.PI / 180), ix.minCos), 0.05);
-  let best = Infinity, bestRef = null, settled = false;
-  const scan = c => {
-    for (const idx of c) {
-      const p = arr[idx], d = hav(lat, lon, p.lat, p.lon);
-      if (d < best) { best = d; bestRef = p.ref; }
+  if (!ix.arr.length) return null;
+  let best = Infinity, bestRef = null;
+  const visit = node => {
+    if (!node) return;
+    const dist = hav(lat, lon, node.point.lat, node.point.lon);
+    if (dist < best) { best = dist; bestRef = node.point.ref; }
+    // Visit the more promising half first, then only the other half when the
+    // current best-radius circle can still intersect it. This is exact for the
+    // Haversine metric and avoids a distance scan through every own point.
+    if (dist < node.radius) {
+      if (dist - best <= node.radius) visit(node.inner);
+      if (dist + best >= node.radius) visit(node.outer);
+    } else {
+      if (dist + best >= node.radius) visit(node.outer);
+      if (dist - best <= node.radius) visit(node.inner);
     }
   };
-  for (let ring = 0; ring <= 60 && !settled; ring++) {
-    if (ring === 0) {
-      const c = cells.get(ci + '|' + cj); if (c) scan(c);
-    } else {
-      // Обходим только рамку кольца: на верхней/нижней строке — все столбцы,
-      // на остальных — лишь два крайних (иначе обход стал бы O(ring³)).
-      for (let di = -ring; di <= ring; di++) {
-        const edge = Math.abs(di) === ring;
-        for (let dj = -ring; dj <= ring; dj += edge ? 1 : 2 * ring) {
-          const c = cells.get((ci + di) + '|' + (cj + dj)); if (c) scan(c);
-        }
-      }
-    }
-    // Всё, что дальше этого кольца, отстоит минимум на ring ячеек по одной из
-    // осей — если найденное ближе, дальше искать нечего.
-    if (bestRef && best <= ring * IX_CELL * M_PER_DEG * lonScale) settled = true;
-  }
-  // Оценка не сомкнулась за 60 колец (~330 км) — точки разрежены, считаем
-  // честно по всем: гарантируем тот же ответ, что и брутфорс.
-  if (!settled) {
-    best = Infinity; bestRef = null;
-    for (const p of arr) { const d = hav(lat, lon, p.lat, p.lon); if (d < best) { best = d; bestRef = p.ref; } }
-  }
+  visit(ix.tree);
   return bestRef ? { dist: best, ref: bestRef } : null;
 }
 
@@ -679,6 +666,9 @@ function renderRecs() {
     return;
   }
   lastBasisName = d.name;
+  // `ld/lc` is needed only for the currently selected recommendation basis.
+  // Deferred hydration keeps hidden layers from blocking the first map paint.
+  ensureLayerDensity(d);
 
   // Compute candidates
   const cand = d.recs
@@ -1914,19 +1904,26 @@ function reenrichAll() {
   renderRecs();
 }
 
-function enrich(recs) {
-  enrichNd(recs);
-  const grid = {};
+// The former 0.01° grid made a single cell roughly 1 km tall. Dense layers
+// therefore compared far too many point pairs during startup. A 0.005° grid
+// keeps the same exact 700 m Haversine criterion but narrows candidates before
+// that calculation; ±2 cells safely covers the radius throughout UZ and KG.
+const DENSITY_GRID = 200;
+const DENSITY_NEIGHBOURS = 2;
+function enrichLocalDemand(recs) {
+  const grid = new Map();
   recs.forEach((s, i) => {
-    const k = Math.round(s.lat * 100) + '_' + Math.round(s.lon * 100);
-    (grid[k] = grid[k] || []).push(i);
+    const la = Math.floor(s.lat * DENSITY_GRID), lo = Math.floor(s.lon * DENSITY_GRID);
+    const key = la + '_' + lo;
+    const bucket = grid.get(key);
+    if (bucket) bucket.push(i); else grid.set(key, [i]);
   });
   for (const s of recs) {
     let ld = 0, lc = 0;
-    const kla = Math.round(s.lat * 100), klo = Math.round(s.lon * 100);
-    for (let dla = -1; dla <= 1; dla++) {
-      for (let dlo = -1; dlo <= 1; dlo++) {
-        const arr = grid[(kla + dla) + '_' + (klo + dlo)];
+    const kla = Math.floor(s.lat * DENSITY_GRID), klo = Math.floor(s.lon * DENSITY_GRID);
+    for (let dla = -DENSITY_NEIGHBOURS; dla <= DENSITY_NEIGHBOURS; dla++) {
+      for (let dlo = -DENSITY_NEIGHBOURS; dlo <= DENSITY_NEIGHBOURS; dlo++) {
+        const arr = grid.get((kla + dla) + '_' + (klo + dlo));
         if (!arr) continue;
         for (const j of arr) {
           const t = recs[j];
@@ -1937,7 +1934,17 @@ function enrich(recs) {
     s.ld = Math.round(ld * 100) / 100;
     s.lc = lc;
   }
+  // Array metadata is intentionally non-serialised; saved snapshots contain
+  // only source fields and reconstruct density only when recommendations need it.
+  recs._densityReady = true;
   return recs;
+}
+function ensureLayerDensity(d) {
+  if (d && d.recs && !d.recs._densityReady) enrichLocalDemand(d.recs);
+}
+function enrich(recs, ix) {
+  enrichNd(recs, ix);
+  return enrichLocalDemand(recs);
 }
 
 function statsOf(recs) {
@@ -2020,6 +2027,9 @@ function applySnapshot(st) {
     // Restore custom point layers without their Leaflet groups (re-created on render)
     customPtLayers = st.customPtLayers.map(l => ({ ...l, _group: null }));
   }
+  // All hydrated heat layers share the same closest-own-point lookup. Build it
+  // once rather than rebuilding it per layer while the map is starting.
+  const ownPointIndex = buildPtIndex(ourPts());
   // Only user-uploaded layers are shown; drop legacy cig/sticks/combined keys
   // that older saved states may still carry.
   if (Array.isArray(st.heatKeys)) heatKeys = st.heatKeys.filter(k => k.startsWith('custom_'));
@@ -2031,10 +2041,13 @@ function applySnapshot(st) {
       if (typeof sv.ramp    === 'string') DS[k].ramp    = sv.ramp;
       if (typeof sv.opacity === 'number') DS[k].opacity = sv.opacity;
       if (sv.recs) {
-        // Saved recs are slim (see slimRecs) — rebuild derived fields:
-        // fil (city) from coords, nd/ld/lc via enrich, and stats.
+        // Saved recs are slim (see slimRecs). Rebuild city and nearest-own-point
+        // fields during hydration; defer expensive local-demand (`ld/lc`) work
+        // until this layer is selected as the recommendation basis.
         sv.recs.forEach(r => { r.fil = cityOf(r.lat, r.lon); });
-        DS[k].recs = enrich(sv.recs);
+        DS[k].recs = sv.recs;
+        enrichNd(DS[k].recs, ownPointIndex);
+        DS[k].recs._densityReady = false;
         DS[k].stats = statsOf(DS[k].recs);
         DS[k]._userData = true;
       } else if (!DS[k].recs) {
@@ -2984,6 +2997,11 @@ function applyRoleUI() { document.body.classList.toggle('viewer', !isAdmin()); }
 let _appStarted = false;
 async function startApp() {
   if (_appStarted) return;
+  // The saved custom layers live in `/state`, while base data lives in `/data`.
+  // Start both authenticated reads immediately: the former only needs currentMap,
+  // whereas rendering still waits for `/data` and country activation. This removes
+  // the previous sequential network wait from the post-login critical path.
+  const serverStatePromise = fetchFromServer();
   try {
     await ensureData();
   } catch (e) {
@@ -3018,8 +3036,9 @@ async function startApp() {
     else if (CITIES[0] && CC[CITIES[0]]) map.setView(CC[CITIES[0]], 11);
   }
 
-  // Hydrate from server. Newer local edits (by timestamp) win over the server.
-  const serverState = await fetchFromServer();
+  // Hydrate from server. The request started alongside `/data`; newer local
+  // edits (by timestamp) still win over the server exactly as before.
+  const serverState = await serverStatePromise;
   let local = null;
   try { local = JSON.parse(localStorage.getItem(storeKey())); } catch (e) {}
   const serverTs = serverState && serverState._savedAt ? Date.parse(serverState._savedAt) : 0;
