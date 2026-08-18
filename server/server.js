@@ -192,6 +192,7 @@ function noStore(res) {
 // ---------------------------------------------------------------------------
 let db = null;
 const STATE_CACHE_TTL_MS = 30_000;
+const DATA_CACHE_TTL_MS = 5 * 60_000;
 const stateReadCache = new Map();
 const stateReadInFlight = new Map();
 const CHUNK_CACHE_TTL_MS = 30_000;
@@ -240,7 +241,8 @@ function stateFileFor(key) {
 
 async function readState(key) {
   const hit = stateReadCache.get(key);
-  if (hit && Date.now() - hit.at < STATE_CACHE_TTL_MS) return hit.value;
+  const ttl = key === 'dataset' ? DATA_CACHE_TTL_MS : STATE_CACHE_TTL_MS;
+  if (hit && Date.now() - hit.at < ttl) return hit.value;
   if (stateReadInFlight.has(key)) return stateReadInFlight.get(key);
   const pending = (async () => {
     let value = null;
