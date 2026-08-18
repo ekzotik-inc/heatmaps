@@ -314,3 +314,12 @@ The audit also found a high-priority production configuration issue: when `ALLOW
 Render `hm-server` environment was corrected to the exact production origin `ALLOWED_ORIGINS=https://ekzotik-inc.github.io`. No other environment variables were changed. The backend received a small CORS error handler in `0cfa146` so blocked origins return HTTP 403 with a generic JSON error instead of HTTP 500.
 
 Production verification after redeploy: the GitHub Pages origin receives HTTP 204 with `Access-Control-Allow-Origin: https://ekzotik-inc.github.io` and credentials enabled; an unrelated `https://evil.example` origin receives HTTP 403 and no `Access-Control-Allow-Origin`. Health remains PostgreSQL-backed and auth configured. CI passed; no map data or write endpoints were changed.
+
+
+## 2026-08-18 — API key and authorization token audit
+
+A complete defensive audit of server-side credentials, browser session materials, admin write authorization, CORS/CSRF behavior, production responses, Git history and published assets was completed. The audit was read-only: it did not call a successful write endpoint, export data, guess passwords, replay copied tokens, or change Render secrets. Full redacted evidence and the prioritized risk register are in `qa/token-api-audit-20260818.md`.
+
+Production probes confirmed login HTTP 200, an eight-hour signed session, `HttpOnly; Secure; SameSite=None` cookie flags, bearer `/auth/me` HTTP 200, cookie-only `/auth/me` HTTP 200, KG role isolation with non-KG map HTTP 403, missing API-key write rejection HTTP 401, tampered bearer rejection HTTP 401, exact GitHub Pages CORS HTTP 204 and foreign-origin rejection HTTP 403. A scan of published `index.html` and `app.js?v=20260814g` found no password hash, private key, provider token, or hardcoded secret signature. Current `npm audit --omit=dev` reports zero production vulnerabilities.
+
+The remaining high-priority risks are browser-readable bearer/session material, the global admin API key in localStorage, absent login throttling/dummy-hash handling and the need to rotate the KG credential because it was previously shared in conversation context. Planned hardening items include SRI or self-hosting for the two cdnjs JavaScript libraries, staged CSP, server-side token revocation, explicit CSRF defense, constant-time API-key comparison, PostgreSQL certificate verification and reconciliation of `render.yaml` with the live Starter service. No optional code hardening was applied without a separate user confirmation.
