@@ -300,3 +300,10 @@ Local syntax/lint checks passed, the OSM tile returned HTTP 200 with production 
 A fresh unauthenticated production page reached DOMContentLoaded in about 355 ms and load in about 434 ms; visible OpenStreetMap tile requests were not the main bottleneck. The authenticated KG probe showed login about 1.84 s, parallel `/data` about 2.25 s for a 1.6 MB JSON payload, and `/state/meta` about 2.37 s on the first probe. Repeat calls were `/data` 1.19 s and `/state/meta` 0.49 s.
 
 Added a five-minute in-memory cache for the dataset read in `hm-server`, while retaining 30-second state cache and invalidation after writes. Production health stayed PostgreSQL-backed; CI and Pages passed; read-only startup probe passed without modifying map data.
+
+
+## 2026-08-18 — Defensive security audit
+
+A read-only security audit confirmed that unauthenticated reads and writes are rejected, map roles are enforced, admin writes require both the admin role and `X-API-Key`, uploaded text is escaped before popups/tooltips, and no environment/secret files are tracked in Git. Dependency audit found no high or critical production vulnerabilities and one low body-parser advisory with an available fix.
+
+The audit also found a high-priority production configuration issue: when `ALLOWED_ORIGINS` is empty, the CORS middleware reflects arbitrary origins while allowing credentials. A preflight from an unrelated origin received `Access-Control-Allow-Origin` for that origin and `Access-Control-Allow-Credentials: true`. The server should be restricted to the exact GitHub Pages origin before treating the dataset as strongly protected. No production configuration was changed during the audit.
