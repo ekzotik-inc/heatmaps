@@ -293,3 +293,10 @@ Production showed a 2GIS unsupported-service overlay because the application sti
 For immediate recovery without adding a new secret or paid map API dependency, the basemap was moved to the standard OpenStreetMap XYZ endpoint with visible attribution. Heatmap layers, city filters, markers, map controls, state storage and all user data remained unchanged. The cache-buster was raised to `app.js?v=20260814g`.
 
 Local syntax/lint checks passed, the OSM tile returned HTTP 200 with production Referer/User-Agent, GitHub CI and Pages passed, and live production shows OpenStreetMap tiles and attribution with no 2GIS unsupported-service overlay.
+
+
+## 2026-08-18 — Startup latency measurement and dataset cache (`f84675c`)
+
+A fresh unauthenticated production page reached DOMContentLoaded in about 355 ms and load in about 434 ms; visible OpenStreetMap tile requests were not the main bottleneck. The authenticated KG probe showed login about 1.84 s, parallel `/data` about 2.25 s for a 1.6 MB JSON payload, and `/state/meta` about 2.37 s on the first probe. Repeat calls were `/data` 1.19 s and `/state/meta` 0.49 s.
+
+Added a five-minute in-memory cache for the dataset read in `hm-server`, while retaining 30-second state cache and invalidation after writes. Production health stayed PostgreSQL-backed; CI and Pages passed; read-only startup probe passed without modifying map data.
