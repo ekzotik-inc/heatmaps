@@ -307,3 +307,10 @@ Added a five-minute in-memory cache for the dataset read in `hm-server`, while r
 A read-only security audit confirmed that unauthenticated reads and writes are rejected, map roles are enforced, admin writes require both the admin role and `X-API-Key`, uploaded text is escaped before popups/tooltips, and no environment/secret files are tracked in Git. Dependency audit found no high or critical production vulnerabilities and one low body-parser advisory with an available fix.
 
 The audit also found a high-priority production configuration issue: when `ALLOWED_ORIGINS` is empty, the CORS middleware reflects arbitrary origins while allowing credentials. A preflight from an unrelated origin received `Access-Control-Allow-Origin` for that origin and `Access-Control-Allow-Credentials: true`. The server should be restricted to the exact GitHub Pages origin before treating the dataset as strongly protected. No production configuration was changed during the audit.
+
+
+## 2026-08-18 — Production CORS allowlist fix
+
+Render `hm-server` environment was corrected to the exact production origin `ALLOWED_ORIGINS=https://ekzotik-inc.github.io`. No other environment variables were changed. The backend received a small CORS error handler in `0cfa146` so blocked origins return HTTP 403 with a generic JSON error instead of HTTP 500.
+
+Production verification after redeploy: the GitHub Pages origin receives HTTP 204 with `Access-Control-Allow-Origin: https://ekzotik-inc.github.io` and credentials enabled; an unrelated `https://evil.example` origin receives HTTP 403 and no `Access-Control-Allow-Origin`. Health remains PostgreSQL-backed and auth configured. CI passed; no map data or write endpoints were changed.
