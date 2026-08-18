@@ -345,6 +345,13 @@ app.use(cors({
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'Content-Encoding'],
 }));
+app.use((err, _req, res, next) => {
+  if (err && String(err.message || '').startsWith('CORS:')) {
+    noStore(res);
+    return res.status(403).json({ error: 'Origin not allowed' });
+  }
+  next(err);
+});
 app.use(compression());
 
 // Login has a small body limit and is the only POST route allowed before the
