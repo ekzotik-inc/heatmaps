@@ -27,3 +27,8 @@ https://tile.openstreetmap.org/{z}/{x}/{y}.png
 Leaflet continues to request only the visible viewport tiles. Attribution was updated to the visible OpenStreetMap contributors link. A browser-like request with the production GitHub Pages Referer and an identifiable application User-Agent returned HTTP 200; an anonymous curl without identification was blocked according to OSM tile policy.
 
 Heatmap layers, markers, city filters, viewport logic and application data are independent from the basemap and were not changed.
+
+
+## Production verification
+
+Commit `83ef06f` passed GitHub CI and Pages deployment. The live page serves `app.js?v=20260814g`. The production DOM reports OpenStreetMap attribution and loaded tile URLs under `https://tile.openstreetmap.org/...`; no `maps.2gis.com` tile reference or unsupported-service message is present. The Leaflet map, custom controls and heatmap canvas initialization remain present. No login, state write, or map data mutation was used for this basemap verification.

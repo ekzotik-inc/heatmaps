@@ -284,3 +284,12 @@ Implemented five load/cost optimizations without changing map data: removed the 
 The PostgreSQL schema uses `app_state.key` as its primary key, so the state query already has the correct index. No speculative or redundant secondary index was added. The server-side read coalescing reduces duplicate concurrent queries while preserving the existing revision and lazy-save semantics.
 
 Local syntax, lint and whitespace checks passed. GitHub CI and Pages deployment passed. Render shows `75a1f29` live. Production health remains `storage: postgresql`. Read-only KG smoke test passed: login 200, `/state/meta?map=kg` 200, first compact chunk 200 with 4,000 records, repeated identical chunk 200 with 4,000 records, same revision. No write endpoint or Render data/configuration was changed during verification.
+
+
+## 2026-08-18 — Replace deprecated 2GIS basemap tiles (`83ef06f`)
+
+Production showed a 2GIS unsupported-service overlay because the application still used the legacy URL `https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1`. The current official 2GIS Raster Tiles API requires a versioned `/v2/tiles/{tileset}/{z}/{x}/{y}.png?key=...` endpoint and an API key.
+
+For immediate recovery without adding a new secret or paid map API dependency, the basemap was moved to the standard OpenStreetMap XYZ endpoint with visible attribution. Heatmap layers, city filters, markers, map controls, state storage and all user data remained unchanged. The cache-buster was raised to `app.js?v=20260814g`.
+
+Local syntax/lint checks passed, the OSM tile returned HTTP 200 with production Referer/User-Agent, GitHub CI and Pages passed, and live production shows OpenStreetMap tiles and attribution with no 2GIS unsupported-service overlay.
