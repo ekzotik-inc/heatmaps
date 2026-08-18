@@ -193,6 +193,26 @@ function noStore(res) {
 let db = null;
 const STATE_CACHE_TTL_MS = 30_000;
 const stateReadCache = new Map();
+const stateReadInFlight = new Map();
+const CHUNK_CACHE_TTL_MS = 30_000;
+const CHUNK_CACHE_MAX_ENTRIES = 16;
+const layerChunkCache = new Map();
+
+function clearLayerChunkCache(map) {
+  const prefix = String(map || '') + '|';
+  for (const key of layerChunkCache.keys()) {
+    if (key.startsWith(prefix)) layerChunkCache.delete(key);
+  }
+}
+
+function putLayerChunkCache(key, value) {
+  layerChunkCache.set(key, { value, at: Date.now() });
+  while (layerChunkCache.size > CHUNK_CACHE_MAX_ENTRIES) {
+    const oldest = layerChunkCache.keys().next().value;
+    if (oldest == null) break;
+    layerChunkCache.delete(oldest);
+  }
+}
 
 async function initDb() {
   if (!DATABASE_URL) return;
@@ -221,26 +241,37 @@ function stateFileFor(key) {
 async function readState(key) {
   const hit = stateReadCache.get(key);
   if (hit && Date.now() - hit.at < STATE_CACHE_TTL_MS) return hit.value;
-  let value = null;
-  if (db) {
-    try {
-      const r = await db.query('SELECT json FROM app_state WHERE key = $1', [key]);
-      value = r.rows.length ? JSON.parse(r.rows[0].json) : null;
-    } catch (e) {
-      console.error('DB read error:', e.message);
-      value = null;
+  if (stateReadInFlight.has(key)) return stateReadInFlight.get(key);
+  const pending = (async () => {
+    let value = null;
+    if (db) {
+      try {
+        // `key` is the PRIMARY KEY of app_state; concurrent reads for the same
+        // map are coalesced so startup/meta/chunk requests share one DB query.
+        const r = await db.query('SELECT json FROM app_state WHERE key = $1', [key]);
+        value = r.rows.length ? JSON.parse(r.rows[0].json) : null;
+      } catch (e) {
+        console.error('DB read error:', e.message);
+        value = null;
+      }
+    } else {
+      try {
+        const f = stateFileFor(key);
+        if (fs.existsSync(f)) value = JSON.parse(fs.readFileSync(f, 'utf8'));
+      } catch (e) {
+        console.error('Failed to read state file:', e.message);
+        value = null;
+      }
     }
-  } else {
-    try {
-      const f = stateFileFor(key);
-      if (fs.existsSync(f)) value = JSON.parse(fs.readFileSync(f, 'utf8'));
-    } catch (e) {
-      console.error('Failed to read state file:', e.message);
-      value = null;
-    }
+    if (value) stateReadCache.set(key, { value, at: Date.now() });
+    return value;
+  })();
+  stateReadInFlight.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    if (stateReadInFlight.get(key) === pending) stateReadInFlight.delete(key);
   }
-  if (value) stateReadCache.set(key, { value, at: Date.now() });
-  return value;
 }
 
 async function writeState(key, data) {
@@ -485,7 +516,20 @@ app.get('/state/layer/chunk', requireSession, requireMapAccess, async (req, res)
     return res.status(404).json({ error: 'Layer not found' });
   }
   const layer = state.layers[key];
-  res.json(compactLayerChunk(layer.recs, req.query.offset, req.query.limit, state._savedAt || '', key, req.map));
+  const revision = state._savedAt || '';
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+  const limit = Math.max(500, Math.min(Number(req.query.limit) || 4000, 5000));
+  // The first chunk is the latency-critical response. Cache only offset 0 to
+  // keep memory bounded; later chunks remain streamed and revision-safe.
+  const cacheKey = `${req.map}|${revision}|${key}|${offset}|${limit}`;
+  if (offset === 0) {
+    const hit = layerChunkCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < CHUNK_CACHE_TTL_MS) return res.json(hit.value);
+    if (hit) layerChunkCache.delete(cacheKey);
+  }
+  const payload = compactLayerChunk(layer.recs, offset, limit, revision, key, req.map);
+  if (offset === 0) putLayerChunkCache(cacheKey, payload);
+  res.json(payload);
 });
 
 // Records for one heat layer. The requested key must exist in this map's saved
@@ -544,6 +588,7 @@ app.post('/state', requireSession, requireAdmin, requireMapAccess, async (req, r
     const previous = body._lazy ? await readState(req.map) : null;
     const next = mergeLazyState(previous, body);
     await writeState(req.map, next);
+    clearLayerChunkCache(req.map);
     res.json({ ok: true, savedAt: next._savedAt });
   } catch (e) {
     console.error('Write error:', e.message);

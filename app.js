@@ -2699,20 +2699,30 @@ function expandLayerChunk(payload) {
     return r;
   });
 }
+const _layerChunkInFlight = new Map();
 async function fetchLayerChunk(key, offset) {
   const chunkKey = cacheKey('state-chunk', _activeStateRevision + ':' + key + ':' + offset);
   const cached = await cacheGet(chunkKey);
   if (cached && cached.payload) return cached.payload;
-  const res = await authFetch(SERVER_URL + '/state/layer/chunk?map=' + encodeURIComponent(currentMap) + '&layer=' + encodeURIComponent(key) + '&offset=' + offset + '&limit=' + CHUNK_SIZE, {
-    signal: AbortSignal.timeout(55000),
-  });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  const payload = await res.json();
-  if (!payload || payload._app !== 'hm-layer-chunk' || payload.key !== key || payload._revision !== _activeStateRevision) {
-    throw new Error('STALE_LAYER_CHUNK');
+  if (_layerChunkInFlight.has(chunkKey)) return _layerChunkInFlight.get(chunkKey);
+  const pending = (async () => {
+    const res = await authFetch(SERVER_URL + '/state/layer/chunk?map=' + encodeURIComponent(currentMap) + '&layer=' + encodeURIComponent(key) + '&offset=' + offset + '&limit=' + CHUNK_SIZE, {
+      signal: AbortSignal.timeout(55000),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const payload = await res.json();
+    if (!payload || payload._app !== 'hm-layer-chunk' || payload.key !== key || payload._revision !== _activeStateRevision) {
+      throw new Error('STALE_LAYER_CHUNK');
+    }
+    await cachePut(chunkKey, { revision: payload._revision, payload, cachedAt: Date.now() });
+    return payload;
+  })();
+  _layerChunkInFlight.set(chunkKey, pending);
+  try {
+    return await pending;
+  } finally {
+    if (_layerChunkInFlight.get(chunkKey) === pending) _layerChunkInFlight.delete(chunkKey);
   }
-  await cachePut(chunkKey, { revision: payload._revision, payload, cachedAt: Date.now() });
-  return payload;
 }
 async function loadChunkedLayer(key, ownPointIndex, firstResolve, firstReject) {
   const d = DS[key];
@@ -2822,6 +2832,36 @@ function eagerStateLayers() {
 }
 
 let stateReady = false, _saveTimer = null;
+let _lastServerStateFingerprint = '';
+function stateFingerprint(snapshot) {
+  if (!snapshot) return '';
+  const layers = Object.entries(snapshot.layers || {}).map(([key, layer]) => [
+    key, layer && layer.name, layer && layer.color, layer && layer.opacity,
+    layer && layer.intensity, layer && layer.visible,
+    layer && layer._recordsOmitted,
+    layer && layer.recordCount,
+    layer && layer.stats,
+    Array.isArray(layer && layer.recs) ? layer.recs.length : null,
+  ]);
+  const custom = (snapshot.customPtLayers || []).map(layer => [
+    layer.id, layer.name, layer.color, layer.visible, layer.shape,
+    Array.isArray(layer.recs) ? layer.recs.length : 0,
+  ]);
+  return JSON.stringify({
+    heatKeys: snapshot.heatKeys || [], layers, custom,
+    selectedCities: snapshot.selectedCities || [], city: snapshot.city || '',
+    incCol: snapshot.incCol, covR: snapshot.covR, topN: snapshot.topN,
+    recBasis: snapshot.recBasis, recShow: snapshot.recShow,
+    heatBoost: snapshot.heatBoost, heatBlend: snapshot.heatBlend,
+    heatRadius: snapshot.heatRadius, districtsOn: snapshot.districtsOn,
+    incomeHeatOn: snapshot.incomeHeatOn, coresOn: snapshot.coresOn,
+    addrSrcKey: snapshot.addrSrcKey, addrRefKey: snapshot.addrRefKey,
+    rtRadius: snapshot.rtRadius, rtRadiusOp: snapshot.rtRadiusOp,
+    rtVolOp: snapshot.rtVolOp, rtVolMode: snapshot.rtVolMode,
+    rtVolCustom: snapshot.rtVolCustom, rtExclRadius: snapshot.rtExclRadius,
+    rtExclOp: snapshot.rtExclOp, rtExclKeys: snapshot.rtExclKeys || [],
+  });
+}
 
 function setSyncBadge(state, label) {
   if (!SERVER_URL) return;
@@ -2915,6 +2955,7 @@ async function pushToServer(snapshot, isRetry = false) {
         const manifest = snapshotManifest(snapshot);
         try { localStorage.setItem(storeKey(), JSON.stringify(manifest)); } catch (_) {}
         cacheStateSnapshot(snapshot);
+        _lastServerStateFingerprint = stateFingerprint(snapshot);
       }
       const now = new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
       setSyncBadge('ok', 'Сохранено ' + now);
@@ -2960,6 +3001,10 @@ function doSave() {
   // fallback. Full layer records are versioned in IndexedDB instead.
   try { localStorage.setItem(storeKey(), JSON.stringify(manifest)); } catch (e) {}
   cacheStateSnapshot(snapshot);
+  // Local cache writes are still allowed, but identical admin state is not
+  // posted again. This removes duplicate autosave transactions after startup,
+  // repeated clicks and delegated sidebar events.
+  if (isAdmin() && SERVER_KEY && stateFingerprint(snapshot) === _lastServerStateFingerprint) return;
   pushToServer(snapshot);
 }
 
@@ -3432,6 +3477,7 @@ async function startApp() {
       try { localStorage.setItem(storeKey(), JSON.stringify(chosen)); } catch (_) {}
     }
     if (chosen === serverState) {
+      _lastServerStateFingerprint = stateFingerprint(buildStateSnapshot());
       const savedAt = serverState._savedAt
         ? new Date(serverState._savedAt).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
         : '';
