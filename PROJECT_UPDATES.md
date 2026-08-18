@@ -268,3 +268,10 @@ CI succeeded for `b96e775`, and GitHub Pages served `app.js?v=20260814e`. A deli
 The server now supports an optional protected `KG_AUTH_USER_JSON` environment override. When present, startup removes any existing account with role `kg` from the base `AUTH_USERS_JSON` set and adds exactly one validated `kg` account from the override. This lets Render rotate the Kyrgyzstan credential without exposing or rewriting the shared admin/comdep/other account configuration. The password hash is stored only in Render Environment; no plaintext password or hash was committed to the repository.
 
 The new override was configured in Render and the service was rebuilt from commit `947cb2e`. A production smoke test returned: login HTTP 200, bearer token issued, `/auth/me` HTTP 200 with role `kg`, `/state/meta?map=kg` HTTP 200, and `/state/meta?map=comdep` HTTP 403. The test did not call any write endpoint or modify map data.
+
+
+## 2026-08-18 — Render PostgreSQL suspension caused layer outage
+
+Production health reported `storage: file` instead of `storage: postgresql`. Render Projects showed only `hm-server` active; the existing PostgreSQL datastore `test_bd` was listed under Suspended (7) as `Suspended by you`. This was the dependency removed from the runtime path: the server fell back to ephemeral file storage, so persistent `/data` and `/state` layers were unavailable.
+
+Recovery was performed without creating a new database: `test_bd` was resumed, reached `available`, and `hm-server` was redeployed so it re-read the existing `DATABASE_URL`. Health then returned `storage: postgresql`. Read-only production verification passed with KG login 200, `/auth/me` 200, `/data/meta` 200, `/state/meta?map=kg` 200, and a compact layer chunk 200. No write endpoint or map data was changed.
