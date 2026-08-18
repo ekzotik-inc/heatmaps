@@ -275,3 +275,12 @@ The new override was configured in Render and the service was rebuilt from commi
 Production health reported `storage: file` instead of `storage: postgresql`. Render Projects showed only `hm-server` active; the existing PostgreSQL datastore `test_bd` was listed under Suspended (7) as `Suspended by you`. This was the dependency removed from the runtime path: the server fell back to ephemeral file storage, so persistent `/data` and `/state` layers were unavailable.
 
 Recovery was performed without creating a new database: `test_bd` was resumed, reached `available`, and `hm-server` was redeployed so it re-read the existing `DATABASE_URL`. Health then returned `storage: postgresql`. Read-only production verification passed with KG login 200, `/auth/me` 200, `/data/meta` 200, `/state/meta?map=kg` 200, and a compact layer chunk 200. No write endpoint or map data was changed.
+
+
+## 2026-08-18 — Reduce Render load for heatmap reads (`75a1f29`)
+
+Implemented five load/cost optimizations without changing map data: removed the obsolete GitHub Actions keep-warm workflow now that `hm-server` runs on Starter; added a bounded 30-second server cache for first compact chunks; coalesced concurrent PostgreSQL state reads; added client single-flight chunk requests; and added fingerprint-based autosave deduplication for identical admin state.
+
+The PostgreSQL schema uses `app_state.key` as its primary key, so the state query already has the correct index. No speculative or redundant secondary index was added. The server-side read coalescing reduces duplicate concurrent queries while preserving the existing revision and lazy-save semantics.
+
+Local syntax, lint and whitespace checks passed. GitHub CI and Pages deployment passed. Render shows `75a1f29` live. Production health remains `storage: postgresql`. Read-only KG smoke test passed: login 200, `/state/meta?map=kg` 200, first compact chunk 200 with 4,000 records, repeated identical chunk 200 with 4,000 records, same revision. No write endpoint or Render data/configuration was changed during verification.
