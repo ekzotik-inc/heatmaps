@@ -128,10 +128,13 @@ function createDummyPasswordHash() {
 }
 const DUMMY_PASSWORD_HASH = createDummyPasswordHash();
 
-function loginBucketKey(req, username) {
+function loginRateKeys(req, username) {
   const ip = String(req.ip || (req.socket && req.socket.remoteAddress) || 'unknown').slice(0, 128);
   const account = String(username || '').trim().toLowerCase().slice(0, 128) || '<empty>';
-  return `${ip}|${account}`;
+  // Keep an account bucket as well as the IP+account bucket. A managed proxy
+  // can rotate the observed edge IP between requests; the account bucket keeps
+  // the limiter effective without trusting a client-supplied header.
+  return [`ip:${ip}|user:${account}`, `user:${account}`];
 }
 
 function pruneLoginAttempts(now = Date.now()) {
@@ -148,34 +151,36 @@ function pruneLoginAttempts(now = Date.now()) {
 function rateLimitLogin(req, res, next) {
   const now = Date.now();
   pruneLoginAttempts(now);
-  const key = loginBucketKey(req, req.body && req.body.username);
-  const entry = loginAttempts.get(key);
-  if (entry && entry.resetAt > now && entry.failures >= LOGIN_MAX_ATTEMPTS) {
-    const retryAfter = Math.max(1, Math.ceil((entry.resetAt - now) / 1000));
+  const keys = loginRateKeys(req, req.body && req.body.username);
+  const blocked = keys.map(key => loginAttempts.get(key)).find(entry => entry && entry.resetAt > now && entry.failures >= LOGIN_MAX_ATTEMPTS);
+  if (blocked) {
+    const retryAfter = Math.max(1, Math.ceil((blocked.resetAt - now) / 1000));
     noStore(res);
     res.setHeader('Retry-After', String(retryAfter));
     return res.status(429).json({ error: 'Too many login attempts', retryAfter });
   }
-  req.loginRateKey = key;
+  req.loginRateKeys = keys;
   next();
 }
 
 function recordLoginFailure(req) {
   const now = Date.now();
-  const key = req.loginRateKey || loginBucketKey(req, req.body && req.body.username);
-  const entry = loginAttempts.get(key);
-  if (!entry || entry.resetAt <= now) {
-    loginAttempts.set(key, { failures: 1, resetAt: now + LOGIN_WINDOW_MS });
-  } else {
-    entry.failures += 1;
-    entry.lastSeen = now;
+  const keys = req.loginRateKeys || loginRateKeys(req, req.body && req.body.username);
+  for (const key of keys) {
+    const entry = loginAttempts.get(key);
+    if (!entry || entry.resetAt <= now) {
+      loginAttempts.set(key, { failures: 1, resetAt: now + LOGIN_WINDOW_MS, lastSeen: now });
+    } else {
+      entry.failures += 1;
+      entry.lastSeen = now;
+    }
   }
   pruneLoginAttempts(now);
 }
 
 function clearLoginFailures(req) {
-  const key = req.loginRateKey || loginBucketKey(req, req.body && req.body.username);
-  loginAttempts.delete(key);
+  const keys = req.loginRateKeys || loginRateKeys(req, req.body && req.body.username);
+  for (const key of keys) loginAttempts.delete(key);
 }
 
 function b64url(value) {

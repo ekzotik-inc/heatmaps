@@ -223,10 +223,11 @@
   и хранится только в памяти текущей страницы. `pushToServer`/`pushDataset` требуют
   `isAdmin() && SERVER_KEY`; `server.js` дополнительно проверяет `X-API-Key == API_KEY`.
   `AUTH_USERS_JSON`, `SESSION_SECRET` и `API_KEY` задаются только в окружении Render.
-- **P1 auth hardening:** `/auth/login` ограничивает пять неудачных попыток на IP+username
-  за 15 минут; неизвестные пользователи проходят через startup-generated dummy scrypt
-  verification. Bearer fallback и admin API key не записываются в
-  `sessionStorage`/`localStorage`; старые credential keys удаляются при старте.
+- **P1 auth hardening:** `/auth/login` ограничивает пять неудачных попыток за 15 минут
+  по двум bounded buckets — normalized IP+username и normalized username — чтобы managed
+  proxy IP rotation не обходил лимит; неизвестные пользователи проходят через
+  startup-generated dummy scrypt verification. Bearer fallback и admin API key не
+  записываются в `sessionStorage`/`localStorage`; старые credential keys удаляются при старте.
 - **XSS:** пользовательские значения экранируются `esc()` перед вставкой в
   innerHTML/попапы/тултипы/`<option>`.
 - **Файлы не в git:** данные живут на сервере + в браузере; `.gitignore` исключает
