@@ -1,7 +1,7 @@
 # Heatmap App — Feature Tracking Spreadsheet
 
 > **Legend** — Status: ✅ OK · ❌ Bug · ⚠️ UX issue · 🔲 Not tested  
-> Last updated: 2026-08-14
+> Last updated: 2026-08-19
 
 ---
 
@@ -54,12 +54,12 @@
 | A4 | Admin picks map (both enabled) | Both cards clickable; picking either unlocks map and calls startApp | Admin | ✅ | |
 | A5 | Comdep picks map | Only "Com Dep" card clickable; "Другая" is `.locked` + disabled | Comdep | ✅ | |
 | A6 | Other picks map | Only "Другая" card clickable; "Com Dep" is `.locked` + disabled | Other | ✅ | |
-| A7 | User refreshes page after login | Session restored from the tab-scoped bearer token or retained cookie; correct map opens without re-login | All | ✅ | |
-| A8 | User clicks Logout | sessionStorage cleared, page reloaded, login screen shown | All | ✅ | |
+| A7 | User refreshes page after login | Session is restored from the HttpOnly cookie when retained; otherwise the login screen is shown and the user re-authenticates. The selected map remains a non-secret UI preference. | All | ✅ | |
+| A8 | User clicks Logout | Server cookie is cleared, in-memory bearer/admin credentials are discarded, non-secret map/role UI state is cleared, page reloads and login screen is shown | All | ✅ | |
 | A9 | Mode badge shown after login | Admin → "✏ Админ · [Map]" (blue); Viewer → "👁 [Map]" | All | ✅ | |
 | A10 | Viewer sees no Data tab | Tab "⚙ Данные" is hidden (`body.viewer`) | Viewer | ✅ | |
 | A11 | Viewer sees no upload/create/delete buttons | Upload btn, add-layer btn, layer delete btn, state import/export all hidden | Viewer | ✅ | Address program export intentionally visible to viewers (same as rec export) |
-| A12 | GitHub Pages ↔ Render cookie is blocked | Login response token is kept in sessionStorage and sent as `Authorization: Bearer`; cookie remains a compatible fallback | All | ✅ | Local login → bearer `/auth/me` smoke test passed |
+| A12 | GitHub Pages ↔ Render cookie is blocked | Login response bearer token is kept only in page memory and sent as `Authorization: Bearer`; it is never persisted in browser storage. The HttpOnly cookie remains the primary session transport. | All | ✅ | Local regression: cookie login 200; case-normalized limiter and 6th-attempt 429 passed |
 
 ---
 
@@ -174,7 +174,7 @@
 
 | # | User Story | Expected Behaviour | Role | Status | Notes |
 |---|---|---|---|---|---|
-| S1 | App loads (server awake) | Badge: "Загрузка…" → "Обновлено HH:MM" within ~3 s | All | ✅ | Authenticated requests use authFetch with bearer token when available and cookie fallback |
+| S1 | App loads (server awake) | Badge: "Загрузка…" → "Обновлено HH:MM" within ~3 s | All | ✅ | Authenticated requests use HttpOnly-cookie-first authFetch; in-memory bearer is only a same-page fallback |
 | S2 | App loads (server cold-start) | Badge: "Загрузка…" → "Сервер пробуждается…" after 5 s → "Обновлено" when done | All | ✅ | |
 | S3 | Admin changes any setting | Compact manifest auto-saved to localStorage, loaded records stored versioned in IndexedDB, and shared state pushed to server | Admin | ✅ | Lazy omitted records are preserved server-side |
 | S4 | Sync success | Badge shows green dot + "Обновлено HH:MM DD.MM" | Admin | ✅ | |

@@ -28,6 +28,11 @@ const ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',').map(s => s.trim()).filter(Boolean);
 const SESSION_TTL_SEC = 8 * 60 * 60;
 const AUTH_ROLES = new Set(['admin', 'comdep', 'other', 'kg']);
+const SCRYPT_MAXMEM = 64 * 1024 * 1024;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_MAX_BUCKETS = 5000;
+const loginAttempts = new Map();
 const STATE_FILE = path.join(__dirname, 'state.json');
 
 function loadAuthUsers() {
@@ -101,13 +106,76 @@ function verifyPassword(password, encoded) {
   if (!cfg) return false;
   try {
     const actual = crypto.scryptSync(String(password || ''), cfg.salt, cfg.hex.length / 2, {
-      N: cfg.N, r: cfg.R, p: cfg.P, maxmem: 64 * 1024 * 1024,
+      N: cfg.N, r: cfg.R, p: cfg.P, maxmem: SCRYPT_MAXMEM,
     });
     const expected = Buffer.from(cfg.hex, 'hex');
     return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
   } catch (_) {
     return false;
   }
+}
+
+// Unknown usernames must perform the same expensive password work as known
+// usernames. The random hash is generated once per process and never logged or
+// accepted as a real credential.
+function createDummyPasswordHash() {
+  const N = 16384, R = 8, P = 1, KEYLEN = 32;
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(crypto.randomBytes(32), salt, KEYLEN, {
+    N, r: R, p: P, maxmem: SCRYPT_MAXMEM,
+  }).toString('hex');
+  return `scrypt$${N}$${R}$${P}$${salt}$${hash}`;
+}
+const DUMMY_PASSWORD_HASH = createDummyPasswordHash();
+
+function loginBucketKey(req, username) {
+  const ip = String(req.ip || (req.socket && req.socket.remoteAddress) || 'unknown').slice(0, 128);
+  const account = String(username || '').trim().toLowerCase().slice(0, 128) || '<empty>';
+  return `${ip}|${account}`;
+}
+
+function pruneLoginAttempts(now = Date.now()) {
+  for (const [key, entry] of loginAttempts) {
+    if (entry.resetAt <= now) loginAttempts.delete(key);
+  }
+  while (loginAttempts.size > LOGIN_MAX_BUCKETS) {
+    const first = loginAttempts.keys().next().value;
+    if (first === undefined) break;
+    loginAttempts.delete(first);
+  }
+}
+
+function rateLimitLogin(req, res, next) {
+  const now = Date.now();
+  pruneLoginAttempts(now);
+  const key = loginBucketKey(req, req.body && req.body.username);
+  const entry = loginAttempts.get(key);
+  if (entry && entry.resetAt > now && entry.failures >= LOGIN_MAX_ATTEMPTS) {
+    const retryAfter = Math.max(1, Math.ceil((entry.resetAt - now) / 1000));
+    noStore(res);
+    res.setHeader('Retry-After', String(retryAfter));
+    return res.status(429).json({ error: 'Too many login attempts', retryAfter });
+  }
+  req.loginRateKey = key;
+  next();
+}
+
+function recordLoginFailure(req) {
+  const now = Date.now();
+  const key = req.loginRateKey || loginBucketKey(req, req.body && req.body.username);
+  const entry = loginAttempts.get(key);
+  if (!entry || entry.resetAt <= now) {
+    loginAttempts.set(key, { failures: 1, resetAt: now + LOGIN_WINDOW_MS });
+  } else {
+    entry.failures += 1;
+    entry.lastSeen = now;
+  }
+  pruneLoginAttempts(now);
+}
+
+function clearLoginFailures(req) {
+  const key = req.loginRateKey || loginBucketKey(req, req.body && req.body.username);
+  loginAttempts.delete(key);
 }
 
 function b64url(value) {
@@ -355,19 +423,26 @@ app.use((err, _req, res, next) => {
 app.use(compression());
 
 // Login has a small body limit and is the only POST route allowed before the
-// owner-key middleware. Logout only clears the browser cookie.
-app.post('/auth/login', express.json({ limit: '32kb' }), (req, res) => {
+// owner-key middleware. The limiter is intentionally in-memory and bounded; a
+// multi-instance deployment should move this counter to shared storage.
+app.post('/auth/login', express.json({ limit: '32kb' }), rateLimitLogin, (req, res) => {
   noStore(res);
   const username = String(req.body && req.body.username || '').trim().toLowerCase();
   const password = String(req.body && req.body.password || '');
   const user = AUTH_USERS.get(username);
-  if (!user || !SESSION_SECRET || !verifyPassword(password, user.passwordHash)) {
+  const passwordHash = user && parsePasswordHash(user.passwordHash)
+    ? user.passwordHash
+    : DUMMY_PASSWORD_HASH;
+  const passwordValid = verifyPassword(password, passwordHash);
+  if (!user || !SESSION_SECRET || !passwordValid) {
+    recordLoginFailure(req);
     return res.status(401).json({ error: 'Invalid username or password' });
   }
+  clearLoginFailures(req);
   const token = createSession(user);
   setSessionCookie(req, res, token);
-  // The signed token is short-lived and the client keeps it only in sessionStorage
-  // as a fallback for browsers that block the cross-site HttpOnly cookie.
+  // The token is returned only as an in-memory fallback for the current page.
+  // The frontend must never persist it in sessionStorage/localStorage.
   res.json({ ok: true, username: user.username, role: user.role, token, expiresIn: SESSION_TTL_SEC });
 });
 

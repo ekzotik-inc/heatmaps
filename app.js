@@ -2448,17 +2448,17 @@ const storeKey = () => 'hm_state_' + encodeURIComponent(currentUser || 'anonymou
 // Set SERVER_KEY to the API_KEY you configured in server/.env
 // Leave SERVER_URL empty to skip server sync and use localStorage only.
 const SERVER_URL = window._HM_SERVER_URL || '';
-// The owner-only API key is still entered separately and is never bundled.
-// Login/session authorization is handled by the server; this key only gates writes.
+// The owner-only API key is entered separately and is never bundled. It is
+// intentionally memory-only: a page refresh requires the owner to enter it
+// again, which prevents a persistent write credential in browser storage.
 let SERVER_KEY = '';
-try { SERVER_KEY = localStorage.getItem('hm_admin_key') || ''; } catch (e) {}
+try { localStorage.removeItem('hm_admin_key'); } catch (e) {}
 
-// Cross-site HttpOnly cookies are retained when available, but some browsers
-// block third-party cookies between GitHub Pages and Render. The server also
-// returns the same signed short-lived session token; keep it only for this tab
-// and send it as a bearer credential when cookies are unavailable.
+// The HttpOnly cookie is the primary session transport. A short-lived bearer
+// response remains an in-memory fallback for browsers that block cross-site
+// cookies, but it is never persisted in sessionStorage/localStorage.
 let SESSION_TOKEN = '';
-try { SESSION_TOKEN = sessionStorage.getItem('hm_session_token') || ''; } catch (e) {}
+try { sessionStorage.removeItem('hm_session_token'); } catch (e) {}
 function authHeaders(extra = {}) {
   return SESSION_TOKEN ? { ...extra, Authorization: `Bearer ${SESSION_TOKEN}` } : { ...extra };
 }
@@ -2467,10 +2467,6 @@ function authFetch(url, options = {}) {
 }
 function rememberSessionToken(token) {
   SESSION_TOKEN = typeof token === 'string' ? token : '';
-  try {
-    if (SESSION_TOKEN) sessionStorage.setItem('hm_session_token', SESSION_TOKEN);
-    else sessionStorage.removeItem('hm_session_token');
-  } catch (e) {}
 }
 
 // Persistent read cache for authenticated payloads. IndexedDB holds multi-megabyte
@@ -3187,14 +3183,15 @@ function wireEvents() {
     toast(`Слой «${d.name}» обновлён (${d.stats.n} точек)`, 'ok');
   });
 
-  // Admin write key — stored only in this browser, never in the bundle
+  // Admin write key — memory-only and never in the bundle or browser storage.
   const keyInp = $('admin-key-input');
   if (keyInp) {
     keyInp.value = SERVER_KEY;
     $('admin-key-save').addEventListener('click', () => {
       SERVER_KEY = keyInp.value.trim();
-      try { SERVER_KEY ? localStorage.setItem('hm_admin_key', SERVER_KEY) : localStorage.removeItem('hm_admin_key'); } catch (e) {}
-      toast(SERVER_KEY ? 'Ключ сохранён — запись на сервер включена' : 'Ключ удалён — запись отключена', SERVER_KEY ? 'ok' : 'info');
+      toast(SERVER_KEY
+        ? 'Ключ принят — запись включена до обновления страницы'
+        : 'Ключ удалён — запись отключена', SERVER_KEY ? 'ok' : 'info');
     });
   }
 
@@ -3615,6 +3612,7 @@ async function startApp() {
   logoutBtn.addEventListener('click', async () => {
     try { await authFetch(SERVER_URL + '/auth/logout', { method: 'POST' }); } catch (_) {}
     rememberSessionToken('');
+    SERVER_KEY = '';
     sessionStorage.removeItem('hm_role');
     sessionStorage.removeItem('hm_map');
     currentUser = null; currentRole = null; currentMap = null;

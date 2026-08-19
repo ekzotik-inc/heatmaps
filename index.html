@@ -315,7 +315,7 @@
             <input type="password" id="admin-key-input" placeholder="Введите серверный ключ…" autocomplete="off"
               style="width:100%;background:var(--card2);border:1px solid var(--line2);color:var(--ink);padding:9px 12px;border-radius:10px;font-size:13px;font-family:inherit;outline:none"/>
             <button class="btn" id="admin-key-save" style="margin-top:9px">Сохранить ключ</button>
-            <div class="foot">Ключ хранится только в этом браузере (localStorage) и не входит в код сайта. Без него правки видны лишь вам локально и не сохраняются в общую карту. Должен совпадать с <b>API_KEY</b> сервера.</div>
+            <div class="foot">Ключ не входит в код сайта и хранится только в памяти текущей страницы. После обновления его нужно ввести снова. Без него правки видны лишь вам локально и не сохраняются в общую карту. Должен совпадать с <b>API_KEY</b> сервера.</div>
           </div>
         </details>
 
@@ -472,7 +472,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20260814g'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20260814h'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();
