@@ -344,3 +344,9 @@ The point state snapshot remains backward-compatible: `size` and `opacity` defau
 Production read-only smoke on the Com Dep map confirmed four point layers with visibility `[false, false, false, true]`, badge `1/4` and 58 rendered markers before reload. After full reload, re-authentication and reopening Com Dep, runtime and DOM returned the same visibility vector, badge, layer ids, collapsed-card state and 58 markers. The points tab and map were synchronized.
 
 The in-memory solo smoke also passed: four visible layers changed to `[true, false, false, false]` for the selected layer, the solo button became active, and the original visibility state was restored after disabling solo. Solo state is intentionally not serialized in the snapshot, so it resets after reload; the visibility result produced by solo remains the persisted state. Evidence: `qa/points-visibility-reload-20260819.md`.
+
+## 2026-08-19 — Production layers/points synchronization verification
+
+Read-only production verification confirmed that the shared layer/point state remains synchronized after the latest UI changes. On Com Dep, heat visibility was `[true, false, false, false, false, false]` with badge `1/6`, while point visibility was `[false, false, false, true]` with badge `1/4`; the visible point layer rendered 58 markers. Switching `Карта → Точки → Карта` preserved both visibility vectors, badges, and map rendering. The point-card visibility switch was separately distinguished from the green coverage-radius switch, and its `aria-checked` matched runtime for all four point layers.
+
+After full reload, re-authentication and reopening Com Dep, the same heat/point vectors, badges, active tab and 58 markers were restored. No write/configuration action was performed. Evidence: `qa/layers-points-sync-20260819.md`.
