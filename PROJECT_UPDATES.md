@@ -338,3 +338,9 @@ The app cache-buster advanced to `app.js?v=20260814h`. The user-facing hint, `FE
 The «Точки» tab now uses the same accordion/card interaction model as heat layers. Each point layer has a consistent header switch for map visibility, expandable settings, rename, solo isolation, data refresh and delete actions. Point-specific controls remain available inside the shared card: color, icon shape, marker size, marker opacity and optional coverage radius with radius color/fill settings. Point-layer visibility is still rendered independently from `ourPts()` calculations, preserving the existing recommendation and city metrics semantics.
 
 The point state snapshot remains backward-compatible: `size` and `opacity` default to 30 px and 100% when absent in older saved states. Frontend cache-busters were advanced to `app.js?v=20260814i` and `style.css?v=20260813f`.
+
+## 2026-08-19 — Production points visibility/reload verification
+
+Production read-only smoke on the Com Dep map confirmed four point layers with visibility `[false, false, false, true]`, badge `1/4` and 58 rendered markers before reload. After full reload, re-authentication and reopening Com Dep, runtime and DOM returned the same visibility vector, badge, layer ids, collapsed-card state and 58 markers. The points tab and map were synchronized.
+
+The in-memory solo smoke also passed: four visible layers changed to `[true, false, false, false]` for the selected layer, the solo button became active, and the original visibility state was restored after disabling solo. Solo state is intentionally not serialized in the snapshot, so it resets after reload; the visibility result produced by solo remains the persisted state. Evidence: `qa/points-visibility-reload-20260819.md`.
