@@ -831,8 +831,29 @@ async function toggleSolo(k) {
   buildHeatUI(); renderHeat(); updateAccBadges(); saveState();
 }
 
+/* Solo / isolate a single custom-point layer with the same semantics as heat layers */
+let _cptSoloId = null, _cptPrevVisible = null;
+function toggleCustomPtSolo(id) {
+  const layer = customPtLayers.find(l => l.id === id);
+  if (!layer) return;
+  if (_cptSoloId === id) {
+    if (_cptPrevVisible) customPtLayers.forEach(l => {
+      if (_cptPrevVisible[l.id] != null) l.visible = _cptPrevVisible[l.id];
+    });
+    _cptSoloId = null; _cptPrevVisible = null;
+  } else {
+    if (!_cptPrevVisible) {
+      _cptPrevVisible = Object.fromEntries(customPtLayers.map(l => [l.id, Boolean(l.visible)]));
+    }
+    customPtLayers.forEach(l => { l.visible = l.id === id; });
+    _cptSoloId = id;
+  }
+  renderCustomPoints(); buildCustomPtUI(); updateAccBadges(); saveState();
+}
+
 /* ── UI BUILDERS ─────────────────────────────────────────────────────── */
-const _lyrOpen = new Set();   // keys of layer cards whose settings are expanded
+const _lyrOpen = new Set();
+const _cptOpen = new Set();   // keys of layer cards whose settings are expanded
 
 function buildHeatUI() {
   const el = document.getElementById('heat-list');
@@ -1570,7 +1591,9 @@ function renderCustomPoints() {
     cptRoot.addLayer(l._group);
     if (!l.visible || !l.recs.length) return;
     const shape = l.shape || 'teardrop';
-    const ic = shp(shape, l.color, 30);
+    const markerSize = Math.min(44, Math.max(20, Number.isFinite(+l.size) ? +l.size : 30));
+    const markerOpacity = Math.min(1, Math.max(.2, Number.isFinite(+l.opacity) ? +l.opacity : 1));
+    const ic = shp(shape, l.color, markerSize);
     const recs = l.recs.filter(r => selectedPointMatches(r));
     // coverage radius circles (under markers)
     if (l.radiusOn) {
@@ -1586,7 +1609,11 @@ function renderCustomPoints() {
     }
     recs.forEach(r => {
       const m = L.marker([r.lat, r.lon], {
-        icon: L.divIcon({ className: '', html: ic.html, iconSize: [30, 30], iconAnchor: ic.anchor }),
+        icon: L.divIcon({
+          className: '',
+          html: `<span class="pt-marker-wrap" style="opacity:${markerOpacity}">${ic.html}</span>`,
+          iconSize: [markerSize, markerSize], iconAnchor: ic.anchor,
+        }),
         zIndexOffset: 1500,
       });
       const parts = [r.name ? `<div class="pp-title">${esc(r.name)}</div>` : ''];
@@ -1616,43 +1643,80 @@ function buildCustomPtUI() {
 
   box.innerHTML = customPtLayers.map(l => {
     const shape = l.shape || 'teardrop';
+    const opacity = Math.min(1, Math.max(.2, Number.isFinite(+l.opacity) ? +l.opacity : 1));
+    const size = Math.min(44, Math.max(20, Number.isFinite(+l.size) ? +l.size : 30));
     const opts = SHAPES.map(s => `<option value="${s[0]}"${s[0] === shape ? ' selected' : ''}>${s[1]}</option>`).join('');
     const rPct = ((l.radiusM || 1500) - 200) / (5000 - 200) * 100;
     const oPct = (l.radiusOpacity == null ? .15 : l.radiusOpacity) / .5 * 100;
     return `
-    <div class="cpt-layer" data-cpid="${l.id}">
-      <div class="cpt-top">
-        <span class="cpt-name">${esc(l.name)}</span>
-        <span class="cpt-count">${l.recs.length}</span>
-        <div class="cbx${l.visible ? ' on' : ''}" style="border-color:${l.color};${l.visible ? 'background:' + l.color : ''}" data-cpvis="${l.id}" aria-label="Показывать слой «${esc(l.name)}» на карте"></div>
-        <button class="cpt-del" data-cpdel="${l.id}" title="Удалить слой">✕</button>
+    <div class="lyr cpt-layer${_cptOpen.has(l.id) ? ' open' : ''}" data-cpid="${esc(l.id)}">
+      <div class="lyr-head cpt-head">
+        <span class="lyr-dot cpt-layer-dot" style="background:${esc(l.color)}"></span>
+        <div class="nm">${esc(l.name)}<small>${l.recs.length.toLocaleString('ru-RU')} точек</small></div>
+        <svg class="lyr-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        <div class="cbx${l.visible ? ' on' : ''}" data-cptoggle="${esc(l.id)}" aria-label="Показывать слой «${esc(l.name)}» на карте"></div>
       </div>
-      <div class="lyr-ctl">
-        <div class="grp">Цвет <input type="color" class="cpt-color" value="${l.color}" data-cpcol="${l.id}" title="Цвет маркеров"/></div>
-        <div class="grp">Иконка <select class="cpt-shape" data-cpshape="${l.id}">${opts}</select></div>
-      </div>
-      <div class="cpt-row" style="margin-top:8px">
-        <button class="cpt-upload" data-cpup="${l.id}">⬆ Загрузить данные</button>
-      </div>
-      <div class="pt-radius-block">
-        <div class="lyr-top" style="margin-top:10px">
-          <div class="cbx green cpt-rad-cbx${l.radiusOn ? ' on' : ''}" style="width:34px;height:19px" data-cprad="${l.id}" aria-label="Радиус охвата для «${esc(l.name)}»"></div>
-          <div class="nm" style="font-size:11.5px;color:var(--mut)">Радиус охвата</div>
+      <div class="lyr-body cpt-body">
+        <div class="lyr-ctl">
+          <div class="grp" style="flex:1">Цвет <input type="color" class="cpt-color" value="${esc(l.color)}" data-cpcol="${esc(l.id)}" title="Цвет маркеров"/></div>
+          <div class="grp" style="flex:1">Иконка <select class="cpt-shape" data-cpshape="${esc(l.id)}" style="flex:1;min-width:0">${opts}</select></div>
         </div>
-        <div class="pt-radius-ctl" data-cpradctl="${l.id}" style="${l.radiusOn ? '' : 'display:none'}">
-          <div class="grp full"><span>Радиус</span>
-            <input type="range" class="full cpt-rad-r" data-cpradr="${l.id}" min="200" max="5000" step="100" value="${l.radiusM || 1500}" style="--pct:${rPct}%">
-            <span class="sl-val cpt-rad-rv">${fmtD(l.radiusM || 1500)}</span></div>
-          <div class="grp full" style="margin-top:7px"><span>Заливка</span>
-            <input type="range" class="full green cpt-rad-o" data-cprado="${l.id}" min="0.03" max="0.5" step="0.01" value="${l.radiusOpacity == null ? .15 : l.radiusOpacity}" style="--pct:${oPct}%">
-            <span class="sl-val cpt-rad-ov">${Math.round((l.radiusOpacity == null ? .15 : l.radiusOpacity) * 100)}%</span></div>
-          <div class="grp" style="margin-top:7px">Цвет радиуса <input type="color" class="cpt-rad-col" data-cpradcol="${l.id}" value="${l.radiusColor || l.color}"></div>
+        <div class="lyr-ctl">
+          <div class="grp" style="flex:1">Размер <input type="range" class="cpt-size" data-cpsize="${esc(l.id)}" min="20" max="44" step="1" value="${size}" style="flex:1"/><span class="sl-val cpt-size-val">${size}px</span></div>
+          <div class="grp" style="flex:1">Прозр. <input type="range" class="cpt-opacity" data-cpopacity="${esc(l.id)}" min="0.2" max="1" step="0.05" value="${opacity}" style="flex:1"/><span class="sl-val cpt-opacity-val">${Math.round(opacity * 100)}%</span></div>
+        </div>
+        <div class="pt-radius-block">
+          <div class="lyr-top" style="margin-top:10px;padding:0">
+            <div class="cbx green cpt-rad-cbx${l.radiusOn ? ' on' : ''}" style="width:34px;height:19px" data-cprad="${esc(l.id)}" aria-label="Радиус охвата для «${esc(l.name)}»"></div>
+            <div class="nm" style="font-size:11.5px;color:var(--mut)">Радиус охвата</div>
+          </div>
+          <div class="pt-radius-ctl" data-cpradctl="${esc(l.id)}" style="${l.radiusOn ? '' : 'display:none'}">
+            <div class="grp full"><span>Радиус</span>
+              <input type="range" class="full cpt-rad-r" data-cpradr="${esc(l.id)}" min="200" max="5000" step="100" value="${l.radiusM || 1500}" style="--pct:${rPct}%"/>
+              <span class="sl-val cpt-rad-rv">${fmtD(l.radiusM || 1500)}</span></div>
+            <div class="grp full" style="margin-top:7px"><span>Заливка</span>
+              <input type="range" class="full green cpt-rad-o" data-cprado="${esc(l.id)}" min="0.03" max="0.5" step="0.01" value="${l.radiusOpacity == null ? .15 : l.radiusOpacity}" style="--pct:${oPct}%"/>
+              <span class="sl-val cpt-rad-ov">${Math.round((l.radiusOpacity == null ? .15 : l.radiusOpacity) * 100)}%</span></div>
+            <div class="grp" style="margin-top:7px">Цвет радиуса <input type="color" class="cpt-rad-col" data-cpradcol="${esc(l.id)}" value="${esc(l.radiusColor || l.color)}"/></div>
+          </div>
+        </div>
+        <div class="lyr-meta">Объём слоя: ${l.recs.length.toLocaleString('ru-RU')} точек</div>
+        <div class="lyr-actions">
+          <button class="lyr-act cpt-rename" data-cptrename="${esc(l.id)}" title="Переименовать слой">✎ Имя</button>
+          <button class="lyr-act cpt-solo${_cptSoloId === l.id ? ' on' : ''}" data-cptsolo="${esc(l.id)}" title="Показать только этот слой">◉ Соло</button>
+          <button class="lyr-act cpt-upload" data-cptup="${esc(l.id)}" title="Перезалить файл в этот слой">⬆ Данные</button>
+          <button class="lyr-act lyr-del cpt-del" data-cpdel="${esc(l.id)}" title="Удалить слой">&times;</button>
         </div>
       </div>
     </div>`;
   }).join('');
 
-  // Shape selector
+  // Accordion header and visibility switch use the same interaction model as heat cards.
+  box.querySelectorAll('.cpt-head').forEach(head => {
+    head.addEventListener('click', e => {
+      if (e.target.closest('.cbx')) return;
+      const card = head.closest('.cpt-layer');
+      const id = card && card.dataset.cpid;
+      if (!id) return;
+      const open = card.classList.toggle('open');
+      if (open) _cptOpen.add(id); else _cptOpen.delete(id);
+    });
+  });
+
+  box.querySelectorAll('[data-cptoggle]').forEach(el => {
+    el.addEventListener('click', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cptoggle); if (!l) return;
+      l.visible = !l.visible;
+      if (!l.visible && _cptSoloId === l.id) {
+        if (_cptPrevVisible) customPtLayers.forEach(x => {
+          if (x.id !== l.id && _cptPrevVisible[x.id] != null) x.visible = _cptPrevVisible[x.id];
+        });
+        _cptSoloId = null; _cptPrevVisible = null;
+      }
+      renderCustomPoints(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); saveState();
+    });
+  });
+
   box.querySelectorAll('[data-cpshape]').forEach(el => {
     el.addEventListener('change', () => {
       const l = customPtLayers.find(x => x.id === el.dataset.cpshape); if (!l) return;
@@ -1660,51 +1724,6 @@ function buildCustomPtUI() {
     });
   });
 
-  // Radius toggle + sliders + color
-  box.querySelectorAll('[data-cprad]').forEach(el => {
-    el.addEventListener('click', () => {
-      const l = customPtLayers.find(x => x.id === el.dataset.cprad); if (!l) return;
-      l.radiusOn = !l.radiusOn; el.classList.toggle('on', l.radiusOn);
-      const ctl = box.querySelector(`[data-cpradctl="${l.id}"]`); if (ctl) ctl.style.display = l.radiusOn ? '' : 'none';
-      renderCustomPoints(); saveState();
-    });
-  });
-  box.querySelectorAll('[data-cpradr]').forEach(el => {
-    el.addEventListener('input', () => {
-      const l = customPtLayers.find(x => x.id === el.dataset.cpradr); if (!l) return;
-      l.radiusM = +el.value; el.style.setProperty('--pct', (l.radiusM - 200) / (5000 - 200) * 100 + '%');
-      const v = el.parentElement.querySelector('.cpt-rad-rv'); if (v) v.textContent = fmtD(l.radiusM);
-      renderCustomPoints(); saveState();
-    });
-  });
-  box.querySelectorAll('[data-cprado]').forEach(el => {
-    el.addEventListener('input', () => {
-      const l = customPtLayers.find(x => x.id === el.dataset.cprado); if (!l) return;
-      l.radiusOpacity = +el.value; el.style.setProperty('--pct', l.radiusOpacity / .5 * 100 + '%');
-      const v = el.parentElement.querySelector('.cpt-rad-ov'); if (v) v.textContent = Math.round(l.radiusOpacity * 100) + '%';
-      renderCustomPoints(); saveState();
-    });
-  });
-  box.querySelectorAll('[data-cpradcol]').forEach(el => {
-    el.addEventListener('input', () => {
-      const l = customPtLayers.find(x => x.id === el.dataset.cpradcol); if (!l) return;
-      l.radiusColor = el.value; renderCustomPoints(); saveState();
-    });
-  });
-
-  // Toggle visibility
-  box.querySelectorAll('[data-cpvis]').forEach(el => {
-    el.addEventListener('click', () => {
-      const l = customPtLayers.find(x => x.id === el.dataset.cpvis); if (!l) return;
-      l.visible = !l.visible;
-      el.classList.toggle('on', l.visible);
-      el.style.background = l.visible ? l.color : '';
-      el.style.borderColor = l.color;
-      renderCustomPoints(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); saveState();
-    });
-  });
-
-  // Color change
   box.querySelectorAll('[data-cpcol]').forEach(el => {
     el.addEventListener('input', () => {
       const l = customPtLayers.find(x => x.id === el.dataset.cpcol); if (!l) return;
@@ -1713,24 +1732,103 @@ function buildCustomPtUI() {
     });
   });
 
-  // Upload trigger
-  box.querySelectorAll('[data-cpup]').forEach(el => {
+  box.querySelectorAll('[data-cpsize]').forEach(el => {
+    el.addEventListener('input', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cpsize); if (!l) return;
+      l.size = +el.value; el.style.setProperty('--pct', ((l.size - 20) / 24) * 100 + '%');
+      const v = el.parentElement.querySelector('.cpt-size-val'); if (v) v.textContent = l.size + 'px';
+      renderCustomPoints(); saveState();
+    });
+  });
+
+  box.querySelectorAll('[data-cpopacity]').forEach(el => {
+    el.addEventListener('input', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cpopacity); if (!l) return;
+      l.opacity = +el.value; el.style.setProperty('--pct', ((l.opacity - .2) / .8) * 100 + '%');
+      const v = el.parentElement.querySelector('.cpt-opacity-val'); if (v) v.textContent = Math.round(l.opacity * 100) + '%';
+      renderCustomPoints(); saveState();
+    });
+  });
+
+  box.querySelectorAll('[data-cprad]').forEach(el => {
     el.addEventListener('click', () => {
-      _cptUploadTarget = el.dataset.cpup;
+      const l = customPtLayers.find(x => x.id === el.dataset.cprad); if (!l) return;
+      l.radiusOn = !l.radiusOn; el.classList.toggle('on', l.radiusOn);
+      const ctl = box.querySelector(`[data-cpradctl="${l.id}"]`); if (ctl) ctl.style.display = l.radiusOn ? '' : 'none';
+      renderCustomPoints(); saveState();
+    });
+  });
+
+  box.querySelectorAll('[data-cpradr]').forEach(el => {
+    el.addEventListener('input', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cpradr); if (!l) return;
+      l.radiusM = +el.value; el.style.setProperty('--pct', (l.radiusM - 200) / (5000 - 200) * 100 + '%');
+      const v = el.parentElement.querySelector('.cpt-rad-rv'); if (v) v.textContent = fmtD(l.radiusM);
+      renderCustomPoints(); saveState();
+    });
+  });
+
+  box.querySelectorAll('[data-cprado]').forEach(el => {
+    el.addEventListener('input', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cprado); if (!l) return;
+      l.radiusOpacity = +el.value; el.style.setProperty('--pct', l.radiusOpacity / .5 * 100 + '%');
+      const v = el.parentElement.querySelector('.cpt-rad-ov'); if (v) v.textContent = Math.round(l.radiusOpacity * 100) + '%';
+      renderCustomPoints(); saveState();
+    });
+  });
+
+  box.querySelectorAll('[data-cpradcol]').forEach(el => {
+    el.addEventListener('input', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cpradcol); if (!l) return;
+      l.radiusColor = el.value; renderCustomPoints(); saveState();
+    });
+  });
+
+  box.querySelectorAll('[data-cptrename]').forEach(el => {
+    el.addEventListener('click', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cptrename); if (!l) return;
+      const card = el.closest('.cpt-layer');
+      const nmEl = card && card.querySelector('.cpt-head .nm'); if (!nmEl) return;
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.value = l.name; inp.maxLength = 40;
+      inp.style.cssText = 'flex:1;min-width:0;font-family:Manrope;font-size:13px;font-weight:700;color:var(--ink);background:var(--card2);border:1.5px solid var(--acc);border-radius:8px;padding:5px 8px;outline:none';
+      nmEl.replaceWith(inp); inp.focus(); inp.select();
+      let done = false;
+      const commit = save => {
+        if (done) return; done = true;
+        if (save) { const v = inp.value.trim(); if (v) l.name = v; }
+        buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); if (save) saveState();
+      };
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') commit(true); else if (e.key === 'Escape') commit(false); });
+      inp.addEventListener('blur', () => commit(true));
+    });
+  });
+
+  box.querySelectorAll('[data-cptsolo]').forEach(el => {
+    el.addEventListener('click', () => toggleCustomPtSolo(el.dataset.cptsolo));
+  });
+
+  box.querySelectorAll('[data-cptup]').forEach(el => {
+    el.addEventListener('click', () => {
+      _cptUploadTarget = el.dataset.cptup;
       document.getElementById('cpt-file').click();
     });
   });
 
-  // Delete layer
   box.querySelectorAll('[data-cpdel]').forEach(el => {
     el.addEventListener('click', () => {
       const id = el.dataset.cpdel;
       const l  = customPtLayers.find(x => x.id === id); if (!l) return;
       if (!confirm(`Удалить слой «${l.name}»? Данные слоя будут потеряны.`)) return;
+      if (_cptSoloId === id) {
+        if (_cptPrevVisible) customPtLayers.forEach(x => { if (_cptPrevVisible[x.id] != null) x.visible = _cptPrevVisible[x.id]; });
+        _cptSoloId = null; _cptPrevVisible = null;
+      }
       customPtLayers = customPtLayers.filter(x => x.id !== id);
+      _cptOpen.delete(id);
       addrLayer.clearLayers();
       renderCustomPoints(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI();
-      reenrichAll();   // наших точек стало меньше — покрытие изменилось
+      reenrichAll();
       renderCityInfo(); saveState();
       toast(`Слой «${l.name}» удалён`, 'info');
     });
@@ -1998,7 +2096,7 @@ function buildStateSnapshot() {
     city: selectedCities.length === 1 ? selectedCities[0] : '',
     covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
     addrSrcKey, addrRefKey, rtRadius, rtRadiusOp, rtVolOp, rtVolMode, rtVolCustom, rtExclRadius, rtExclOp, rtExclKeys,
-    customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, shape: l.shape, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, recs: l.recs })),
+    customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, shape: l.shape, size: l.size, opacity: l.opacity, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, recs: l.recs })),
   };
 }
 
@@ -2039,6 +2137,7 @@ function applySnapshot(st) {
     // orphaned on the map (overlapping new ones / impossible to toggle off).
     cptRoot.clearLayers();
     // Restore custom point layers without their Leaflet groups (re-created on render)
+    _cptSoloId = null; _cptPrevVisible = null; _cptOpen.clear();
     customPtLayers = st.customPtLayers.map(l => ({ ...l, _group: null }));
   }
   // All hydrated heat layers share the same closest-own-point lookup. Build it
@@ -3332,7 +3431,7 @@ function wireEvents() {
     const color = $('cpt-modal-color').value;
     $('cpt-modal-overlay').classList.remove('open');
     const id = 'cpt_' + Date.now();
-    customPtLayers.push({ id, name, color, visible: true, shape: 'teardrop', radiusOn: false, radiusM: 1500, radiusColor: color, radiusOpacity: 0.15, recs: [], _group: null });
+    customPtLayers.push({ id, name, color, visible: true, shape: 'teardrop', size: 30, opacity: 1, radiusOn: false, radiusM: 1500, radiusColor: color, radiusOpacity: 0.15, recs: [], _group: null });
     buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); saveState();
     toast(`Слой «${name}» создан — загрузите данные`, 'ok');
   });

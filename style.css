@@ -1222,16 +1222,19 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
   border-radius: 12px; padding: 12px 14px; text-align: center;
 }
 .cpt-layer {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 14px; padding: 15px;
-  margin-bottom: 12px; transition: .22s var(--ease);
-  box-shadow: var(--shadow-card);
+  /* Point layers use the same accordion/card primitive as heat layers. */
+  background: var(--card2);
+  border: 1px solid transparent;
+  border-radius: 16px; padding: 0;
+  margin-bottom: 10px; transition: .22s var(--ease);
+  box-shadow: none;
 }
 .cpt-layer:hover {
   border-color: var(--line2);
-  box-shadow: 0 1px 4px rgba(40,55,90,.05), 0 8px 20px rgba(40,55,90,.07);
+  box-shadow: none;
 }
+.cpt-layer .cpt-head { margin: 0; }
+.cpt-layer .cpt-body { padding-bottom: 14px; }
 .cpt-top {
   display: flex; align-items: center; gap: 9px; margin-bottom: 10px;
 }
@@ -1252,18 +1255,20 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
 .cpt-row {
   display: flex; align-items: center; gap: 9px;
 }
+.pt-marker-wrap { display: block; line-height: 0; }
 .cpt-color {
-  width: 28px; height: 28px; border-radius: 8px;
-  border: 1.5px solid var(--line2); cursor: pointer;
-  padding: 2px; background: none; flex-shrink: 0;
+  width: 26px; height: 22px; border-radius: 7px;
+  border: 1px solid var(--line2); cursor: pointer;
+  padding: 0; background: none; flex-shrink: 0;
 }
 .cpt-upload {
-  flex: 1; padding: 8px 10px; font-size: 11.5px; font-family: "Manrope";
-  font-weight: 600; color: var(--acc);
-  background: var(--acc-l); border: 1px solid rgba(18,173,193,.25);
-  border-radius: 10px; cursor: pointer; transition: .18s var(--ease);
+  /* Keep the point data action visually identical to heat-layer actions. */
+  flex: 1; padding: 8px 4px; font-size: 11px; font-family: "Manrope";
+  font-weight: 700; color: var(--mut); background: var(--card);
+  border: 1px solid var(--line2); border-radius: 9px; cursor: pointer;
+  transition: .18s var(--ease);
 }
-.cpt-upload:hover { background: var(--acc-l2); border-color: var(--acc); }
+.cpt-upload:hover { color: var(--acc); border-color: var(--acc); background: var(--acc-l); }
 
 /* badges pushed right */
 #acc-iqos-badge, #acc-cpt-badge { margin-left: auto; }

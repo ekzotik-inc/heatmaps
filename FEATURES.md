@@ -133,6 +133,10 @@
 | P12 | Points tab badge | Shows "N/M" (visible/total layers) | All | ✅ | |
 | P13 | Точки удалены/добавлены | `nd` во всех тепловых слоях пересчитывается, рекомендации и метрика города обновляются | Admin | ✅ | Сверено с брутфорсом |
 | P14 | Наших точек нет вообще | Расстояния «—», адресная сообщает «нет точек-ориентиров», метрика города «—» | All | ✅ | |
+| P15 | Point card opened/closed | Uses the same accordion header, chevron and expandable settings pattern as heat-layer cards | All | ✅ | |
+| P16 | Point layer visibility toggled | Unified switch hides/shows markers, updates badge and persists state without changing `ourPts()` metrics semantics | All | ✅ | |
+| P17 | Point layer isolated with «Соло» | Only the selected point layer remains visible; clicking again restores the previous visibility state | All | ✅ | |
+| P18 | Point layer settings changed | Rename, data refresh, icon shape, color, marker size, marker opacity and coverage-radius settings are available in the shared card style | All | ✅ | |
 
 ---
 
