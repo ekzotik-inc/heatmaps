@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260813f"/>
+  <link rel="stylesheet" href="style.css?v=20260917a"/>
 </head>
 <body>
 
@@ -401,6 +401,34 @@
   </div>
   <div class="mode-badge" id="mode-badge" style="display:none"></div>
 
+  <!-- Владелец опубликовал новую версию карты: предложение обновиться -->
+  <div id="update-banner" role="status" aria-live="polite" hidden>
+    <span class="upd-pulse" aria-hidden="true"></span>
+    <div class="upd-banner-text">
+      <b>Данные обновлены</b>
+      <span id="update-banner-time">владелец опубликовал новую версию</span>
+    </div>
+    <button type="button" id="update-apply" class="upd-apply">Обновить</button>
+    <button type="button" id="update-dismiss" class="upd-dismiss" aria-label="Скрыть напоминание">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+    </button>
+  </div>
+
+  <!-- Прогресс обновления: карта обесцвечена и возвращает цвет по мере загрузки -->
+  <div id="update-overlay" role="dialog" aria-modal="true" aria-labelledby="upd-title" hidden>
+    <div class="upd-card">
+      <div class="upd-pct" id="upd-pct">0%</div>
+      <div class="upd-title" id="upd-title">Обновляем карту</div>
+      <div class="upd-sub" id="upd-sub">Проверяем данные на сервере…</div>
+      <div class="upd-bar"><i id="upd-bar-fill"></i></div>
+      <ul class="upd-hints" id="upd-hints" hidden></ul>
+      <div class="upd-actions" id="upd-actions" hidden>
+        <button type="button" id="upd-retry" class="upd-btn upd-btn-main">Повторить</button>
+        <button type="button" id="upd-close" class="upd-btn">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Custom zoom controls (default Leaflet control disabled) -->
   <div id="zoom-ctl">
     <button id="zoom-in" class="zbtn" title="Приблизить" aria-label="Приблизить">
@@ -472,7 +500,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20260814i'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20260917a'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();

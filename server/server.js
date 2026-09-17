@@ -556,6 +556,15 @@ app.get('/state/meta', requireSession, requireMapAccess, async (req, res) => {
   res.json(stateMetadata(state));
 });
 
+// Revision probe. Open clients poll this to learn that the owner published a
+// new version; it answers from the 30 s read cache, so polling costs far less
+// than /state/meta (which rebuilds the whole layer manifest on every call).
+app.get('/state/revision', requireSession, requireMapAccess, async (req, res) => {
+  noStore(res);
+  const state = await readState(req.map);
+  res.json({ revision: (state && state._savedAt) || '', empty: !state });
+});
+
 function compactLayerChunk(recs, offset, limit, revision, key, map) {
   const source = Array.isArray(recs) ? recs : [];
   const total = source.length;

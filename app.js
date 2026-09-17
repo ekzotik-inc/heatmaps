@@ -2176,6 +2176,11 @@ function applySnapshot(st) {
         DS[k].stats = sv.stats || { n: sv.recordCount || 0, sum: 0, max: 0, p50: 0, p90: 0.01 };
         DS[k]._recordsLoaded = false;
         DS[k]._userData = true;
+        // Derived render caches belong to the previous revision — drop them so a
+        // refresh cannot paint the old heat over freshly published records.
+        DS[k]._heatCache = null;
+        DS[k]._fullPtsCache = null;
+        DS[k]._heatMaxCache = null;
       } else if (!DS[k].recs) {
         DS[k].recs = []; DS[k].stats = { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 };
       }
@@ -2756,6 +2761,12 @@ async function refreshStateRevision() {
 function isStaleLayerError(err) {
   return err && (err.message === 'STALE_LAYER' || err.message === 'STALE_LAYER_CHUNK');
 }
+// Set while a visible refresh runs so the loaders can report real progress
+// (records hydrated / records promised by the manifest) instead of a fake bar.
+let _loadProgressHook = null;
+function reportLoadProgress(n) {
+  if (_loadProgressHook && n > 0) _loadProgressHook(n);
+}
 function hydrateLayerRecords(key, recs, stats, ownPointIndex, complete = true) {
   const d = DS[key];
   if (!d) return;
@@ -2830,6 +2841,7 @@ async function loadChunkedLayer(key, ownPointIndex, firstResolve, firstReject) {
       const fullCached = await cacheGet(fullCacheKey);
       if (fullCached && Array.isArray(fullCached.recs)) {
         hydrateLayerRecords(key, fullCached.recs, fullCached.stats, ownPointIndex);
+        reportLoadProgress(fullCached.recs.length);
         d._recordsLoading = false; d._recordsLoaded = true;
         if (!firstResolved) { firstResolved = true; firstResolve(); }
         d._recordsReady = null;
@@ -2840,7 +2852,9 @@ async function loadChunkedLayer(key, ownPointIndex, firstResolve, firstReject) {
       try {
         while (true) {
           const payload = await fetchLayerChunk(key, offset);
-          rows = rows.concat(expandLayerChunk(payload));
+          const chunk = expandLayerChunk(payload);
+          rows = rows.concat(chunk);
+          reportLoadProgress(chunk.length);
           hydrateLayerRecords(key, rows, d.stats, ownPointIndex, payload.nextOffset == null);
           d._recordsLoading = payload.nextOffset != null;
           if (first) {
@@ -2911,6 +2925,7 @@ async function ensureLayerRecords(keys, allowRevisionRecovery = true) {
         await cachePut(layerCacheKey, { revision: payload._revision, recs: payload.recs, stats: payload.stats, cachedAt: Date.now() });
       }
       hydrateLayerRecords(key, payload.recs, payload.stats, ownPointIndex);
+      reportLoadProgress(Array.isArray(payload.recs) ? payload.recs.length : 0);
     })();
       try { await d._recordsLoad; } finally { d._recordsLoad = null; }
     }));
@@ -3487,6 +3502,229 @@ function showRoleBadge() {
 // upload, create or delete data — those controls are hidden via `body.viewer`.
 function applyRoleUI() { document.body.classList.toggle('viewer', !isAdmin()); }
 
+/* ── ПУБЛИКАЦИЯ ОБНОВЛЕНИЙ (слежение + видимое применение) ───────────── */
+// Владелец сохраняет карту на сервер; остальные вкладки узнают об этом из
+// дешёвого опроса /state/revision и применяют новую версию по кнопке — с
+// реальным прогрессом (загруженные точки / обещанные манифестом).
+const UPDATE_POLL_MS = 45000;
+let _pendingRevision = '';
+let _dismissedRevision = '';
+let _updateRunning = false;
+let _updatePollTimer = null;
+let _updateRetryReloads = false;
+
+async function fetchStateRevisionQuick() {
+  const res = await authFetch(SERVER_URL + '/state/revision?map=' + encodeURIComponent(currentMap), {
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  return (data && data.revision) || '';
+}
+
+function revisionTimeLabel(revision) {
+  const t = Date.parse(revision);
+  return isFinite(t)
+    ? new Date(t).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
+    : '';
+}
+function showUpdateBanner(revision) {
+  const el = document.getElementById('update-banner');
+  if (!el || revision === _dismissedRevision) return;
+  const time = document.getElementById('update-banner-time');
+  if (time) {
+    const at = revisionTimeLabel(revision);
+    time.textContent = at ? 'опубликовано в ' + at : 'владелец опубликовал новую версию';
+  }
+  el.hidden = false;
+}
+function hideUpdateBanner() {
+  const el = document.getElementById('update-banner');
+  if (el) el.hidden = true;
+}
+
+function setUpdateProgress(p, title, sub) {
+  const pct = Math.max(0, Math.min(1, p));
+  const shown = Math.round(pct * 100);
+  const pctEl = document.getElementById('upd-pct');
+  const barEl = document.getElementById('upd-bar-fill');
+  if (pctEl) pctEl.textContent = shown + '%';
+  if (barEl) barEl.style.width = shown + '%';
+  if (title) { const el = document.getElementById('upd-title'); if (el) el.textContent = title; }
+  if (sub)   { const el = document.getElementById('upd-sub');   if (el) el.textContent = sub; }
+  // Карта возвращает цвет по мере прогресса — прогресс виден на самой карте.
+  document.body.style.setProperty('--upd-gray', String(1 - pct));
+}
+function openUpdateOverlay() {
+  const ov = document.getElementById('update-overlay');
+  if (!ov) return;
+  ov.className = '';
+  ov.hidden = false;
+  document.body.classList.add('updating');
+  const hints = document.getElementById('upd-hints');
+  if (hints) { hints.hidden = true; hints.innerHTML = ''; }
+  const acts = document.getElementById('upd-actions');
+  if (acts) acts.hidden = true;
+  setUpdateProgress(0, 'Обновляем карту', 'Проверяем данные на сервере…');
+}
+function closeUpdateOverlay() {
+  const ov = document.getElementById('update-overlay');
+  if (ov) ov.hidden = true;
+  document.body.classList.remove('updating');
+  document.body.style.removeProperty('--upd-gray');
+}
+
+// Что именно пошло не так и что с этим делать — без общих слов.
+function updateFailureCopy(err) {
+  const msg = (err && err.message) || '';
+  if (msg === 'HTTP 401') {
+    return {
+      reload: true,
+      sub: 'Сессия входа истекла — сервер больше не принимает запросы.',
+      hints: ['Нажмите «Войти заново» и введите логин и пароль.',
+              'Данные не потеряны: карта хранится на сервере, а не в браузере.'],
+    };
+  }
+  if (msg === 'HTTP 403') {
+    return {
+      sub: 'Нет доступа к этой карте под текущим логином.',
+      hints: ['Выйдите и войдите под логином своего отдела.',
+              'Если доступ нужен — напишите владельцу карты.'],
+    };
+  }
+  if (msg === 'EMPTY_STATE') {
+    return {
+      sub: 'На сервере пока нет сохранённой версии этой карты.',
+      hints: ['Владелец ещё не нажимал сохранение — попробуйте позже.'],
+    };
+  }
+  if (err && err.name === 'TimeoutError') {
+    return {
+      sub: 'Сервер не ответил вовремя.',
+      hints: ['Подождите 30 секунд и нажмите «Повторить» — сервер мог «просыпаться».',
+              'Если повторяется — проверьте интернет и обновите страницу (Ctrl+Shift+R).'],
+    };
+  }
+  return {
+    sub: msg ? 'Ошибка связи с сервером: ' + msg : 'Не удалось связаться с сервером.',
+    hints: ['Проверьте интернет и нажмите «Повторить».',
+            'Если не помогает — обновите страницу целиком (Ctrl+Shift+R).',
+            'Старые данные на карте остались — работать можно, но они не самые свежие.'],
+  };
+}
+function showUpdateFailure(err) {
+  const ov = document.getElementById('update-overlay');
+  if (ov) { ov.hidden = false; ov.className = 'fail'; }
+  document.body.classList.remove('updating');
+  document.body.style.removeProperty('--upd-gray');
+  const copy = updateFailureCopy(err);
+  _updateRetryReloads = !!copy.reload;
+  const pctEl = document.getElementById('upd-pct');
+  if (pctEl) pctEl.textContent = 'Сбой';
+  const titleEl = document.getElementById('upd-title');
+  if (titleEl) titleEl.textContent = 'Обновление не выполнено';
+  const subEl = document.getElementById('upd-sub');
+  if (subEl) subEl.textContent = copy.sub;
+  const hints = document.getElementById('upd-hints');
+  if (hints) {
+    hints.innerHTML = copy.hints.map(h => `<li>${esc(h)}</li>`).join('');
+    hints.hidden = false;
+  }
+  const retry = document.getElementById('upd-retry');
+  if (retry) retry.textContent = copy.reload ? 'Войти заново' : 'Повторить';
+  const acts = document.getElementById('upd-actions');
+  if (acts) acts.hidden = false;
+  setSyncBadge('err', 'Обновление не выполнено');
+  console.warn('Update failed:', (err && err.message) || err);
+}
+
+async function runUpdate() {
+  if (_updateRunning || !SERVER_URL) return;
+  _updateRunning = true;
+  _dismissedRevision = '';
+  hideUpdateBanner();
+  openUpdateOverlay();
+  const prevRevision = _activeStateRevision;
+  const wasReady = stateReady;
+  stateReady = false; // не отправлять обратно на сервер то, что сейчас применяем
+  try {
+    const manifest = await fetchStateManifest();
+    if (!manifest) throw new Error('EMPTY_STATE');
+    await cacheStateMeta(manifest);
+    _activeStateRevision = stateRevision(manifest);
+    pruneOldLayerRevisions(_activeStateRevision);
+
+    setUpdateProgress(0.08, 'Обновляем карту', 'Применяем настройки слоёв…');
+    applySnapshot(manifest);
+    renderCurrentState();
+
+    const keys = eagerStateLayers();
+    const total = keys.reduce((sum, k) => sum + ((DS[k] && DS[k].stats && DS[k].stats.n) || 0), 0);
+    let done = 0;
+    if (total > 0) {
+      setUpdateProgress(0.1, 'Обновляем карту',
+        'Загружаем точки: ' + total.toLocaleString('ru-RU'));
+      _loadProgressHook = n => {
+        done += n;
+        setUpdateProgress(0.1 + 0.85 * Math.min(done / total, 1));
+      };
+    }
+    await ensureLayerRecords(keys);
+    _loadProgressHook = null;
+
+    setUpdateProgress(0.97, 'Обновляем карту', 'Отрисовываем слои…');
+    renderCurrentState();
+
+    const at = revisionTimeLabel(_activeStateRevision) || new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+    const ov = document.getElementById('update-overlay');
+    if (ov) ov.className = 'done';
+    setUpdateProgress(1, 'Обновление успешно',
+      'Карта соответствует версии от ' + at + (total ? ' · точек: ' + total.toLocaleString('ru-RU') : ''));
+    setSyncBadge('ok', 'Обновлено ' + at);
+    _pendingRevision = '';
+    if (isAdmin() && SERVER_KEY) _lastServerStateFingerprint = stateFingerprint(buildStateSnapshot());
+    setTimeout(closeUpdateOverlay, 1400);
+  } catch (err) {
+    _activeStateRevision = prevRevision; // чтобы повтор начался с чистой ревизии
+    showUpdateFailure(err);
+  } finally {
+    _loadProgressHook = null;
+    _updateRunning = false;
+    stateReady = wasReady;
+  }
+}
+
+async function checkForUpdates() {
+  if (!SERVER_URL || !_appStarted || _updateRunning || document.hidden) return;
+  try {
+    const rev = await fetchStateRevisionQuick();
+    if (!rev) return;
+    if (rev === _activeStateRevision) { _pendingRevision = ''; hideUpdateBanner(); return; }
+    _pendingRevision = rev;
+    showUpdateBanner(rev);
+  } catch (_) {
+    // Молча: состояние связи уже показывает бейдж синхронизации.
+  }
+}
+
+function wireUpdateUI() {
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
+  on('update-apply', () => runUpdate());
+  on('update-dismiss', () => { _dismissedRevision = _pendingRevision; hideUpdateBanner(); });
+  on('upd-retry', () => { if (_updateRetryReloads) location.reload(); else runUpdate(); });
+  on('upd-close', closeUpdateOverlay);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !_updateRunning) closeUpdateOverlay();
+  });
+}
+function startUpdateWatcher() {
+  if (!SERVER_URL || _updatePollTimer) return;
+  wireUpdateUI();
+  _updatePollTimer = setInterval(checkForUpdates, UPDATE_POLL_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdates(); });
+  window.addEventListener('online', checkForUpdates);
+}
+
 /* ── START APP (runs once a map is chosen) ───────────────────────────── */
 let _appStarted = false;
 function readLocalSnapshot() {
@@ -3585,6 +3823,8 @@ async function startApp() {
   } else if (SERVER_URL && legacyLocal && isAdmin()) {
     pushToServer(buildStateSnapshot());
   }
+  // С этого момента вкладка сама узнаёт о новых публикациях владельца.
+  startUpdateWatcher();
 }
 
 /* ── AUTH ────────────────────────────────────────────────────────────── */
