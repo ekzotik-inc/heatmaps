@@ -62,21 +62,51 @@ const HEAT_RAMPS = {
   warm:    { 0.10: '#ffffb2', 0.32: '#fed976', 0.55: '#fd8d3c', 0.78: '#e31a1c', 1.0: '#800026' }, // YlOrRd — классика тепла
   cool:    { 0.10: '#e0f3f8', 0.32: '#abd9e9', 0.55: '#41b6c4', 0.78: '#2c7fb8', 1.0: '#253494' }, // Blues — холодная
   viridis: { 0.10: '#fde725', 0.32: '#5ec962', 0.55: '#21918c', 0.78: '#3b528b', 1.0: '#440154' },
+  cividis: { 0.10: '#fee838', 0.32: '#bbaf71', 0.55: '#7c7b78', 0.78: '#3c4d6e', 1.0: '#00224e' }, // безопасна при дальтонизме
   inferno: { 0.10: '#fcffa4', 0.32: '#f98e09', 0.55: '#bc3754', 0.78: '#57106e', 1.0: '#000004' },
   magma:   { 0.10: '#fcfdbf', 0.32: '#fc8961', 0.55: '#b73779', 0.78: '#51127c', 1.0: '#000004' },
+  plasma:  { 0.10: '#f0f921', 0.32: '#fca636', 0.55: '#e16462', 0.78: '#b12a90', 1.0: '#0d0887' },
   turbo:   { 0.10: '#28bbec', 0.32: '#a4fc3c', 0.55: '#fb7e21', 0.78: '#d23105', 1.0: '#7a0403' },
+  teal:    { 0.10: '#e1f5f8', 0.32: '#94dfe8', 0.55: '#12ADC1', 0.78: '#0E96A8', 1.0: '#07485a' }, // фирменная бирюза
+  forest:  { 0.10: '#e8f6e3', 0.32: '#a8ddb5', 0.55: '#43a2ca', 0.78: '#0868ac', 1.0: '#084081' },
+  rose:    { 0.10: '#fde0dd', 0.32: '#fa9fb5', 0.55: '#dd3497', 0.78: '#7a0177', 1.0: '#49006a' },
+  mono:    { 0.10: '#e8ecf2', 0.32: '#b7c0cd', 0.55: '#78879c', 0.78: '#3f4c60', 1.0: '#161d28' }, // нейтральная подложка
 };
 const RAMP_NAMES = {
   custom:  'Свой цвет',
-  warm:    'Классика (жёлто-красная)',
-  cool:    'Холодная (синяя)',
-  viridis: 'Viridis (научная)',
+  warm:    'Классика',
+  cool:    'Холодная',
+  viridis: 'Viridis',
+  cividis: 'Cividis',
   inferno: 'Inferno',
   magma:   'Magma',
-  turbo:   'Turbo (контрастная)',
+  plasma:  'Plasma',
+  turbo:   'Turbo',
+  teal:    'Бирюза',
+  forest:  'Зелёно-синяя',
+  rose:    'Розово-пурпурная',
+  mono:    'Серая',
 };
+// Быстрые цвета для «своего цвета» и для слоёв точек: намеренно далеко
+// разнесённые оттенки, чтобы включённые слои не сливались друг с другом.
+const SWATCHES = [
+  '#E63946', '#F4685C', '#FF9F1C', '#F1C40F', '#2DC653', '#14B87D',
+  '#12ADC1', '#00B4D8', '#457B9D', '#4C8DFF', '#9B59B6', '#E84393',
+  '#8D6E63', '#5B6A82',
+];
 function gradOf(d) {
   return (d.ramp && d.ramp !== 'custom' && HEAT_RAMPS[d.ramp]) ? HEAT_RAMPS[d.ramp] : heatGrad(d.color);
+}
+// CSS-градиент палитры — используется в чипах выбора, превью и легенде.
+function rampCss(grad, from = 'transparent') {
+  const stops = Object.keys(grad).map(Number).sort((a, b) => a - b)
+    .map(s => `${grad[s]} ${Math.round(s * 100)}%`).join(', ');
+  return `linear-gradient(90deg, ${from} 0%, ${stops})`;
+}
+// Цвет-представитель палитры (для точки в заголовке карточки и легенды).
+function layerKeyColor(d) {
+  const g = gradOf(d);
+  return g[0.78] || g[1.0] || d.color;
 }
 function rampColor(t) {
   t = Math.max(0, Math.min(1, t));
@@ -255,17 +285,19 @@ let _cptUploadTarget = null;  // id of layer awaiting file upload
 const map = L.map('map', { preferCanvas: true, zoomControl: false, minZoom: 5, zoomSnap: .5 })
               .setView([41, 67], 6);
 
-// Поддерживаемая стандартная подложка без устаревшего 2ГИС endpoint.
-// Запрашиваются только тайлы текущего viewport; heatmap-слои живут отдельно.
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  maxZoom: 19,
+// Подложка — 2ГИС. Правило владельца (CLAUDE.md): НИКОГДА не менять.
+// Эндпоинт живой и отдаёт детальные тайлы по городам УЗ/КГ — проверено.
+L.tileLayer('https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1', {
+  subdomains: '0123',
+  attribution: '&copy; 2ГИС',
+  maxZoom: 18,
 }).addTo(map);
 
 map.createPane('districts'); map.getPane('districts').style.zIndex = 460;
 map.createPane('income');    map.getPane('income').style.zIndex = 445;
 map.getPane('income').style.pointerEvents = 'none';
 map.createPane('ptradius');  map.getPane('ptradius').style.zIndex = 448; // coverage circles under markers
+map.createPane('tags');      map.getPane('tags').style.zIndex = 470;     // тачпоинты тепловых слоёв, под маркерами точек
 
 const distRenderer  = L.svg({ pane: 'districts' });
 const radiusRenderer = L.svg({ pane: 'ptradius' });
@@ -274,6 +306,8 @@ const coresGroup    = L.layerGroup().addTo(map);
 const recLayer      = L.layerGroup().addTo(map);
 const addrLayer     = L.layerGroup().addTo(map); // address-program preview markers
 const cptRoot       = L.layerGroup().addTo(map); // parent for ALL custom-point layer groups
+const tagRoot       = L.layerGroup().addTo(map); // «Ярлыки»: тачпоинты тепловых слоёв
+const tagRenderer   = L.canvas({ pane: 'tags', padding: .3 });
 
 /* ── INCOME / DISTRICTS ──────────────────────────────────────────────── */
 const incCol = { high: '#C0392B', mid: '#F39C12', low: '#1F9E5A' };
@@ -581,6 +615,7 @@ function renderHeat() {
   const countEl = document.getElementById('b-count');
   if (countEl && (needsUiRefresh || countEl.textContent !== countText)) countEl.textContent = countText;
   if (needsUiRefresh) updateLayerLegend();
+  renderTags(); // ярлыки следуют за видимостью слоёв и фильтром городов
 }
 
 function updateLayerLegend() {
@@ -589,18 +624,115 @@ function updateLayerLegend() {
   const items = [];
   heatKeys.forEach(k => {
     const d = DS[k];
-    if (d && d.visible && d.recs && d.recs.length) items.push({ color: d.color, name: d.name });
+    if (!d || !d.visible || !d.recs || !d.recs.length) return;
+    // Тепловой слой показывается своей полосой-градиентом: когда включено
+    // несколько слоёв, полоса отличает их надёжнее, чем одна точка цвета.
+    items.push({
+      key: k, ramp: rampCss(gradOf(d), '#ffffff'), name: d.name,
+      count: d.stats && d.stats.n, tags: !!d.showTags,
+    });
   });
   customPtLayers.forEach(l => {
-    if (l.visible && l.recs && l.recs.length) items.push({ color: l.color, name: l.name });
+    if (l.visible && l.recs && l.recs.length) {
+      items.push({ color: l.color, name: l.name, count: l.recs.length });
+    }
   });
   if (recShow && lastRecs.length) items.push({ color: '#14B87D', name: 'Рекомендации' });
   if (!items.length) { el.style.display = 'none'; return; }
   el.style.display = '';
-  el.innerHTML = '<div class="legend-title">Легенда</div>' + items.map(it =>
-    `<div class="legend-item"><div class="legend-dot" style="background:${it.color}"></div><span class="legend-name">${esc(it.name)}</span></div>`
-  ).join('');
+  el.innerHTML = '<div class="legend-title">Легенда</div>' + items.map(it => {
+    const mark = it.ramp
+      ? `<div class="legend-ramp" style="background:${it.ramp}"></div>`
+      : `<div class="legend-dot" style="background:${it.color}"></div>`;
+    const count = it.count ? `<span class="legend-count">${it.count.toLocaleString('ru-RU')}</span>` : '';
+    const tag = it.tags ? '<span class="legend-tag" title="Ярлыки включены">🏷</span>' : '';
+    return `<div class="legend-item">${mark}<span class="legend-name">${esc(it.name)}</span>${tag}${count}</div>`;
+  }).join('');
 }
+
+/* ── ЯРЛЫКИ: тачпоинты тепловых слоёв ────────────────────────────────── */
+// Тепловой слой показывает плотность, но не отдельные адреса. «Ярлыки» рисуют
+// сами точки слоя с карточкой из загруженного файла. Точек бывают десятки
+// тысяч, поэтому рисуем только видимую часть карты, canvas-рендерером и с
+// потолком — иначе вкладка встаёт.
+const TAG_LIMIT = 1200;
+function tagLayerKeys() {
+  return heatKeys.filter(k => DS[k] && DS[k].showTags && DS[k].visible);
+}
+function tagPopupHtml(d, r) {
+  const rows = [];
+  if (r.addr)  rows.push(['Адрес', r.addr]);
+  if (r.hours) rows.push(['Часы', r.hours]);
+  if (r.code)  rows.push(['Код', r.code]);
+  if (r.fil)   rows.push(['Город', r.fil]);
+  rows.push(['Значение', (+r.vol || 0).toLocaleString('ru-RU')]);
+  return `<div class="pp-title">${esc(r.name || 'Точка без названия')}</div>` +
+    rows.map(([k, v]) =>
+      `<div class="pp-row"><span>${esc(k)}</span><b style="font-family:Manrope;font-weight:600;text-align:right">${esc(String(v))}</b></div>`
+    ).join('') +
+    `<span class="pp-tag" style="background:var(--acc-l);color:var(--acc-d);border:1px solid rgba(18,173,193,.35)">${esc(d.name)}</span>`;
+}
+// renderHeat() дёргается на каждое движение ползунка. Пересобирать до 1200
+// маркеров на каждый кадр незачем — сверяем сигнатуру входных данных.
+let _tagSig = '';
+function renderTags(force) {
+  const keys = tagLayerKeys();
+  const b = map.getBounds();
+  const sig = keys.map(k => k + ':' + layerKeyColor(DS[k]) + ':' + (DS[k]._recordsLoaded ? DS[k].recs.length : -1)).join('|')
+    + '|' + selectedCities.join(',')
+    + '|' + [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(v => v.toFixed(4)).join(',');
+  if (!force && sig === _tagSig) return;
+  _tagSig = sig;
+
+  tagRoot.clearLayers();
+  const note = document.getElementById('tag-note');
+  if (!keys.length) { if (note) note.style.display = 'none'; return; }
+  const bounds = b.pad(.08);
+  let shown = 0, inViewTotal = 0;
+  keys.forEach(k => {
+    const d = DS[k];
+    if (!d._recordsLoaded || !d.recs.length) return;
+    const inView = [];
+    for (const r of d.recs) {
+      if (!selectedPointMatches(r)) continue;
+      if (bounds.contains([r.lat, r.lon])) inView.push(r);
+    }
+    inViewTotal += inView.length;
+    // При переполнении оставляем самые крупные точки слоя — они и нужны.
+    const pick = inView.length > TAG_LIMIT
+      ? inView.slice().sort((a, b) => (+b.vol || 0) - (+a.vol || 0)).slice(0, TAG_LIMIT)
+      : inView;
+    shown += pick.length;
+    const color = layerKeyColor(d);
+    const withTooltip = pick.length <= 300;
+    pick.forEach(r => {
+      const m = L.circleMarker([r.lat, r.lon], {
+        renderer: tagRenderer, pane: 'tags',
+        radius: 5, weight: 2, color: '#ffffff', opacity: .95,
+        fillColor: color, fillOpacity: .95,
+      });
+      // Содержимое собирается по клику — 1200 готовых строк HTML не нужны.
+      m.bindPopup(() => tagPopupHtml(d, r));
+      if (withTooltip && r.name) {
+        m.bindTooltip(esc(r.name), { className: 'tt', direction: 'top', offset: [0, -6] });
+      }
+      m.addTo(tagRoot);
+    });
+  });
+  if (note) {
+    if (inViewTotal > shown) {
+      note.style.display = '';
+      note.textContent = `Ярлыки: показано ${shown.toLocaleString('ru-RU')} из ${inViewTotal.toLocaleString('ru-RU')} — приблизьте карту`;
+    } else if (shown) {
+      note.style.display = '';
+      note.textContent = `Ярлыки: ${shown.toLocaleString('ru-RU')} точек`;
+    } else {
+      note.style.display = 'none';
+    }
+  }
+}
+// Видимая часть карты меняется — пересобираем только когда ярлыки включены.
+map.on('moveend zoomend', () => { if (tagLayerKeys().length) renderTags(); });
 
 /* ── RECOMMENDATIONS ─────────────────────────────────────────────────── */
 const SUPPRESS = 1100;
@@ -877,11 +1009,17 @@ function buildHeatUI() {
         <div class="cbx${d.visible ? ' on' : ''}" aria-label="Показывать слой «${esc(d.name)}» на карте"></div>
       </div>
       <div class="lyr-body">
-        <div class="lyr-ctl">
-          <div class="grp" style="flex:1">Палитра
-            <select class="ramp-sel" style="flex:1">${Object.keys(RAMP_NAMES).map(r =>
-              `<option value="${r}"${(d.ramp || 'custom') === r ? ' selected' : ''}>${RAMP_NAMES[r]}</option>`).join('')}</select>
-            <input type="color" value="${d.color}" style="display:${(d.ramp || 'custom') === 'custom' ? '' : 'none'}">
+        <div class="pal-label">Палитра</div>
+        <div class="ramp-chips">${Object.keys(RAMP_NAMES).map(r => {
+          const on = (d.ramp || 'custom') === r;
+          const bg = r === 'custom' ? rampCss(heatGrad(d.color), '#ffffff') : rampCss(HEAT_RAMPS[r], '#ffffff');
+          return `<button type="button" class="ramp-chip${on ? ' on' : ''}" data-ramp="${r}"
+            title="${esc(RAMP_NAMES[r])}" aria-pressed="${on}"><i style="background:${bg}"></i><span>${esc(RAMP_NAMES[r])}</span></button>`;
+        }).join('')}</div>
+        <div class="pal-custom" style="display:${(d.ramp || 'custom') === 'custom' ? '' : 'none'}">
+          <div class="sw-row">${SWATCHES.map(c =>
+            `<button type="button" class="sw${c.toLowerCase() === String(d.color).toLowerCase() ? ' on' : ''}" data-sw="${c}" style="background:${c}" title="${c}" aria-label="Цвет ${c}"></button>`).join('')}
+            <input type="color" class="sw-pick" value="${d.color}" title="Свой оттенок">
           </div>
         </div>
         <div class="ramp-preview"></div>
@@ -891,6 +1029,7 @@ function buildHeatUI() {
         </div>
         <div class="lyr-meta">Объём слоя: ${Math.round(d.stats.sum).toLocaleString('ru-RU')}</div>
         <div class="lyr-actions">
+          <button class="lyr-act lyr-tags${d.showTags ? ' on' : ''}" title="Показать точки этого слоя на карте">🏷 Ярлыки</button>
           <button class="lyr-act lyr-rename" title="Переименовать слой">✎ Имя</button>
           <button class="lyr-act lyr-solo${_soloKey === k ? ' on' : ''}" title="Показать только этот слой">◉ Соло</button>
           <button class="lyr-act lyr-update" title="Перезалить файл в этот слой">⬆ Данные</button>
@@ -905,14 +1044,14 @@ function buildHeatUI() {
       if (open) _lyrOpen.add(k); else _lyrOpen.delete(k);
     });
 
-    const colorInp = card.querySelector('input[type=color]');
-    const rampSel  = card.querySelector('.ramp-sel');
+    const colorInp = card.querySelector('.sw-pick');
+    const customBox = card.querySelector('.pal-custom');
     const preview  = card.querySelector('.ramp-preview');
     const drawPreview = () => {
-      const g = gradOf(d);
-      const stops = Object.keys(g).map(Number).sort((a, b) => a - b)
-        .map(s => `${g[s]} ${Math.round(s * 100)}%`).join(', ');
-      preview.style.background = `linear-gradient(90deg, transparent 0%, ${stops})`;
+      preview.style.background = rampCss(gradOf(d));
+      card.querySelector('.lyr-dot').style.background = layerKeyColor(d);
+      const customChip = card.querySelector('.ramp-chip[data-ramp="custom"] i');
+      if (customChip) customChip.style.background = rampCss(heatGrad(d.color), '#ffffff');
     };
     drawPreview();
 
@@ -927,12 +1066,46 @@ function buildHeatUI() {
       renderHeat(); updateAccBadges(); saveState();
     });
     card.querySelector('.lyr-solo').addEventListener('click', () => toggleSolo(k));
-    rampSel.addEventListener('change', e => {
-      d.ramp = e.target.value;
-      colorInp.style.display = d.ramp === 'custom' ? '' : 'none';
-      drawPreview(); renderHeat();
+
+    // Ярлыки — точки этого слоя поверх тепла, с карточкой из файла загрузки
+    card.querySelector('.lyr-tags').addEventListener('click', async e => {
+      const btn = e.currentTarget;
+      if (!d.showTags) {
+        if (!d.visible) { toast('Сначала включите слой', 'err'); return; }
+        btn.classList.add('loading');
+        try { await ensureLayerRecords(k); }
+        catch (_) { toast('Не удалось загрузить точки слоя', 'err'); btn.classList.remove('loading'); return; }
+        btn.classList.remove('loading');
+      }
+      d.showTags = !d.showTags;
+      btn.classList.toggle('on', d.showTags);
+      renderTags(true); updateLayerLegend(); saveState();
     });
-    colorInp.addEventListener('input', e => { d.color = e.target.value; card.querySelector('.lyr-dot').style.background = d.color; drawPreview(); renderHeat(); });
+
+    card.querySelectorAll('.ramp-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        d.ramp = chip.dataset.ramp;
+        card.querySelectorAll('.ramp-chip').forEach(c => {
+          const on = c === chip;
+          c.classList.toggle('on', on);
+          c.setAttribute('aria-pressed', String(on));
+        });
+        customBox.style.display = d.ramp === 'custom' ? '' : 'none';
+        drawPreview(); renderHeat(); renderTags(); saveState();
+      });
+    });
+    const applyColor = value => {
+      d.color = value;
+      card.querySelectorAll('.sw').forEach(s =>
+        s.classList.toggle('on', s.dataset.sw.toLowerCase() === value.toLowerCase()));
+      if (colorInp.value.toLowerCase() !== value.toLowerCase()) colorInp.value = value;
+      drawPreview(); renderHeat(); renderTags();
+    };
+    card.querySelectorAll('.sw').forEach(sw => {
+      sw.addEventListener('click', () => { applyColor(sw.dataset.sw); saveState(); });
+    });
+    colorInp.addEventListener('input', e => applyColor(e.target.value));
+    colorInp.addEventListener('change', () => saveState());
     card.querySelector('.r-int').addEventListener('input', e => {
       d.intensity = +e.target.value;
       fillSlider(e.target);
@@ -1657,8 +1830,12 @@ function buildCustomPtUI() {
         <div class="cbx${l.visible ? ' on' : ''}" data-cptoggle="${esc(l.id)}" aria-label="Показывать слой «${esc(l.name)}» на карте"></div>
       </div>
       <div class="lyr-body cpt-body">
+        <div class="pal-label">Цвет маркеров</div>
+        <div class="sw-row">${SWATCHES.map(c =>
+          `<button type="button" class="sw${c.toLowerCase() === String(l.color).toLowerCase() ? ' on' : ''}" data-cpsw="${esc(l.id)}" data-sw="${c}" style="background:${c}" title="${c}" aria-label="Цвет ${c}"></button>`).join('')}
+          <input type="color" class="sw-pick cpt-color" value="${esc(l.color)}" data-cpcol="${esc(l.id)}" title="Свой оттенок"/>
+        </div>
         <div class="lyr-ctl">
-          <div class="grp" style="flex:1">Цвет <input type="color" class="cpt-color" value="${esc(l.color)}" data-cpcol="${esc(l.id)}" title="Цвет маркеров"/></div>
           <div class="grp" style="flex:1">Иконка <select class="cpt-shape" data-cpshape="${esc(l.id)}" style="flex:1;min-width:0">${opts}</select></div>
         </div>
         <div class="lyr-ctl">
@@ -1724,11 +1901,35 @@ function buildCustomPtUI() {
     });
   });
 
+  // Цвет слоя точек: при перетаскивании пипетки перерисовываем только маркеры,
+  // а зависимые списки обновляем по завершении — иначе карточка пересобиралась
+  // на каждое движение и выбор цвета обрывался.
+  const paintCptColor = (l, value, card) => {
+    l.color = value;
+    if (card) {
+      card.querySelectorAll('[data-cpsw]').forEach(s =>
+        s.classList.toggle('on', s.dataset.sw.toLowerCase() === value.toLowerCase()));
+      const pick = card.querySelector('.sw-pick');
+      if (pick && pick.value.toLowerCase() !== value.toLowerCase()) pick.value = value;
+      const dot = card.querySelector('.cpt-layer-dot');
+      if (dot) dot.style.background = value;
+    }
+    renderCustomPoints();
+  };
+  box.querySelectorAll('[data-cpsw]').forEach(el => {
+    el.addEventListener('click', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cpsw); if (!l) return;
+      paintCptColor(l, el.dataset.sw, el.closest('.cpt-layer'));
+      buildAddrSrcSel(); buildRtExclUI(); saveState();
+    });
+  });
   box.querySelectorAll('[data-cpcol]').forEach(el => {
     el.addEventListener('input', () => {
       const l = customPtLayers.find(x => x.id === el.dataset.cpcol); if (!l) return;
-      l.color = el.value;
-      renderCustomPoints(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); saveState();
+      paintCptColor(l, el.value, el.closest('.cpt-layer'));
+    });
+    el.addEventListener('change', () => {
+      buildAddrSrcSel(); buildRtExclUI(); saveState();
     });
   });
 
@@ -2079,7 +2280,7 @@ function buildStateSnapshot() {
   const layers = {};
   heatKeys.forEach(k => {
     const d = DS[k]; if (!d) return;
-    const o = { name: d.name, color: d.color, ramp: d.ramp, opacity: d.opacity, intensity: d.intensity, visible: d.visible, stats: d.stats };
+    const o = { name: d.name, color: d.color, ramp: d.ramp, opacity: d.opacity, intensity: d.intensity, visible: d.visible, showTags: !!d.showTags, stats: d.stats };
     if (k.startsWith('custom_') || d._userData) {
       o._userData = true;
       if (d._recordsLoaded === false) o._recordsOmitted = true;
@@ -2158,6 +2359,7 @@ function applySnapshot(st) {
       });
       if (typeof sv.ramp    === 'string') DS[k].ramp    = sv.ramp;
       if (typeof sv.opacity === 'number') DS[k].opacity = sv.opacity;
+      DS[k].showTags = !!sv.showTags;
       if (Array.isArray(sv.recs)) {
         // Saved recs are slim (see slimRecs). Rebuild city and nearest-own-point
         // fields during hydration; defer expensive local-demand (`ld/lc`) work
@@ -2949,6 +3151,7 @@ function stateFingerprint(snapshot) {
   const layers = Object.entries(snapshot.layers || {}).map(([key, layer]) => [
     key, layer && layer.name, layer && layer.color, layer && layer.opacity,
     layer && layer.intensity, layer && layer.visible,
+    layer && layer.ramp, layer && layer.showTags,
     layer && layer._recordsOmitted,
     layer && layer.recordCount,
     layer && layer.stats,
