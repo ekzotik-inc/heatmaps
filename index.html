@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260922b"/>
+  <link rel="stylesheet" href="style.css?v=20260922c"/>
 </head>
 <body>
 
@@ -157,19 +157,15 @@
 
       <!-- TAB: ТОЧКИ -->
       <div class="tab-panel" id="tab-points">
-        <p class="tab-section-title retail-section-title">Торговые точки<span class="retail-badge">ручной ввод</span></p>
-        <div id="retail-list"></div>
-        <button class="add-layer-btn retail-add" id="retail-add-btn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Добавить торговую точку
-        </button>
-        <div class="tab-section-divider"></div>
-
         <p class="tab-section-title">Наши точки</p>
         <div id="custom-pt-list"></div>
         <button class="add-layer-btn" id="add-custom-pt-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Добавить слой точек
+        </button>
+        <button class="add-layer-btn manual-add" id="add-manual-pt-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 12-9 12s-9-5-9-12a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+          Добавить точку вручную
         </button>
         <div style="text-align:center;margin-top:6px"><a class="lnk" id="cpt-tpl">⬇ Шаблон — наши точки</a></div>
         <input type="file" id="cpt-file" accept=".csv,.xlsx,.xls" style="display:none"/>
@@ -484,7 +480,15 @@
     </div>
     <div class="rp-grid">
       <label class="rp-field rp-wide">
-        <span>Название <b class="rp-req">*</b></span>
+        <span>Слой <b class="rp-req">*</b></span>
+        <select id="rp-layer"></select>
+      </label>
+      <label class="rp-field rp-wide" id="rp-layer-new-box" style="display:none">
+        <span>Название нового слоя</span>
+        <input type="text" id="rp-layer-new" maxlength="40" placeholder="Например, Торговые точки" autocomplete="off"/>
+      </label>
+      <label class="rp-field rp-wide">
+        <span>Название точки <b class="rp-req">*</b></span>
         <input type="text" id="rp-name" maxlength="80" placeholder="Например, Магазин «Чорсу»" autocomplete="off"/>
       </label>
       <label class="rp-field">
@@ -584,7 +588,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20260922b'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20260922c'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();

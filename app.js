@@ -189,8 +189,6 @@ function nearestPt(ix, lat, lon) {
 function ourPts() {
   const out = [];
   customPtLayers.forEach(l => { for (const r of l.recs) out.push(r); });
-  // Торговые точки, заведённые вручную, — такая же наша сеть.
-  for (const p of retailPts) out.push(p);
   return out;
 }
 
@@ -283,13 +281,19 @@ let rtExclKeys  = [];            // layer keys to exclude (shipment mode)
 let customPtLayers = [];      // [{ id, name, color, visible, recs: [], _group: L.LayerGroup }]
 let _cptUploadTarget = null;  // id of layer awaiting file upload
 
-/* Торговые точки — отдельный вид точек: владелец заводит их вручную по одной,
-   с карточкой (ДМС-код, оборудование, продажи, комментарий) и тремя фото.
+/* Слой с ручным вводом — обычный слой точек (`manual: true`), поэтому у него
+   те же инструменты, что у DS/IPSE: цвет, иконка, размер, радиус охвата, соло.
+   Отличие только в способе наполнения: точки заводятся по одной через форму и
+   несут карточку — ДМС-код, оборудование, продажи, комментарий и до трёх фото.
    Фото в состоянии НЕ хранятся — только идентификаторы; байты лежат на сервере
    (/photo), иначе снимок раздул бы каждое сохранение карты на мегабайты. */
-let retailPts = [];   // [{ id, name, dms, equip, sales, comment, lat, lon, photos: [{id,w,h}] }]
-let retailLayer = { visible: true, color: '#F1C40F' };
 const RETAIL_MAX_PHOTOS = 3;
+function manualLayers() { return customPtLayers.filter(l => l.manual); }
+// Точка считается «карточной», если в ней есть что показать сверх имени.
+function isManualRec(r) {
+  return !!(r && (r.dms || r.equip || r.comment || (r.photos && r.photos.length) ||
+                  (r.sales != null && r.sales !== '')));
+}
 
 /* ── MAP INIT ────────────────────────────────────────────────────────── */
 const map = L.map('map', { preferCanvas: true, zoomControl: false, minZoom: 5, zoomSnap: .5 })
@@ -647,9 +651,6 @@ function updateLayerLegend() {
       items.push({ color: l.color, name: l.name, count: l.recs.length });
     }
   });
-  if (retailLayer.visible && retailPts.length) {
-    items.push({ color: retailLayer.color, name: 'Торговые точки', count: retailPts.length });
-  }
   if (recShow && lastRecs.length) items.push({ color: '#14B87D', name: 'Рекомендации' });
   if (!items.length) { el.style.display = 'none'; return; }
   el.style.display = '';
@@ -1802,16 +1803,22 @@ function renderCustomPoints() {
         }),
         zIndexOffset: 1500,
       });
-      const parts = [r.name ? `<div class="pp-title">${esc(r.name)}</div>` : ''];
-      if (r.addr)  parts.push(`<div class="pp-row"><span>Адрес</span><b style="font-family:Manrope;font-weight:500;text-align:right">${esc(r.addr)}</b></div>`);
-      if (r.hours) parts.push(`<div class="pp-row"><span>Часы</span><b>${esc(r.hours)}</b></div>`);
-      if (r.code)  parts.push(`<div class="pp-row"><span>Код</span><b>${esc(r.code)}</b></div>`);
-      m.bindPopup(parts.filter(Boolean).join(''));
+      const rich = l.manual || isManualRec(r);
+      if (rich) {
+        // Карточка с фото собирается при открытии — байты снимков до клика не нужны.
+        m.bindPopup(() => manualPopupHtml(l, r), { maxWidth: 300, className: 'retail-popup' });
+        m.on('popupopen', e => wireManualPopup(e.popup, l, r, m));
+      } else {
+        const parts = [r.name ? `<div class="pp-title">${esc(r.name)}</div>` : ''];
+        if (r.addr)  parts.push(`<div class="pp-row"><span>Адрес</span><b style="font-family:Manrope;font-weight:500;text-align:right">${esc(r.addr)}</b></div>`);
+        if (r.hours) parts.push(`<div class="pp-row"><span>Часы</span><b>${esc(r.hours)}</b></div>`);
+        if (r.code)  parts.push(`<div class="pp-row"><span>Код</span><b>${esc(r.code)}</b></div>`);
+        m.bindPopup(parts.filter(Boolean).join(''));
+      }
       if (r.name) m.bindTooltip(`<b style="font-weight:700">${esc(r.name)}</b><br>${esc(l.name)}`, { className: 'tt', direction: 'top', offset: [0, -ic.anchor[1] + 4] });
       m.addTo(l._group);
     });
   });
-  renderRetailPoints(); // рисуется в том же cptRoot, чтобы не осиротеть при перестроении
   updateLayerLegend();
 }
 
@@ -1916,34 +1923,36 @@ async function showLightboxPhoto() {
   }
 }
 
-function retailPopupHtml(p) {
+function manualPopupHtml(layer, r) {
   const rows = [];
-  if (p.dms)   rows.push(['ДМС-код', p.dms]);
-  if (p.equip) rows.push(['Оборудование', p.equip]);
-  if (p.sales !== '' && p.sales != null && isFinite(+p.sales)) {
-    rows.push(['Продажи', (+p.sales).toLocaleString('ru-RU')]);
+  if (r.dms)   rows.push(['ДМС-код', r.dms]);
+  if (r.equip) rows.push(['Оборудование', r.equip]);
+  if (r.sales != null && r.sales !== '' && isFinite(+r.sales)) {
+    rows.push(['Продажи', (+r.sales).toLocaleString('ru-RU')]);
   }
-  rows.push(['Координаты', `${(+p.lat).toFixed(5)}, ${(+p.lon).toFixed(5)}`]);
-  const photos = (p.photos || []).filter(ph => ph && ph.id);
+  if (r.addr)  rows.push(['Адрес', r.addr]);
+  if (r.hours) rows.push(['Часы', r.hours]);
+  rows.push(['Координаты', `${(+r.lat).toFixed(5)}, ${(+r.lon).toFixed(5)}`]);
+  const photos = (r.photos || []).filter(ph => ph && ph.id);
   const thumbs = photos.length
-    ? `<div class="rp-thumbs" data-rpid="${esc(p.id)}">${photos.map((ph, i) =>
+    ? `<div class="rp-thumbs">${photos.map((ph, i) =>
         `<button type="button" class="rp-thumb" data-photo-index="${i}" aria-label="Открыть фото ${i + 1}"><span class="rp-thumb-ph"></span></button>`).join('')}</div>`
-    : '<div class="rp-nophoto">Фото не добавлены</div>';
-  return `<div class="pp-title">${esc(p.name || 'Торговая точка')}</div>
+    : '';
+  return `<div class="pp-title">${esc(r.name || 'Точка')}</div>
     ${thumbs}
     ${rows.map(([k, v]) =>
       `<div class="pp-row"><span>${esc(k)}</span><b style="font-family:Manrope;font-weight:600;text-align:right">${esc(String(v))}</b></div>`).join('')}
-    ${p.comment ? `<div class="rp-comment">${esc(p.comment)}</div>` : ''}
-    <span class="pp-tag rp-tag">ТОРГОВАЯ ТОЧКА</span>
-    ${isAdmin() ? `<button type="button" class="rp-edit" data-rpedit="${esc(p.id)}">✎ Редактировать</button>` : ''}`;
+    ${r.comment ? `<div class="rp-comment">${esc(r.comment)}</div>` : ''}
+    <span class="pp-tag rp-tag" style="background:${esc(layer.color)}22;color:var(--ink);border:1px solid ${esc(layer.color)}">${esc(layer.name)}</span>
+    ${isAdmin() && layer.manual ? '<button type="button" class="rp-edit" data-rpedit="1">✎ Редактировать</button>' : ''}`;
 }
 
 // Миниатюры дорисовываются после открытия карточки: до клика по точке байты
 // снимков не нужны.
-async function hydrateRetailPhotos(p, popupEl) {
+async function hydrateManualPhotos(r, popupEl) {
   const box = popupEl && popupEl.querySelector('.rp-thumbs');
   if (!box) return;
-  const photos = (p.photos || []).filter(ph => ph && ph.id);
+  const photos = (r.photos || []).filter(ph => ph && ph.id);
   const buttons = [...box.querySelectorAll('.rp-thumb')];
   await Promise.all(photos.map(async (ph, i) => {
     const btn = buttons[i];
@@ -1957,109 +1966,53 @@ async function hydrateRetailPhotos(p, popupEl) {
     }
   }));
 }
-
-function renderRetailPoints() {
-  if (!retailLayer.visible || !retailPts.length) return;
-  const group = L.layerGroup();
-  cptRoot.addLayer(group);
-  const ic = shp('star', retailLayer.color, 36);
-  retailPts.filter(p => selectedPointMatches(p)).forEach(p => {
-    const m = L.marker([p.lat, p.lon], {
-      icon: L.divIcon({
-        className: '',
-        html: `<span class="retail-pin">${ic.html}</span>`,
-        iconSize: [36, 36], iconAnchor: ic.anchor,
-      }),
-      zIndexOffset: 2000, // выше обычных маркеров — этот слой выделенный
+function wireManualPopup(popup, layer, r, marker) {
+  const el = popup.getElement();
+  hydrateManualPhotos(r, el);
+  const thumbs = el && el.querySelector('.rp-thumbs');
+  if (thumbs) {
+    thumbs.addEventListener('click', ev => {
+      const btn = ev.target.closest('.rp-thumb');
+      if (!btn) return;
+      openLightbox((r.photos || []).map(ph => ph.id), +btn.dataset.photoIndex || 0);
     });
-    m.bindPopup(() => retailPopupHtml(p), { maxWidth: 300, className: 'retail-popup' });
-    m.on('popupopen', e => {
-      const el = e.popup.getElement();
-      hydrateRetailPhotos(p, el);
-      const thumbs = el && el.querySelector('.rp-thumbs');
-      if (thumbs) {
-        thumbs.addEventListener('click', ev => {
-          const btn = ev.target.closest('.rp-thumb');
-          if (!btn) return;
-          openLightbox((p.photos || []).map(ph => ph.id), +btn.dataset.photoIndex || 0);
-        });
-      }
-      const edit = el && el.querySelector('[data-rpedit]');
-      if (edit) edit.addEventListener('click', () => { m.closePopup(); openRetailForm(p.id); });
-    });
-    m.bindTooltip(`<b style="font-weight:700">${esc(p.name || 'Торговая точка')}</b><br>Торговые точки`,
-      { className: 'tt', direction: 'top', offset: [0, -ic.anchor[1] + 4] });
-    m.addTo(group);
-  });
-}
-
-/* Карточка слоя в боковой панели — намеренно отличается от обычных слоёв. */
-function buildRetailUI() {
-  const box = document.getElementById('retail-list');
-  if (!box) return;
-  const admin = isAdmin();
-  const addBtn = document.getElementById('retail-add-btn');
-  if (addBtn) addBtn.style.display = admin ? '' : 'none';
-
-  if (!retailPts.length) {
-    box.innerHTML = `<div class="cpt-empty">${admin
-      ? 'Торговых точек пока нет. Нажмите «Добавить торговую точку» и заполните карточку.'
-      : 'Торговых точек пока нет.'}</div>`;
-    return;
   }
-  box.innerHTML = `
-    <div class="lyr retail-card open">
-      <div class="lyr-head retail-head">
-        <span class="lyr-dot retail-dot" style="background:${esc(retailLayer.color)}"></span>
-        <div class="nm">Торговые точки<small>${retailPts.length.toLocaleString('ru-RU')} шт · ручной ввод</small></div>
-        <div class="cbx${retailLayer.visible ? ' on' : ''}" id="retail-toggle" aria-label="Показывать торговые точки на карте"></div>
-      </div>
-      <div class="lyr-body">
-        <div class="rp-list">${retailPts.map(p => `
-          <div class="rp-item" data-rpgo="${esc(p.id)}">
-            <span class="rp-item-ph">${(p.photos || []).length ? '📷' : '—'}</span>
-            <div class="rp-item-main">
-              <b>${esc(p.name || 'Без названия')}</b>
-              <span>${esc(p.dms ? 'ДМС ' + p.dms : 'без ДМС-кода')}${p.sales !== '' && p.sales != null && isFinite(+p.sales) ? ' · ' + (+p.sales).toLocaleString('ru-RU') + ' продаж' : ''}</span>
-            </div>
-            ${admin ? `<button type="button" class="rp-item-edit" data-rpedit="${esc(p.id)}" title="Редактировать">✎</button>` : ''}
-          </div>`).join('')}
-        </div>
-      </div>
-    </div>`;
-
-  const toggle = document.getElementById('retail-toggle');
-  if (toggle) toggle.addEventListener('click', () => {
-    retailLayer.visible = !retailLayer.visible;
-    toggle.classList.toggle('on', retailLayer.visible);
-    renderCustomPoints(); saveState();
-  });
-  box.querySelectorAll('[data-rpgo]').forEach(el => {
-    el.addEventListener('click', e => {
-      if (e.target.closest('[data-rpedit]')) return;
-      const p = retailPts.find(x => x.id === el.dataset.rpgo);
-      if (p) map.flyTo([p.lat, p.lon], Math.max(map.getZoom(), 15), { duration: .6 });
-    });
-  });
-  box.querySelectorAll('[data-rpedit]').forEach(el => {
-    el.addEventListener('click', () => openRetailForm(el.dataset.rpedit));
-  });
-  a11ySwitches();
+  const edit = el && el.querySelector('[data-rpedit]');
+  if (edit) edit.addEventListener('click', () => { marker.closePopup(); openRetailForm(layer.id, r.id); });
 }
 
 /* ── ФОРМА ТОРГОВОЙ ТОЧКИ ────────────────────────────────────────────── */
 let _rpEditId = null;        // редактируемая точка (null — создание новой)
+let _rpLayerId = null;       // слой редактируемой точки
 let _rpPhotos = [];          // [{id,w,h}] — уже загруженные на сервер снимки
 let _rpPickingGeo = false;
 
 function rpField(id) { return document.getElementById(id); }
-function openRetailForm(id) {
-  if (!isAdmin()) { toast('Торговые точки заводит только владелец', 'err'); return; }
+
+// Точка кладётся в выбранный слой — как DS/IPSE. Здесь же можно завести новый.
+function buildRetailLayerSel(selectedId) {
+  const sel = rpField('rp-layer');
+  if (!sel) return;
+  const layers = manualLayers();
+  sel.innerHTML = layers.map(l =>
+    `<option value="${esc(l.id)}"${l.id === selectedId ? ' selected' : ''}>${esc(l.name)}</option>`).join('')
+    + '<option value="__new__">+ Новый слой…</option>';
+  const newBox = rpField('rp-layer-new-box');
+  const isNew = !layers.length || sel.value === '__new__';
+  if (!layers.length) sel.value = '__new__';
+  if (newBox) newBox.style.display = isNew ? '' : 'none';
+}
+function openRetailForm(layerId, id) {
+  if (!isAdmin()) { toast('Точки вручную заводит только владелец', 'err'); return; }
   syncRetailKeyWarn();
-  const p = id ? retailPts.find(x => x.id === id) : null;
+  const layer = layerId ? customPtLayers.find(l => l.id === layerId) : null;
+  const p = layer && id ? (layer.recs || []).find(x => x.id === id) : null;
   _rpEditId = p ? p.id : null;
+  _rpLayerId = layer ? layer.id : null;
   _rpPhotos = p ? (p.photos || []).slice() : [];
-  rpField('rp-title').textContent = p ? 'Торговая точка' : 'Новая торговая точка';
+  buildRetailLayerSel(layer ? layer.id : (manualLayers()[0] || {}).id);
+  rpField('rp-layer-new').value = '';
+  rpField('rp-title').textContent = p ? 'Точка' : 'Новая точка';
   rpField('rp-name').value    = p ? (p.name || '') : '';
   rpField('rp-dms').value     = p ? (p.dms || '') : '';
   rpField('rp-equip').value   = p ? (p.equip || '') : '';
@@ -2075,7 +2028,7 @@ function openRetailForm(id) {
 function closeRetailForm() {
   rpField('rp-modal').hidden = true;
   stopGeoPick();
-  _rpEditId = null; _rpPhotos = [];
+  _rpEditId = null; _rpLayerId = null; _rpPhotos = [];
 }
 function renderRetailFormPhotos() {
   const box = rpField('rp-photos');
@@ -2152,6 +2105,19 @@ async function saveRetailForm() {
     rpField('rp-lat').focus();
     return;
   }
+
+  // Слой назначения: существующий ручной слой либо новый, заведённый здесь же.
+  const sel = rpField('rp-layer');
+  let layer = null;
+  if (sel && sel.value === '__new__') {
+    const layerName = rpField('rp-layer-new').value.trim();
+    if (!layerName) { toast('Введите название нового слоя', 'err'); rpField('rp-layer-new').focus(); return; }
+    layer = createManualLayer(layerName);
+  } else if (sel) {
+    layer = customPtLayers.find(l => l.id === sel.value);
+  }
+  if (!layer) { toast('Выберите слой для точки', 'err'); return; }
+
   const salesRaw = String(rpField('rp-sales').value).trim();
   const point = {
     id: _rpEditId || 'rp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
@@ -2163,34 +2129,63 @@ async function saveRetailForm() {
     lat, lon,
     photos: _rpPhotos.slice(),
   };
-  const i = retailPts.findIndex(x => x.id === point.id);
-  if (i >= 0) retailPts[i] = point; else retailPts.push(point);
+  // Точку могли перенести в другой слой — убираем её из прежнего.
+  const previous = _rpLayerId ? customPtLayers.find(l => l.id === _rpLayerId) : null;
+  if (previous && previous !== layer) previous.recs = previous.recs.filter(x => x.id !== point.id);
+  const i = layer.recs.findIndex(x => x.id === point.id);
+  const isEdit = i >= 0 || (previous && previous !== layer && _rpEditId);
+  if (i >= 0) layer.recs[i] = point; else layer.recs.push(point);
+  layer.visible = true;
+
   closeRetailForm();
-  buildRetailUI();
+  buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI();
   renderCustomPoints();
-  reenrichAll();   // торговые точки входят в нашу сеть — покрытие пересчитать
+  reenrichAll();   // ручные точки входят в нашу сеть — покрытие пересчитать
   saveState();
   if (SERVER_URL && !SERVER_KEY) {
     toast('Точка сохранена только в этом браузере: без ключа записи она не уйдёт на сервер', 'err', 6000);
   } else {
-    toast(i >= 0 ? 'Точка обновлена' : `Точка «${name}» добавлена`, 'ok');
+    toast(isEdit ? 'Точка обновлена' : `Точка «${name}» добавлена в слой «${layer.name}»`, 'ok');
   }
   map.flyTo([lat, lon], Math.max(map.getZoom(), 15), { duration: .6 });
 }
 
+// Новый слой ручного ввода — тот же объект, что и у загруженных слоёв, плюс
+// флаг manual, из-за которого в карточке появляется «+ Точка» вместо «Данные».
+function createManualLayer(name) {
+  const used = customPtLayers.map(l => String(l.color).toLowerCase());
+  const color = SWATCHES.find(c => !used.includes(c.toLowerCase())) || SWATCHES[customPtLayers.length % SWATCHES.length];
+  const layer = {
+    id: 'cpt_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+    name, color, manual: true, visible: true, shape: 'star', size: 34, opacity: 1,
+    radiusOn: false, radiusM: 1500, radiusColor: color, radiusOpacity: 0.15,
+    recs: [], _group: null,
+  };
+  customPtLayers.push(layer);
+  return layer;
+}
+
 function deleteRetailPoint() {
-  const p = retailPts.find(x => x.id === _rpEditId);
-  if (!p) return;
+  const layer = customPtLayers.find(l => l.id === _rpLayerId);
+  const p = layer && (layer.recs || []).find(x => x.id === _rpEditId);
+  if (!layer || !p) return;
   if (!confirm(`Удалить точку «${p.name}»? Действие необратимо.`)) return;
-  retailPts = retailPts.filter(x => x.id !== p.id);
+  layer.recs = layer.recs.filter(x => x.id !== p.id);
   closeRetailForm();
-  buildRetailUI(); renderCustomPoints(); reenrichAll(); saveState();
+  buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI();
+  renderCustomPoints(); reenrichAll(); saveState();
   toast('Точка удалена', 'ok');
 }
 
 function wireRetailUI() {
   const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
-  on('retail-add-btn', 'click', () => openRetailForm(null));
+  on('add-manual-pt-btn', 'click', () => openRetailForm(null, null));
+  on('rp-layer', 'change', () => {
+    const sel = document.getElementById('rp-layer');
+    const box = document.getElementById('rp-layer-new-box');
+    if (box) box.style.display = sel.value === '__new__' ? '' : 'none';
+    if (sel.value === '__new__') setTimeout(() => document.getElementById('rp-layer-new').focus(), 60);
+  });
   on('rp-cancel', 'click', closeRetailForm);
   on('rp-save', 'click', saveRetailForm);
   on('rp-delete', 'click', deleteRetailPoint);
@@ -2306,10 +2301,21 @@ function buildCustomPtUI() {
           </div>
         </div>
         <div class="lyr-meta">Объём слоя: ${l.recs.length.toLocaleString('ru-RU')} точек</div>
+        ${l.manual && l.recs.length ? `<div class="rp-list">${l.recs.map(r => `
+          <div class="rp-item" data-rpgo="${esc(l.id)}|${esc(r.id || '')}">
+            <span class="rp-item-ph">${(r.photos || []).length ? '📷' : '—'}</span>
+            <div class="rp-item-main">
+              <b>${esc(r.name || 'Без названия')}</b>
+              <span>${esc(r.dms ? 'ДМС ' + r.dms : 'без ДМС-кода')}${r.sales != null && r.sales !== '' && isFinite(+r.sales) ? ' · ' + (+r.sales).toLocaleString('ru-RU') + ' продаж' : ''}</span>
+            </div>
+            ${isAdmin() ? `<button type="button" class="rp-item-edit" data-rpedit="${esc(l.id)}|${esc(r.id || '')}" title="Редактировать">✎</button>` : ''}
+          </div>`).join('')}</div>` : ''}
         <div class="lyr-actions">
           <button class="lyr-act cpt-rename" data-cptrename="${esc(l.id)}" title="Переименовать слой">✎ Имя</button>
           <button class="lyr-act cpt-solo${_cptSoloId === l.id ? ' on' : ''}" data-cptsolo="${esc(l.id)}" title="Показать только этот слой">◉ Соло</button>
-          <button class="lyr-act cpt-upload" data-cptup="${esc(l.id)}" title="Перезалить файл в этот слой">⬆ Данные</button>
+          ${l.manual
+            ? `<button class="lyr-act cpt-addpt" data-cptaddpt="${esc(l.id)}" title="Добавить точку вручную">+ Точка</button>`
+            : `<button class="lyr-act cpt-upload" data-cptup="${esc(l.id)}" title="Перезалить файл в этот слой">⬆ Данные</button>`}
           <button class="lyr-act lyr-del cpt-del" data-cpdel="${esc(l.id)}" title="Удалить слой">&times;</button>
         </div>
       </div>
@@ -2461,6 +2467,26 @@ function buildCustomPtUI() {
     el.addEventListener('click', () => {
       _cptUploadTarget = el.dataset.cptup;
       document.getElementById('cpt-file').click();
+    });
+  });
+
+  // Ручные слои: добавление точки, переход к точке и её правка
+  box.querySelectorAll('[data-cptaddpt]').forEach(el => {
+    el.addEventListener('click', () => openRetailForm(el.dataset.cptaddpt, null));
+  });
+  box.querySelectorAll('[data-rpgo]').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target.closest('[data-rpedit]')) return;
+      const [layerId, recId] = el.dataset.rpgo.split('|');
+      const layer = customPtLayers.find(x => x.id === layerId);
+      const r = layer && (layer.recs || []).find(x => x.id === recId);
+      if (r) map.flyTo([r.lat, r.lon], Math.max(map.getZoom(), 15), { duration: .6 });
+    });
+  });
+  box.querySelectorAll('[data-rpedit]').forEach(el => {
+    el.addEventListener('click', () => {
+      const [layerId, recId] = el.dataset.rpedit.split('|');
+      openRetailForm(layerId, recId);
     });
   });
 
@@ -2745,14 +2771,9 @@ function buildStateSnapshot() {
     city: selectedCities.length === 1 ? selectedCities[0] : '',
     covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
     addrSrcKey, addrRefKey, rtRadius, rtRadiusOp, rtVolOp, rtVolMode, rtVolCustom, rtExclRadius, rtExclOp, rtExclKeys,
-    customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, shape: l.shape, size: l.size, opacity: l.opacity, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, recs: l.recs })),
-    // Только карточки и идентификаторы фото — байты снимков живут на сервере.
-    retailPts: retailPts.map(p => ({
-      id: p.id, name: p.name, dms: p.dms, equip: p.equip, sales: p.sales,
-      comment: p.comment, lat: p.lat, lon: p.lon,
-      photos: (p.photos || []).map(ph => ({ id: ph.id, w: ph.w, h: ph.h })),
-    })),
-    retailLayer: { ...retailLayer },
+    // recs ручных слоёв несут карточку и идентификаторы фото — байты снимков
+    // живут на сервере и в состояние не попадают.
+    customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, manual: !!l.manual, visible: l.visible, shape: l.shape, size: l.size, opacity: l.opacity, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, recs: l.recs })),
   };
 }
 
@@ -2776,7 +2797,7 @@ function importState(file) {
     if (st._app !== 'hm-br') { toast('Это не файл настроек Heat Map', 'err'); return; }
     // Apply — reuse loadState logic
     applySnapshot(st);
-    buildCityUI(); buildHeatUI(); buildCustomPtUI(); buildRetailUI(); rebuildUpTarget(); syncControls();
+    buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
     renderHeat(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
     doSave(); // persist locally too
     toast('Настройки загружены', 'ok');
@@ -2788,18 +2809,6 @@ function applySnapshot(st) {
   // ВАЖНО: наши точки восстанавливаются ПЕРВЫМИ. От них считается nd в
   // тепловых слоях ниже — при обратном порядке покрытие посчиталось бы по
   // ещё не заменённому набору точек.
-  // Торговые точки восстанавливаются до тепловых слоёв — как и слои точек:
-  // они входят в ourPts(), по которым считается покрытие.
-  if (Array.isArray(st.retailPts)) {
-    retailPts = st.retailPts.map(p => ({
-      ...p,
-      lat: +p.lat, lon: +p.lon,
-      photos: Array.isArray(p.photos) ? p.photos.filter(ph => ph && ph.id) : [],
-    })).filter(p => isFinite(p.lat) && isFinite(p.lon));
-  }
-  if (st.retailLayer && typeof st.retailLayer === 'object') {
-    retailLayer = { ...retailLayer, ...st.retailLayer };
-  }
   if (Array.isArray(st.customPtLayers)) {
     // Wipe all existing custom-point markers — otherwise old groups stay
     // orphaned on the map (overlapping new ones / impossible to toggle off).
@@ -2807,6 +2816,27 @@ function applySnapshot(st) {
     // Restore custom point layers without their Leaflet groups (re-created on render)
     _cptSoloId = null; _cptPrevVisible = null; _cptOpen.clear();
     customPtLayers = st.customPtLayers.map(l => ({ ...l, _group: null }));
+  }
+  // Миграция: раньше точки ручного ввода лежали отдельным списком retailPts.
+  // Переносим их в обычный слой — потерять заведённые вручную точки нельзя.
+  if (Array.isArray(st.retailPts) && st.retailPts.length) {
+    const migrated = st.retailPts.map(p => ({
+      ...p, lat: +p.lat, lon: +p.lon,
+      photos: Array.isArray(p.photos) ? p.photos.filter(ph => ph && ph.id) : [],
+    })).filter(p => isFinite(p.lat) && isFinite(p.lon));
+    const known = new Set();
+    customPtLayers.forEach(l => (l.recs || []).forEach(r => { if (r.id) known.add(r.id); }));
+    const fresh = migrated.filter(p => !known.has(p.id));
+    if (fresh.length) {
+      const color = (st.retailLayer && st.retailLayer.color) || '#F1C40F';
+      customPtLayers.push({
+        id: 'cpt_retail_legacy', name: 'Торговые точки', color, manual: true,
+        visible: st.retailLayer ? st.retailLayer.visible !== false : true,
+        shape: 'star', size: 34, opacity: 1,
+        radiusOn: false, radiusM: 1500, radiusColor: color, radiusOpacity: 0.15,
+        recs: fresh, _group: null,
+      });
+    }
   }
   // All hydrated heat layers share the same closest-own-point lookup. Build it
   // once rather than rebuilding it per layer while the map is starting.
@@ -3625,16 +3655,17 @@ function stateFingerprint(snapshot) {
     Array.isArray(layer && layer.recs) ? layer.recs.length : null,
   ]);
   const custom = (snapshot.customPtLayers || []).map(layer => [
-    layer.id, layer.name, layer.color, layer.visible, layer.shape,
+    layer.id, layer.name, layer.color, layer.visible, layer.shape, layer.manual,
     Array.isArray(layer.recs) ? layer.recs.length : 0,
-  ]);
-  const retail = (snapshot.retailPts || []).map(p => [
-    p.id, p.name, p.dms, p.equip, p.sales, p.comment, p.lat, p.lon,
-    (p.photos || []).map(ph => ph.id).join(','),
+    // Правка карточки ручной точки не меняет их количество. Без этого отпечаток
+    // совпал бы с прежним и сохранение на сервер было бы пропущено.
+    layer.manual && Array.isArray(layer.recs)
+      ? layer.recs.map(r => [r.id, r.name, r.dms, r.equip, r.sales, r.comment,
+          r.lat, r.lon, (r.photos || []).map(ph => ph.id).join(',')].join('~')).join('|')
+      : '',
   ]);
   return JSON.stringify({
-    heatKeys: snapshot.heatKeys || [], layers, custom, retail,
-    retailLayer: snapshot.retailLayer,
+    heatKeys: snapshot.heatKeys || [], layers, custom,
     selectedCities: snapshot.selectedCities || [], city: snapshot.city || '',
     incCol: snapshot.incCol, covR: snapshot.covR, topN: snapshot.topN,
     recBasis: snapshot.recBasis, recShow: snapshot.recShow,
@@ -4416,7 +4447,7 @@ function readLocalSnapshot() {
   } catch (_) { return null; }
 }
 function renderCurrentState() {
-  buildCityUI(); buildHeatUI(); buildCustomPtUI(); buildRetailUI(); rebuildUpTarget(); syncControls();
+  buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
   renderHeat(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
 }
 function fitInitialBounds() {
