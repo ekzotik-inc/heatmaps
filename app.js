@@ -189,6 +189,8 @@ function nearestPt(ix, lat, lon) {
 function ourPts() {
   const out = [];
   customPtLayers.forEach(l => { for (const r of l.recs) out.push(r); });
+  // Торговые точки, заведённые вручную, — такая же наша сеть.
+  for (const p of retailPts) out.push(p);
   return out;
 }
 
@@ -280,6 +282,14 @@ let rtExclKeys  = [];            // layer keys to exclude (shipment mode)
 // Custom point layers (user-uploaded marker sets)
 let customPtLayers = [];      // [{ id, name, color, visible, recs: [], _group: L.LayerGroup }]
 let _cptUploadTarget = null;  // id of layer awaiting file upload
+
+/* Торговые точки — отдельный вид точек: владелец заводит их вручную по одной,
+   с карточкой (ДМС-код, оборудование, продажи, комментарий) и тремя фото.
+   Фото в состоянии НЕ хранятся — только идентификаторы; байты лежат на сервере
+   (/photo), иначе снимок раздул бы каждое сохранение карты на мегабайты. */
+let retailPts = [];   // [{ id, name, dms, equip, sales, comment, lat, lon, photos: [{id,w,h}] }]
+let retailLayer = { visible: true, color: '#F1C40F' };
+const RETAIL_MAX_PHOTOS = 3;
 
 /* ── MAP INIT ────────────────────────────────────────────────────────── */
 const map = L.map('map', { preferCanvas: true, zoomControl: false, minZoom: 5, zoomSnap: .5 })
@@ -637,6 +647,9 @@ function updateLayerLegend() {
       items.push({ color: l.color, name: l.name, count: l.recs.length });
     }
   });
+  if (retailLayer.visible && retailPts.length) {
+    items.push({ color: retailLayer.color, name: 'Торговые точки', count: retailPts.length });
+  }
   if (recShow && lastRecs.length) items.push({ color: '#14B87D', name: 'Рекомендации' });
   if (!items.length) { el.style.display = 'none'; return; }
   el.style.display = '';
@@ -1798,7 +1811,399 @@ function renderCustomPoints() {
       m.addTo(l._group);
     });
   });
+  renderRetailPoints(); // рисуется в том же cptRoot, чтобы не осиротеть при перестроении
   updateLayerLegend();
+}
+
+/* ── ТОРГОВЫЕ ТОЧКИ (ручной ввод) ────────────────────────────────────── */
+// Снимки тянутся по требованию и кэшируются как blob-URL. Через authFetch, а не
+// через <img src>: у картинки нет заголовка авторизации, а сессия может жить
+// не в cookie, а в памяти вкладки (кросс-доменный фронт на Pages).
+const _photoUrls = new Map();
+function photoUrl(id) {
+  if (_photoUrls.has(id)) return _photoUrls.get(id);
+  const pending = (async () => {
+    const res = await authFetch(SERVER_URL + '/photo/' + encodeURIComponent(id));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return URL.createObjectURL(await res.blob());
+  })().catch(err => { _photoUrls.delete(id); throw err; });
+  _photoUrls.set(id, pending);
+  return pending;
+}
+
+// Сжатие на клиенте: снимок с телефона это 3–8 МБ, а для карточки хватает
+// длинной стороны 1400 px. Без этого сервер и трафик получают лишние мегабайты.
+const PHOTO_MAX_SIDE = 1400;
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    if (!/^image\//.test(file.type)) { reject(new Error('Это не изображение')); return; }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Не удалось прочитать файл'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Не удалось открыть изображение'));
+      img.onload = () => {
+        const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(img.src);
+        resolve({ data: canvas.toDataURL('image/jpeg', 0.82), w, h });
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+async function uploadPhoto(file) {
+  const { data, w, h } = await compressImage(file);
+  const res = await postJson(SERVER_URL + '/photo?map=' + encodeURIComponent(currentMap), { data }, 90000);
+  if (!res.ok) {
+    const text = res.status === 413 ? 'файл слишком большой' : 'HTTP ' + res.status;
+    throw new Error(text);
+  }
+  const saved = await res.json();
+  return { id: saved.id, w, h };
+}
+
+/* Просмотр фото во весь экран. Открывается по клику на миниатюру в карточке. */
+let _lightbox = { ids: [], i: 0 };
+function openLightbox(ids, index) {
+  const ov = document.getElementById('photo-lightbox');
+  if (!ov || !ids.length) return;
+  _lightbox = { ids: ids.slice(), i: Math.max(0, Math.min(index, ids.length - 1)) };
+  ov.hidden = false;
+  showLightboxPhoto();
+}
+function closeLightbox() {
+  const ov = document.getElementById('photo-lightbox');
+  if (ov) ov.hidden = true;
+}
+function moveLightbox(step) {
+  if (_lightbox.ids.length < 2) return;
+  _lightbox.i = (_lightbox.i + step + _lightbox.ids.length) % _lightbox.ids.length;
+  showLightboxPhoto();
+}
+async function showLightboxPhoto() {
+  const img = document.getElementById('lightbox-img');
+  const cnt = document.getElementById('lightbox-count');
+  const nav = document.getElementById('lightbox-nav');
+  if (!img) return;
+  const id = _lightbox.ids[_lightbox.i];
+  if (cnt) cnt.textContent = `${_lightbox.i + 1} / ${_lightbox.ids.length}`;
+  if (nav) nav.style.display = _lightbox.ids.length > 1 ? '' : 'none';
+  img.classList.add('loading');
+  try {
+    const url = await photoUrl(id);
+    if (_lightbox.ids[_lightbox.i] !== id) return; // успели пролистать дальше
+    img.src = url;
+  } catch (_) {
+    toast('Не удалось загрузить фото', 'err');
+  } finally {
+    img.classList.remove('loading');
+  }
+}
+
+function retailPopupHtml(p) {
+  const rows = [];
+  if (p.dms)   rows.push(['ДМС-код', p.dms]);
+  if (p.equip) rows.push(['Оборудование', p.equip]);
+  if (p.sales !== '' && p.sales != null && isFinite(+p.sales)) {
+    rows.push(['Продажи', (+p.sales).toLocaleString('ru-RU')]);
+  }
+  rows.push(['Координаты', `${(+p.lat).toFixed(5)}, ${(+p.lon).toFixed(5)}`]);
+  const photos = (p.photos || []).filter(ph => ph && ph.id);
+  const thumbs = photos.length
+    ? `<div class="rp-thumbs" data-rpid="${esc(p.id)}">${photos.map((ph, i) =>
+        `<button type="button" class="rp-thumb" data-photo-index="${i}" aria-label="Открыть фото ${i + 1}"><span class="rp-thumb-ph"></span></button>`).join('')}</div>`
+    : '<div class="rp-nophoto">Фото не добавлены</div>';
+  return `<div class="pp-title">${esc(p.name || 'Торговая точка')}</div>
+    ${thumbs}
+    ${rows.map(([k, v]) =>
+      `<div class="pp-row"><span>${esc(k)}</span><b style="font-family:Manrope;font-weight:600;text-align:right">${esc(String(v))}</b></div>`).join('')}
+    ${p.comment ? `<div class="rp-comment">${esc(p.comment)}</div>` : ''}
+    <span class="pp-tag rp-tag">ТОРГОВАЯ ТОЧКА</span>
+    ${isAdmin() ? `<button type="button" class="rp-edit" data-rpedit="${esc(p.id)}">✎ Редактировать</button>` : ''}`;
+}
+
+// Миниатюры дорисовываются после открытия карточки: до клика по точке байты
+// снимков не нужны.
+async function hydrateRetailPhotos(p, popupEl) {
+  const box = popupEl && popupEl.querySelector('.rp-thumbs');
+  if (!box) return;
+  const photos = (p.photos || []).filter(ph => ph && ph.id);
+  const buttons = [...box.querySelectorAll('.rp-thumb')];
+  await Promise.all(photos.map(async (ph, i) => {
+    const btn = buttons[i];
+    if (!btn) return;
+    try {
+      const url = await photoUrl(ph.id);
+      if (!btn.isConnected) return;
+      btn.innerHTML = `<img src="${url}" alt="Фото точки ${i + 1}">`;
+    } catch (_) {
+      if (btn.isConnected) btn.innerHTML = '<span class="rp-thumb-err">!</span>';
+    }
+  }));
+}
+
+function renderRetailPoints() {
+  if (!retailLayer.visible || !retailPts.length) return;
+  const group = L.layerGroup();
+  cptRoot.addLayer(group);
+  const ic = shp('star', retailLayer.color, 36);
+  retailPts.filter(p => selectedPointMatches(p)).forEach(p => {
+    const m = L.marker([p.lat, p.lon], {
+      icon: L.divIcon({
+        className: '',
+        html: `<span class="retail-pin">${ic.html}</span>`,
+        iconSize: [36, 36], iconAnchor: ic.anchor,
+      }),
+      zIndexOffset: 2000, // выше обычных маркеров — этот слой выделенный
+    });
+    m.bindPopup(() => retailPopupHtml(p), { maxWidth: 300, className: 'retail-popup' });
+    m.on('popupopen', e => {
+      const el = e.popup.getElement();
+      hydrateRetailPhotos(p, el);
+      const thumbs = el && el.querySelector('.rp-thumbs');
+      if (thumbs) {
+        thumbs.addEventListener('click', ev => {
+          const btn = ev.target.closest('.rp-thumb');
+          if (!btn) return;
+          openLightbox((p.photos || []).map(ph => ph.id), +btn.dataset.photoIndex || 0);
+        });
+      }
+      const edit = el && el.querySelector('[data-rpedit]');
+      if (edit) edit.addEventListener('click', () => { m.closePopup(); openRetailForm(p.id); });
+    });
+    m.bindTooltip(`<b style="font-weight:700">${esc(p.name || 'Торговая точка')}</b><br>Торговые точки`,
+      { className: 'tt', direction: 'top', offset: [0, -ic.anchor[1] + 4] });
+    m.addTo(group);
+  });
+}
+
+/* Карточка слоя в боковой панели — намеренно отличается от обычных слоёв. */
+function buildRetailUI() {
+  const box = document.getElementById('retail-list');
+  if (!box) return;
+  const admin = isAdmin();
+  const addBtn = document.getElementById('retail-add-btn');
+  if (addBtn) addBtn.style.display = admin ? '' : 'none';
+
+  if (!retailPts.length) {
+    box.innerHTML = `<div class="cpt-empty">${admin
+      ? 'Торговых точек пока нет. Нажмите «Добавить торговую точку» и заполните карточку.'
+      : 'Торговых точек пока нет.'}</div>`;
+    return;
+  }
+  box.innerHTML = `
+    <div class="lyr retail-card open">
+      <div class="lyr-head retail-head">
+        <span class="lyr-dot retail-dot" style="background:${esc(retailLayer.color)}"></span>
+        <div class="nm">Торговые точки<small>${retailPts.length.toLocaleString('ru-RU')} шт · ручной ввод</small></div>
+        <div class="cbx${retailLayer.visible ? ' on' : ''}" id="retail-toggle" aria-label="Показывать торговые точки на карте"></div>
+      </div>
+      <div class="lyr-body">
+        <div class="rp-list">${retailPts.map(p => `
+          <div class="rp-item" data-rpgo="${esc(p.id)}">
+            <span class="rp-item-ph">${(p.photos || []).length ? '📷' : '—'}</span>
+            <div class="rp-item-main">
+              <b>${esc(p.name || 'Без названия')}</b>
+              <span>${esc(p.dms ? 'ДМС ' + p.dms : 'без ДМС-кода')}${p.sales !== '' && p.sales != null && isFinite(+p.sales) ? ' · ' + (+p.sales).toLocaleString('ru-RU') + ' продаж' : ''}</span>
+            </div>
+            ${admin ? `<button type="button" class="rp-item-edit" data-rpedit="${esc(p.id)}" title="Редактировать">✎</button>` : ''}
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+
+  const toggle = document.getElementById('retail-toggle');
+  if (toggle) toggle.addEventListener('click', () => {
+    retailLayer.visible = !retailLayer.visible;
+    toggle.classList.toggle('on', retailLayer.visible);
+    renderCustomPoints(); saveState();
+  });
+  box.querySelectorAll('[data-rpgo]').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target.closest('[data-rpedit]')) return;
+      const p = retailPts.find(x => x.id === el.dataset.rpgo);
+      if (p) map.flyTo([p.lat, p.lon], Math.max(map.getZoom(), 15), { duration: .6 });
+    });
+  });
+  box.querySelectorAll('[data-rpedit]').forEach(el => {
+    el.addEventListener('click', () => openRetailForm(el.dataset.rpedit));
+  });
+  a11ySwitches();
+}
+
+/* ── ФОРМА ТОРГОВОЙ ТОЧКИ ────────────────────────────────────────────── */
+let _rpEditId = null;        // редактируемая точка (null — создание новой)
+let _rpPhotos = [];          // [{id,w,h}] — уже загруженные на сервер снимки
+let _rpPickingGeo = false;
+
+function rpField(id) { return document.getElementById(id); }
+function openRetailForm(id) {
+  if (!isAdmin()) { toast('Торговые точки заводит только владелец', 'err'); return; }
+  if (!SERVER_URL || !SERVER_KEY) {
+    toast('Без ключа записи фото не загрузятся, а точка не уйдёт на сервер — введите ключ в «Данные → Доступ к записи»', 'err', 6500);
+  }
+  const p = id ? retailPts.find(x => x.id === id) : null;
+  _rpEditId = p ? p.id : null;
+  _rpPhotos = p ? (p.photos || []).slice() : [];
+  rpField('rp-title').textContent = p ? 'Торговая точка' : 'Новая торговая точка';
+  rpField('rp-name').value    = p ? (p.name || '') : '';
+  rpField('rp-dms').value     = p ? (p.dms || '') : '';
+  rpField('rp-equip').value   = p ? (p.equip || '') : '';
+  rpField('rp-sales').value   = p && p.sales != null ? p.sales : '';
+  rpField('rp-comment').value = p ? (p.comment || '') : '';
+  rpField('rp-lat').value     = p ? p.lat : '';
+  rpField('rp-lon').value     = p ? p.lon : '';
+  rpField('rp-delete').style.display = p ? '' : 'none';
+  renderRetailFormPhotos();
+  rpField('rp-modal').hidden = false;
+  setTimeout(() => rpField('rp-name').focus(), 120);
+}
+function closeRetailForm() {
+  rpField('rp-modal').hidden = true;
+  stopGeoPick();
+  _rpEditId = null; _rpPhotos = [];
+}
+function renderRetailFormPhotos() {
+  const box = rpField('rp-photos');
+  const addBtn = rpField('rp-photo-add');
+  box.innerHTML = _rpPhotos.map((ph, i) => `
+    <div class="rp-ph" data-ph="${i}">
+      <img alt="Фото ${i + 1}">
+      <button type="button" class="rp-ph-del" data-phdel="${i}" aria-label="Удалить фото ${i + 1}">&times;</button>
+    </div>`).join('');
+  _rpPhotos.forEach(async (ph, i) => {
+    const img = box.querySelector(`[data-ph="${i}"] img`);
+    if (!img) return;
+    try { img.src = await photoUrl(ph.id); } catch (_) { img.alt = 'Фото недоступно'; }
+  });
+  box.querySelectorAll('[data-phdel]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _rpPhotos.splice(+btn.dataset.phdel, 1);
+      renderRetailFormPhotos();
+    });
+  });
+  addBtn.style.display = _rpPhotos.length >= RETAIL_MAX_PHOTOS ? 'none' : '';
+  rpField('rp-photo-hint').textContent = `${_rpPhotos.length} из ${RETAIL_MAX_PHOTOS}`;
+}
+
+// «Указать на карте»: модалка прячется, следующий клик по карте даёт координаты.
+let _geoPickHandler = null;
+function startGeoPick() {
+  if (_rpPickingGeo) return;
+  _rpPickingGeo = true;
+  rpField('rp-modal').classList.add('picking');
+  document.body.classList.add('geo-picking');
+  toast('Кликните точку на карте — Esc для отмены', 'info', 3500);
+  _geoPickHandler = e => {
+    rpField('rp-lat').value = e.latlng.lat.toFixed(6);
+    rpField('rp-lon').value = e.latlng.lng.toFixed(6);
+    stopGeoPick();
+  };
+  map.on('click', _geoPickHandler);
+}
+function stopGeoPick() {
+  if (!_rpPickingGeo) return;
+  _rpPickingGeo = false;
+  // Снимаем именно свой обработчик: map.off('click') убрал бы и чужие.
+  if (_geoPickHandler) map.off('click', _geoPickHandler);
+  _geoPickHandler = null;
+  rpField('rp-modal').classList.remove('picking');
+  document.body.classList.remove('geo-picking');
+}
+
+async function saveRetailForm() {
+  const name = rpField('rp-name').value.trim();
+  const lat = parseFloat(String(rpField('rp-lat').value).replace(',', '.'));
+  const lon = parseFloat(String(rpField('rp-lon').value).replace(',', '.'));
+  if (!name) { toast('Укажите название точки', 'err'); rpField('rp-name').focus(); return; }
+  if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+    toast('Укажите координаты — вручную или кнопкой «Указать на карте»', 'err');
+    rpField('rp-lat').focus();
+    return;
+  }
+  const salesRaw = String(rpField('rp-sales').value).trim();
+  const point = {
+    id: _rpEditId || 'rp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    name,
+    dms: rpField('rp-dms').value.trim(),
+    equip: rpField('rp-equip').value.trim(),
+    sales: salesRaw === '' ? null : (isFinite(+salesRaw) ? +salesRaw : null),
+    comment: rpField('rp-comment').value.trim(),
+    lat, lon,
+    photos: _rpPhotos.slice(),
+  };
+  const i = retailPts.findIndex(x => x.id === point.id);
+  if (i >= 0) retailPts[i] = point; else retailPts.push(point);
+  closeRetailForm();
+  buildRetailUI();
+  renderCustomPoints();
+  reenrichAll();   // торговые точки входят в нашу сеть — покрытие пересчитать
+  saveState();
+  toast(i >= 0 ? 'Точка обновлена' : `Точка «${name}» добавлена`, 'ok');
+  map.flyTo([lat, lon], Math.max(map.getZoom(), 15), { duration: .6 });
+}
+
+function deleteRetailPoint() {
+  const p = retailPts.find(x => x.id === _rpEditId);
+  if (!p) return;
+  if (!confirm(`Удалить точку «${p.name}»? Действие необратимо.`)) return;
+  retailPts = retailPts.filter(x => x.id !== p.id);
+  closeRetailForm();
+  buildRetailUI(); renderCustomPoints(); reenrichAll(); saveState();
+  toast('Точка удалена', 'ok');
+}
+
+function wireRetailUI() {
+  const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
+  on('retail-add-btn', 'click', () => openRetailForm(null));
+  on('rp-cancel', 'click', closeRetailForm);
+  on('rp-save', 'click', saveRetailForm);
+  on('rp-delete', 'click', deleteRetailPoint);
+  on('rp-geo-pick', 'click', startGeoPick);
+  on('rp-modal', 'click', e => { if (e.target.id === 'rp-modal') closeRetailForm(); });
+
+  const fileInp = document.getElementById('rp-photo-file');
+  on('rp-photo-add', 'click', () => fileInp && fileInp.click());
+  if (fileInp) {
+    fileInp.addEventListener('change', async () => {
+      const files = [...fileInp.files].slice(0, RETAIL_MAX_PHOTOS - _rpPhotos.length);
+      fileInp.value = '';
+      if (!files.length) return;
+      const addBtn = document.getElementById('rp-photo-add');
+      if (addBtn) { addBtn.disabled = true; addBtn.textContent = 'Загрузка…'; }
+      for (const f of files) {
+        try {
+          _rpPhotos.push(await uploadPhoto(f));
+        } catch (e) {
+          toast('Фото не загружено: ' + e.message, 'err', 4500);
+        }
+      }
+      if (addBtn) { addBtn.disabled = false; addBtn.textContent = '+ Добавить фото'; }
+      renderRetailFormPhotos();
+    });
+  }
+
+  on('lightbox-close', 'click', closeLightbox);
+  on('lightbox-prev', 'click', () => moveLightbox(-1));
+  on('lightbox-next', 'click', () => moveLightbox(1));
+  on('photo-lightbox', 'click', e => { if (e.target.id === 'photo-lightbox') closeLightbox(); });
+  document.addEventListener('keydown', e => {
+    const ov = document.getElementById('photo-lightbox');
+    if (!ov || ov.hidden) {
+      if (e.key === 'Escape' && _rpPickingGeo) stopGeoPick();
+      return;
+    }
+    if (e.key === 'Escape') closeLightbox();
+    else if (e.key === 'ArrowLeft') moveLightbox(-1);
+    else if (e.key === 'ArrowRight') moveLightbox(1);
+  });
 }
 
 function buildCustomPtUI() {
@@ -2298,6 +2703,13 @@ function buildStateSnapshot() {
     covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
     addrSrcKey, addrRefKey, rtRadius, rtRadiusOp, rtVolOp, rtVolMode, rtVolCustom, rtExclRadius, rtExclOp, rtExclKeys,
     customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, shape: l.shape, size: l.size, opacity: l.opacity, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, recs: l.recs })),
+    // Только карточки и идентификаторы фото — байты снимков живут на сервере.
+    retailPts: retailPts.map(p => ({
+      id: p.id, name: p.name, dms: p.dms, equip: p.equip, sales: p.sales,
+      comment: p.comment, lat: p.lat, lon: p.lon,
+      photos: (p.photos || []).map(ph => ({ id: ph.id, w: ph.w, h: ph.h })),
+    })),
+    retailLayer: { ...retailLayer },
   };
 }
 
@@ -2321,7 +2733,7 @@ function importState(file) {
     if (st._app !== 'hm-br') { toast('Это не файл настроек Heat Map', 'err'); return; }
     // Apply — reuse loadState logic
     applySnapshot(st);
-    buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
+    buildCityUI(); buildHeatUI(); buildCustomPtUI(); buildRetailUI(); rebuildUpTarget(); syncControls();
     renderHeat(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
     doSave(); // persist locally too
     toast('Настройки загружены', 'ok');
@@ -2333,6 +2745,18 @@ function applySnapshot(st) {
   // ВАЖНО: наши точки восстанавливаются ПЕРВЫМИ. От них считается nd в
   // тепловых слоях ниже — при обратном порядке покрытие посчиталось бы по
   // ещё не заменённому набору точек.
+  // Торговые точки восстанавливаются до тепловых слоёв — как и слои точек:
+  // они входят в ourPts(), по которым считается покрытие.
+  if (Array.isArray(st.retailPts)) {
+    retailPts = st.retailPts.map(p => ({
+      ...p,
+      lat: +p.lat, lon: +p.lon,
+      photos: Array.isArray(p.photos) ? p.photos.filter(ph => ph && ph.id) : [],
+    })).filter(p => isFinite(p.lat) && isFinite(p.lon));
+  }
+  if (st.retailLayer && typeof st.retailLayer === 'object') {
+    retailLayer = { ...retailLayer, ...st.retailLayer };
+  }
   if (Array.isArray(st.customPtLayers)) {
     // Wipe all existing custom-point markers — otherwise old groups stay
     // orphaned on the map (overlapping new ones / impossible to toggle off).
@@ -3161,8 +3585,13 @@ function stateFingerprint(snapshot) {
     layer.id, layer.name, layer.color, layer.visible, layer.shape,
     Array.isArray(layer.recs) ? layer.recs.length : 0,
   ]);
+  const retail = (snapshot.retailPts || []).map(p => [
+    p.id, p.name, p.dms, p.equip, p.sales, p.comment, p.lat, p.lon,
+    (p.photos || []).map(ph => ph.id).join(','),
+  ]);
   return JSON.stringify({
-    heatKeys: snapshot.heatKeys || [], layers, custom,
+    heatKeys: snapshot.heatKeys || [], layers, custom, retail,
+    retailLayer: snapshot.retailLayer,
     selectedCities: snapshot.selectedCities || [], city: snapshot.city || '',
     incCol: snapshot.incCol, covR: snapshot.covR, topN: snapshot.topN,
     recBasis: snapshot.recBasis, recShow: snapshot.recShow,
@@ -3633,6 +4062,8 @@ function wireEvents() {
     });
   });
 
+  wireRetailUI();
+
   // Custom point layers — modal
   $('add-custom-pt-btn').addEventListener('click', () => {
     $('cpt-modal-name').value = '';
@@ -3937,7 +4368,7 @@ function readLocalSnapshot() {
   } catch (_) { return null; }
 }
 function renderCurrentState() {
-  buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
+  buildCityUI(); buildHeatUI(); buildCustomPtUI(); buildRetailUI(); rebuildUpTarget(); syncControls();
   renderHeat(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
 }
 function fitInitialBounds() {

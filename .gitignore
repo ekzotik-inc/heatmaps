@@ -9,6 +9,7 @@ data.js
 # and in the browser, not in the repo.
 server/state.json
 server/state.*.json
+server/photos/
 server/.env
 *.dataset.json
 dataset.json

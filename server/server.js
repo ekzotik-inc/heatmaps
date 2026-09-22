@@ -300,6 +300,19 @@ async function initDb() {
       updated_at TEXT NOT NULL
     )
   `);
+  // Фото торговых точек живут отдельно от состояния: состояние и так весит
+  // мегабайты и ходит целиком на каждое сохранение, а снимки неизменяемы.
+  // Ключ — хеш содержимого с картой, поэтому повторная загрузка того же файла
+  // не создаёт дубликат.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS photos (
+      id TEXT PRIMARY KEY,
+      map TEXT NOT NULL,
+      mime TEXT NOT NULL,
+      bytes BYTEA NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `);
   console.log('PostgreSQL connected — state will persist across restarts');
 }
 
@@ -554,6 +567,82 @@ app.get('/state/meta', requireSession, requireMapAccess, async (req, res) => {
   const state = await readState(req.map);
   if (!state) return res.json({ empty: true });
   res.json(stateMetadata(state));
+});
+
+// ---------------------------------------------------------------------------
+// Фото торговых точек. Хранятся отдельно от состояния карты; в состоянии лежат
+// только идентификаторы.
+// ---------------------------------------------------------------------------
+const PHOTO_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const PHOTO_MAX_BYTES = 4 * 1024 * 1024;
+const PHOTO_DIR = path.join(__dirname, 'photos');
+
+function photoId(map, buf) {
+  return crypto.createHash('sha256').update(map).update('|').update(buf).digest('hex').slice(0, 32);
+}
+async function writePhoto(id, map, mime, buf) {
+  if (db) {
+    await db.query(
+      `INSERT INTO photos (id, map, mime, bytes, created_at) VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (id) DO NOTHING`,
+      [id, map, mime, buf, new Date().toISOString()]
+    );
+    return;
+  }
+  if (!fs.existsSync(PHOTO_DIR)) fs.mkdirSync(PHOTO_DIR, { recursive: true });
+  fs.writeFileSync(path.join(PHOTO_DIR, `${id}.json`), JSON.stringify({ id, map, mime, b64: buf.toString('base64') }), 'utf8');
+}
+async function readPhoto(id) {
+  if (db) {
+    const r = await db.query('SELECT map, mime, bytes FROM photos WHERE id = $1', [id]);
+    if (!r.rows.length) return null;
+    return { map: r.rows[0].map, mime: r.rows[0].mime, buf: r.rows[0].bytes };
+  }
+  const f = path.join(PHOTO_DIR, `${id}.json`);
+  if (!fs.existsSync(f)) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(f, 'utf8'));
+    return { map: raw.map, mime: raw.mime, buf: Buffer.from(raw.b64, 'base64') };
+  } catch (_) { return null; }
+}
+
+// Загрузка снимка (только владелец). Принимаем data URL — так не нужен
+// multipart-парсер, а клиент всё равно сжимает изображение перед отправкой.
+app.post('/photo', requireSession, requireAdmin, requireMapAccess, async (req, res) => {
+  noStore(res);
+  const data = String((req.body && req.body.data) || '');
+  const m = data.match(/^data:([a-z/+-]+);base64,([A-Za-z0-9+/=]+)$/i);
+  if (!m) return res.status(400).json({ error: 'Expected a base64 data URL' });
+  const mime = m[1].toLowerCase();
+  if (!PHOTO_MIMES.has(mime)) return res.status(415).json({ error: 'Unsupported image type' });
+  let buf;
+  try { buf = Buffer.from(m[2], 'base64'); } catch (_) { return res.status(400).json({ error: 'Broken base64' }); }
+  if (!buf.length) return res.status(400).json({ error: 'Empty image' });
+  if (buf.length > PHOTO_MAX_BYTES) return res.status(413).json({ error: 'Image too large' });
+  const id = photoId(req.map, buf);
+  try {
+    await writePhoto(id, req.map, mime, buf);
+    res.json({ ok: true, id, bytes: buf.length });
+  } catch (e) {
+    console.error('Photo write error:', e.message);
+    res.status(500).json({ error: 'Failed to store photo' });
+  }
+});
+
+// Снимок отдаётся только тому, кто имеет доступ к этой карте. Содержимое
+// неизменяемо (ключ — хеш), поэтому кэшируется надолго.
+app.get('/photo/:id', requireSession, async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!/^[0-9a-f]{32}$/.test(id)) return res.status(400).json({ error: 'Bad photo id' });
+  const photo = await readPhoto(id);
+  if (!photo) { noStore(res); return res.status(404).json({ error: 'Photo not found' }); }
+  if (req.user.role !== 'admin' && req.user.role !== photo.map) {
+    noStore(res);
+    return res.status(403).json({ error: 'Photo access denied' });
+  }
+  res.setHeader('Content-Type', photo.mime);
+  res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+  res.send(photo.buf);
 });
 
 // Revision probe. Open clients poll this to learn that the owner published a

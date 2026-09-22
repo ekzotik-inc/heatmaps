@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260917b"/>
+  <link rel="stylesheet" href="style.css?v=20260922a"/>
 </head>
 <body>
 
@@ -157,6 +157,14 @@
 
       <!-- TAB: ТОЧКИ -->
       <div class="tab-panel" id="tab-points">
+        <p class="tab-section-title retail-section-title">Торговые точки<span class="retail-badge">ручной ввод</span></p>
+        <div id="retail-list"></div>
+        <button class="add-layer-btn retail-add" id="retail-add-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Добавить торговую точку
+        </button>
+        <div class="tab-section-divider"></div>
+
         <p class="tab-section-title">Наши точки</p>
         <div id="custom-pt-list"></div>
         <button class="add-layer-btn" id="add-custom-pt-btn">
@@ -462,6 +470,73 @@
 </div>
 
 <!-- Custom point layer modal -->
+<!-- Карточка торговой точки: ручной ввод владельцем -->
+<div id="rp-modal" role="dialog" aria-modal="true" aria-labelledby="rp-title" hidden>
+  <div class="rp-card">
+    <h3 id="rp-title">Новая торговая точка</h3>
+    <div class="rp-grid">
+      <label class="rp-field rp-wide">
+        <span>Название <b class="rp-req">*</b></span>
+        <input type="text" id="rp-name" maxlength="80" placeholder="Например, Магазин «Чорсу»" autocomplete="off"/>
+      </label>
+      <label class="rp-field">
+        <span>ДМС-код</span>
+        <input type="text" id="rp-dms" maxlength="40" placeholder="DMS-000000" autocomplete="off"/>
+      </label>
+      <label class="rp-field">
+        <span>Количество продаж</span>
+        <input type="number" id="rp-sales" min="0" step="1" placeholder="0" autocomplete="off"/>
+      </label>
+      <label class="rp-field rp-wide">
+        <span>Установленное оборудование</span>
+        <input type="text" id="rp-equip" maxlength="160" placeholder="Например, стойка IQOS, холодильник" autocomplete="off"/>
+      </label>
+      <label class="rp-field">
+        <span>Широта <b class="rp-req">*</b></span>
+        <input type="text" id="rp-lat" inputmode="decimal" placeholder="41.311100" autocomplete="off"/>
+      </label>
+      <label class="rp-field">
+        <span>Долгота <b class="rp-req">*</b></span>
+        <input type="text" id="rp-lon" inputmode="decimal" placeholder="69.279700" autocomplete="off"/>
+      </label>
+      <div class="rp-field rp-wide">
+        <button type="button" class="rp-geo" id="rp-geo-pick">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 12-9 12s-9-5-9-12a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+          Указать на карте
+        </button>
+        <span class="rp-geo-hint">окно скроется — кликните нужное место на карте</span>
+      </div>
+      <label class="rp-field rp-wide">
+        <span>Комментарий</span>
+        <textarea id="rp-comment" rows="2" maxlength="400" placeholder="Что важно знать по этой точке"></textarea>
+      </label>
+      <div class="rp-field rp-wide">
+        <span>Фото торговой точки <i id="rp-photo-hint">0 из 3</i></span>
+        <div class="rp-photos" id="rp-photos"></div>
+        <button type="button" class="rp-photo-add" id="rp-photo-add">+ Добавить фото</button>
+        <input type="file" id="rp-photo-file" accept="image/*" multiple style="display:none"/>
+      </div>
+    </div>
+    <div class="rp-actions">
+      <button type="button" class="modal-btn danger" id="rp-delete">Удалить</button>
+      <span class="rp-spacer"></span>
+      <button type="button" class="modal-btn secondary" id="rp-cancel">Отмена</button>
+      <button type="button" class="modal-btn primary" id="rp-save">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Фото во весь экран -->
+<div id="photo-lightbox" role="dialog" aria-modal="true" aria-label="Просмотр фото" hidden>
+  <button type="button" id="lightbox-close" class="lightbox-btn lightbox-close" aria-label="Закрыть">&times;</button>
+  <div id="lightbox-nav" class="lightbox-nav">
+    <button type="button" id="lightbox-prev" class="lightbox-btn" aria-label="Предыдущее фото">‹</button>
+    <button type="button" id="lightbox-next" class="lightbox-btn" aria-label="Следующее фото">›</button>
+  </div>
+  <img id="lightbox-img" alt="Фото торговой точки"/>
+  <div id="lightbox-count" class="lightbox-count"></div>
+</div>
+
 <div id="cpt-modal-overlay">
   <div class="layer-modal">
     <h3>Новый слой точек</h3>
@@ -501,7 +576,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20260917b'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20260922a'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();
