@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260922a"/>
+  <link rel="stylesheet" href="style.css?v=20260922b"/>
 </head>
 <body>
 
@@ -474,6 +474,14 @@
 <div id="rp-modal" role="dialog" aria-modal="true" aria-labelledby="rp-title" hidden>
   <div class="rp-card">
     <h3 id="rp-title">Новая торговая точка</h3>
+    <div class="rp-key-warn" id="rp-key-warn" hidden>
+      <b>Нужен ключ записи</b>
+      <span>Ключ хранится только в памяти вкладки и стирается при обновлении страницы. Без него сервер не примет ни фото, ни саму точку.</span>
+      <div class="rp-key-row">
+        <input type="password" id="rp-key-input" placeholder="Ключ записи…" autocomplete="off"/>
+        <button type="button" id="rp-key-apply">Применить</button>
+      </div>
+    </div>
     <div class="rp-grid">
       <label class="rp-field rp-wide">
         <span>Название <b class="rp-req">*</b></span>
@@ -576,7 +584,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20260922a'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20260922b'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();

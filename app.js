@@ -1858,13 +1858,22 @@ function compressImage(file) {
     reader.readAsDataURL(file);
   });
 }
+// Голый «HTTP 401» ничего не говорит: у сервера два разных 401 — нет ключа
+// записи и нет сессии. Разворачиваем ответ в понятную причину с действием.
+async function serverErrorText(res) {
+  let msg = '';
+  try { const j = await res.json(); msg = (j && j.error) || ''; } catch (_) {}
+  if (res.status === 401 && /api-key/i.test(msg)) return 'не введён ключ записи';
+  if (res.status === 401) return 'сессия истекла — войдите заново';
+  if (res.status === 403) return 'нет доступа к этой карте';
+  if (res.status === 413) return 'файл слишком большой';
+  if (res.status === 415) return 'формат не поддерживается — нужен JPEG, PNG или WebP';
+  return msg || ('HTTP ' + res.status);
+}
 async function uploadPhoto(file) {
   const { data, w, h } = await compressImage(file);
   const res = await postJson(SERVER_URL + '/photo?map=' + encodeURIComponent(currentMap), { data }, 90000);
-  if (!res.ok) {
-    const text = res.status === 413 ? 'файл слишком большой' : 'HTTP ' + res.status;
-    throw new Error(text);
-  }
+  if (!res.ok) throw new Error(await serverErrorText(res));
   const saved = await res.json();
   return { id: saved.id, w, h };
 }
@@ -2046,9 +2055,7 @@ let _rpPickingGeo = false;
 function rpField(id) { return document.getElementById(id); }
 function openRetailForm(id) {
   if (!isAdmin()) { toast('Торговые точки заводит только владелец', 'err'); return; }
-  if (!SERVER_URL || !SERVER_KEY) {
-    toast('Без ключа записи фото не загрузятся, а точка не уйдёт на сервер — введите ключ в «Данные → Доступ к записи»', 'err', 6500);
-  }
+  syncRetailKeyWarn();
   const p = id ? retailPts.find(x => x.id === id) : null;
   _rpEditId = p ? p.id : null;
   _rpPhotos = p ? (p.photos || []).slice() : [];
@@ -2091,6 +2098,23 @@ function renderRetailFormPhotos() {
   });
   addBtn.style.display = _rpPhotos.length >= RETAIL_MAX_PHOTOS ? 'none' : '';
   rpField('rp-photo-hint').textContent = `${_rpPhotos.length} из ${RETAIL_MAX_PHOTOS}`;
+  syncRetailKeyWarn();
+}
+
+/* Ключ записи живёт только в памяти вкладки и стирается при обновлении
+   страницы (так решено ради безопасности). Без него сервер отвечает 401 на
+   загрузку фото и на сохранение. Поэтому не прячем это в исчезающий тост, а
+   показываем прямо в форме — вместе с полем, чтобы ввести ключ здесь же. */
+function syncRetailKeyWarn() {
+  const warn = document.getElementById('rp-key-warn');
+  const addBtn = document.getElementById('rp-photo-add');
+  if (!warn) return;
+  const missing = !SERVER_URL || !SERVER_KEY;
+  warn.hidden = !missing;
+  if (addBtn) {
+    addBtn.disabled = missing;
+    addBtn.title = missing ? 'Сначала введите ключ записи' : '';
+  }
 }
 
 // «Указать на карте»: модалка прячется, следующий клик по карте даёт координаты.
@@ -2146,7 +2170,11 @@ async function saveRetailForm() {
   renderCustomPoints();
   reenrichAll();   // торговые точки входят в нашу сеть — покрытие пересчитать
   saveState();
-  toast(i >= 0 ? 'Точка обновлена' : `Точка «${name}» добавлена`, 'ok');
+  if (SERVER_URL && !SERVER_KEY) {
+    toast('Точка сохранена только в этом браузере: без ключа записи она не уйдёт на сервер', 'err', 6000);
+  } else {
+    toast(i >= 0 ? 'Точка обновлена' : `Точка «${name}» добавлена`, 'ok');
+  }
   map.flyTo([lat, lon], Math.max(map.getZoom(), 15), { duration: .6 });
 }
 
@@ -2189,6 +2217,21 @@ function wireRetailUI() {
       renderRetailFormPhotos();
     });
   }
+
+  on('rp-key-apply', 'click', () => {
+    const inp = document.getElementById('rp-key-input');
+    const value = inp ? inp.value.trim() : '';
+    if (!value) { if (inp) inp.focus(); return; }
+    SERVER_KEY = value;
+    if (inp) inp.value = '';
+    const sideKey = document.getElementById('admin-key-input');
+    if (sideKey) sideKey.value = SERVER_KEY;   // держим оба поля согласованными
+    syncRetailKeyWarn();
+    toast('Ключ принят — запись включена до обновления страницы', 'ok');
+  });
+  on('rp-key-input', 'keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('rp-key-apply').click(); }
+  });
 
   on('lightbox-close', 'click', closeLightbox);
   on('lightbox-prev', 'click', () => moveLightbox(-1));
@@ -3679,7 +3722,12 @@ let _pushing = false, _pushPending = false;
 
 async function pushToServer(snapshot, isRetry = false) {
   if (!SERVER_URL) return;
-  if (!isAdmin() || !SERVER_KEY) return; // only the owner (admin + key) writes the shared map
+  if (!isAdmin()) return;
+  if (!SERVER_KEY) {
+    // Молчаливый выход прятал главное: правки владельца никуда не уходят.
+    setSyncBadge('err', 'Нет ключа записи — правки только локально');
+    return;
+  }
   if (_pushing) { _pushPending = true; return; }   // coalesce concurrent saves
   _pushing = true;
   setSyncBadge('syncing', isRetry ? 'Повтор…' : 'Сохранение…');

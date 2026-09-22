@@ -860,6 +860,28 @@ body.geo-picking #map { cursor: crosshair; }
   box-shadow: var(--shadow); padding: 22px; font-family: "Manrope";
 }
 .rp-card h3 { margin: 0 0 16px; font-size: 16px; font-weight: 800; color: var(--ink); }
+.rp-key-warn {
+  display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px;
+  padding: 12px 14px; border-radius: 12px;
+  background: rgba(232,98,95,.08); border: 1px solid rgba(232,98,95,.35);
+}
+.rp-key-warn[hidden] { display: none; }
+.rp-key-warn b { font-size: 12px; font-weight: 700; color: var(--danger); }
+.rp-key-warn span { font-size: 10.5px; line-height: 1.5; color: var(--mut); }
+.rp-key-row { display: flex; gap: 7px; margin-top: 6px; }
+.rp-key-row input {
+  flex: 1; min-width: 0; padding: 8px 11px; border-radius: 9px; outline: none;
+  border: 1px solid var(--line2); background: var(--card); color: var(--ink);
+  font-family: "Manrope"; font-size: 12.5px;
+}
+.rp-key-row input:focus { border-color: var(--acc); }
+.rp-key-row button {
+  flex: 0 0 auto; padding: 8px 14px; border-radius: 9px; cursor: pointer;
+  border: 0; background: var(--acc); color: #fff;
+  font-family: "Manrope"; font-size: 11.5px; font-weight: 700;
+}
+.rp-key-row button:hover { background: var(--acc-d); }
+
 .rp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .rp-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .rp-field.rp-wide { grid-column: 1 / -1; }
