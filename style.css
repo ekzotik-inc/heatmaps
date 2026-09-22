@@ -358,7 +358,9 @@ html, body {
 .lyr.open .lyr-chev { transform: rotate(180deg); }
 .lyr-body { display: none; padding: 1px 15px 14px; }
 .lyr.open .lyr-body { display: block; animation: adv-in .22s var(--ease); }
-.lyr-meta { font-size: 10.5px; color: var(--dim); margin-top: 10px; }
+.lyr-meta { font-size: 10.5px; color: var(--dim); margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+/* Ссылка выгрузки живёт в строке со счётчиком — в ряду действий уже тесно */
+.lyr-meta .rp-export { margin: 0 0 0 auto; font-size: 11px; }
 .lyr-actions { display: flex; gap: 7px; margin-top: 11px; }
 .lyr-act {
   flex: 1; padding: 8px 4px;

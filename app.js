@@ -2180,6 +2180,7 @@ function deleteRetailPoint() {
 function wireRetailUI() {
   const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
   on('add-manual-pt-btn', 'click', () => openRetailForm(null, null));
+  on('manual-export-all', 'click', () => exportManualPts(null));
   on('rp-layer', 'change', () => {
     const sel = document.getElementById('rp-layer');
     const box = document.getElementById('rp-layer-new-box');
@@ -2252,6 +2253,14 @@ function buildCustomPtUI() {
   const vis = customPtLayers.filter(l => l.visible).length;
   if (badge) badge.textContent = customPtLayers.length ? `${vis}/${customPtLayers.length}` : '';
 
+  // Общая выгрузка нужна только когда ручных точек больше одного слоя —
+  // иначе достаточно ссылки в самой карточке.
+  const exportAll = document.getElementById('manual-export-all');
+  if (exportAll) {
+    const filled = manualLayers().filter(l => l.recs.length);
+    exportAll.style.display = filled.length > 1 ? '' : 'none';
+  }
+
   if (!customPtLayers.length) {
     box.innerHTML = '<div class="cpt-empty">Добавьте слой и загрузите CSV/XLSX с колонками name, lat, lon (опц.: addr, hours, code)</div>';
     return;
@@ -2300,7 +2309,8 @@ function buildCustomPtUI() {
             <div class="grp" style="margin-top:7px">Цвет радиуса <input type="color" class="cpt-rad-col" data-cpradcol="${esc(l.id)}" value="${esc(l.radiusColor || l.color)}"/></div>
           </div>
         </div>
-        <div class="lyr-meta">Объём слоя: ${l.recs.length.toLocaleString('ru-RU')} точек</div>
+        <div class="lyr-meta">Объём слоя: ${l.recs.length.toLocaleString('ru-RU')} точек${
+          l.manual && l.recs.length ? `<a class="lnk rp-export" data-rpexport="${esc(l.id)}" role="button" tabindex="0">⬇ Excel</a>` : ''}</div>
         ${l.manual && l.recs.length ? `<div class="rp-list">${l.recs.map(r => `
           <div class="rp-item" data-rpgo="${esc(l.id)}|${esc(r.id || '')}">
             <span class="rp-item-ph">${(r.photos || []).length ? '📷' : '—'}</span>
@@ -2473,6 +2483,11 @@ function buildCustomPtUI() {
   // Ручные слои: добавление точки, переход к точке и её правка
   box.querySelectorAll('[data-cptaddpt]').forEach(el => {
     el.addEventListener('click', () => openRetailForm(el.dataset.cptaddpt, null));
+  });
+  box.querySelectorAll('[data-rpexport]').forEach(el => {
+    const run = () => exportManualPts(el.dataset.rpexport);
+    el.addEventListener('click', run);
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); } });
   });
   box.querySelectorAll('[data-rpgo]').forEach(el => {
     el.addEventListener('click', e => {
@@ -2933,6 +2948,46 @@ function exportRecs() {
   XLSX.utils.book_append_sheet(wb, ws, 'Рекомендации BR');
   XLSX.writeFile(wb, 'rekomendacii_BR_' + lastBasisName.toLowerCase() + '_' + new Date().toISOString().slice(0, 10) + '.xlsx');
   toast('Файл скачан', 'ok');
+}
+
+/* Выгрузка точек ручного ввода. `layerId` — один слой, иначе все ручные слои
+   одним листом. Фото в XLSX не вставить, поэтому даём число и прямые ссылки:
+   они открываются в браузере, где уже есть сессия. */
+function exportManualPts(layerId) {
+  if (!window.XLSX) {
+    ensureSheetLibs().then(() => exportManualPts(layerId)).catch(() => toast('Не удалось загрузить XLSX', 'err'));
+    return;
+  }
+  const layers = layerId ? customPtLayers.filter(l => l.id === layerId) : manualLayers();
+  const rows = [['Слой', 'Название', 'ДМС-код', 'Оборудование', 'Продажи',
+                 'Широта', 'Долгота', 'Город', 'Комментарий', 'Фото, шт', 'Ссылки на фото']];
+  layers.forEach(l => (l.recs || []).forEach(r => {
+    const photos = (r.photos || []).filter(ph => ph && ph.id);
+    rows.push([
+      l.name,
+      r.name || '',
+      r.dms || '',
+      r.equip || '',
+      r.sales != null && r.sales !== '' && isFinite(+r.sales) ? +r.sales : '',
+      +(+r.lat).toFixed(6),
+      +(+r.lon).toFixed(6),
+      cityOf(r.lat, r.lon) || '',
+      r.comment || '',
+      photos.length,
+      photos.map(ph => SERVER_URL + '/photo/' + ph.id).join('\n'),
+    ]);
+  }));
+  if (rows.length === 1) { toast('В слое нет точек для выгрузки', 'err'); return; }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{ wch: 20 }, { wch: 30 }, { wch: 14 }, { wch: 26 }, { wch: 10 },
+                 { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 40 }, { wch: 9 }, { wch: 52 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Точки');
+  const base = layerId && layers[0] ? layers[0].name : 'tochki_vruchnuyu';
+  const safe = base.replace(/[^\wа-яё\- ]+/gi, '').trim().replace(/\s+/g, '_').slice(0, 40) || 'tochki';
+  XLSX.writeFile(wb, safe + '_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  toast(`Выгружено точек: ${rows.length - 1}`, 'ok');
 }
 
 /* ── RETRAFFIC FILTERED EXPORT ───────────────────────────────────────── */
