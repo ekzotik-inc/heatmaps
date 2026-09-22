@@ -1780,21 +1780,30 @@ function renderCustomPoints() {
     const shape = l.shape || 'teardrop';
     const markerSize = Math.min(44, Math.max(20, Number.isFinite(+l.size) ? +l.size : 30));
     const markerOpacity = Math.min(1, Math.max(.2, Number.isFinite(+l.opacity) ? +l.opacity : 1));
-    const ic = shp(shape, l.color, markerSize);
+    // У точки может быть свой цвет (`r.color`), иначе берётся цвет слоя.
+    // Иконки кэшируются по цвету: рисовать SVG заново на каждую точку дорого.
+    const iconCache = new Map();
+    const iconFor = color => {
+      const key = color || l.color;
+      if (!iconCache.has(key)) iconCache.set(key, shp(shape, key, markerSize));
+      return iconCache.get(key);
+    };
     const recs = l.recs.filter(r => selectedPointMatches(r));
     // coverage radius circles (under markers)
     if (l.radiusOn) {
       const rc = l.radiusColor || l.color, rop = l.radiusOpacity == null ? 0.15 : l.radiusOpacity;
       recs.forEach(r => {
+        const col = r.color || rc;
         L.circle([r.lat, r.lon], {
           renderer: radiusRenderer, pane: 'ptradius',
-          radius: l.radiusM || 1500, color: rc, weight: 1.2,
-          opacity: Math.min(rop + 0.35, 0.9), fillColor: rc, fillOpacity: rop,
+          radius: l.radiusM || 1500, color: col, weight: 1.2,
+          opacity: Math.min(rop + 0.35, 0.9), fillColor: col, fillOpacity: rop,
           interactive: false,
         }).addTo(l._group);
       });
     }
     recs.forEach(r => {
+      const ic = iconFor(r.color);
       const m = L.marker([r.lat, r.lon], {
         icon: L.divIcon({
           className: '',
@@ -1943,7 +1952,7 @@ function manualPopupHtml(layer, r) {
     ${rows.map(([k, v]) =>
       `<div class="pp-row"><span>${esc(k)}</span><b style="font-family:Manrope;font-weight:600;text-align:right">${esc(String(v))}</b></div>`).join('')}
     ${r.comment ? `<div class="rp-comment">${esc(r.comment)}</div>` : ''}
-    <span class="pp-tag rp-tag" style="background:${esc(layer.color)}22;color:var(--ink);border:1px solid ${esc(layer.color)}">${esc(layer.name)}</span>
+    <span class="pp-tag rp-tag" style="background:${esc(r.color || layer.color)}22;color:var(--ink);border:1px solid ${esc(r.color || layer.color)}">${esc(layer.name)}</span>
     ${isAdmin() && layer.manual ? '<button type="button" class="rp-edit" data-rpedit="1">✎ Редактировать</button>' : ''}`;
 }
 
@@ -1985,7 +1994,32 @@ function wireManualPopup(popup, layer, r, marker) {
 let _rpEditId = null;        // редактируемая точка (null — создание новой)
 let _rpLayerId = null;       // слой редактируемой точки
 let _rpPhotos = [];          // [{id,w,h}] — уже загруженные на сервер снимки
+let _rpColor = '';           // '' — цвет наследуется от слоя
 let _rpPickingGeo = false;
+
+// Цвет конкретной точки: пусто — как у слоя, иначе свой оттенок.
+function renderRetailColors() {
+  const box = document.getElementById('rp-colors');
+  const auto = document.getElementById('rp-color-auto');
+  const hint = document.getElementById('rp-color-hint');
+  if (!box) return;
+  const sel = document.getElementById('rp-layer');
+  const layer = sel ? customPtLayers.find(l => l.id === sel.value) : null;
+  const layerColor = (layer && layer.color) || SWATCHES[0];
+  if (auto) {
+    auto.classList.toggle('on', !_rpColor);
+    auto.style.setProperty('--auto-color', layerColor);
+  }
+  if (hint) hint.textContent = _rpColor ? _rpColor : 'как у слоя';
+  box.innerHTML = SWATCHES.map(c =>
+    `<button type="button" class="sw${c.toLowerCase() === _rpColor.toLowerCase() ? ' on' : ''}" data-rpsw="${c}" style="background:${c}" title="${c}" aria-label="Цвет ${c}"></button>`).join('')
+    + `<input type="color" class="sw-pick" id="rp-color-pick" value="${_rpColor || layerColor}" title="Свой оттенок">`;
+  box.querySelectorAll('[data-rpsw]').forEach(el => {
+    el.addEventListener('click', () => { _rpColor = el.dataset.rpsw; renderRetailColors(); });
+  });
+  const pick = document.getElementById('rp-color-pick');
+  if (pick) pick.addEventListener('input', e => { _rpColor = e.target.value; renderRetailColors(); });
+}
 
 function rpField(id) { return document.getElementById(id); }
 
@@ -2010,7 +2044,9 @@ function openRetailForm(layerId, id) {
   _rpEditId = p ? p.id : null;
   _rpLayerId = layer ? layer.id : null;
   _rpPhotos = p ? (p.photos || []).slice() : [];
+  _rpColor = p && p.color ? p.color : '';
   buildRetailLayerSel(layer ? layer.id : (manualLayers()[0] || {}).id);
+  renderRetailColors();
   rpField('rp-layer-new').value = '';
   rpField('rp-title').textContent = p ? 'Точка' : 'Новая точка';
   rpField('rp-name').value    = p ? (p.name || '') : '';
@@ -2028,7 +2064,7 @@ function openRetailForm(layerId, id) {
 function closeRetailForm() {
   rpField('rp-modal').hidden = true;
   stopGeoPick();
-  _rpEditId = null; _rpLayerId = null; _rpPhotos = [];
+  _rpEditId = null; _rpLayerId = null; _rpPhotos = []; _rpColor = '';
 }
 function renderRetailFormPhotos() {
   const box = rpField('rp-photos');
@@ -2127,6 +2163,7 @@ async function saveRetailForm() {
     sales: salesRaw === '' ? null : (isFinite(+salesRaw) ? +salesRaw : null),
     comment: rpField('rp-comment').value.trim(),
     lat, lon,
+    color: _rpColor || '',   // пусто — цвет наследуется от слоя
     photos: _rpPhotos.slice(),
   };
   // Точку могли перенести в другой слой — убираем её из прежнего.
@@ -2186,7 +2223,9 @@ function wireRetailUI() {
     const box = document.getElementById('rp-layer-new-box');
     if (box) box.style.display = sel.value === '__new__' ? '' : 'none';
     if (sel.value === '__new__') setTimeout(() => document.getElementById('rp-layer-new').focus(), 60);
+    renderRetailColors();   // «как у слоя» показывает цвет выбранного слоя
   });
+  on('rp-color-auto', 'click', () => { _rpColor = ''; renderRetailColors(); });
   on('rp-cancel', 'click', closeRetailForm);
   on('rp-save', 'click', saveRetailForm);
   on('rp-delete', 'click', deleteRetailPoint);
@@ -2313,6 +2352,7 @@ function buildCustomPtUI() {
           l.manual && l.recs.length ? `<a class="lnk rp-export" data-rpexport="${esc(l.id)}" role="button" tabindex="0">⬇ Excel</a>` : ''}</div>
         ${l.manual && l.recs.length ? `<div class="rp-list">${l.recs.map(r => `
           <div class="rp-item" data-rpgo="${esc(l.id)}|${esc(r.id || '')}">
+            <span class="rp-item-dot" style="background:${esc(r.color || l.color)}" title="${r.color ? 'свой цвет' : 'цвет слоя'}"></span>
             <span class="rp-item-ph">${(r.photos || []).length ? '📷' : '—'}</span>
             <div class="rp-item-main">
               <b>${esc(r.name || 'Без названия')}</b>
@@ -2960,7 +3000,7 @@ function exportManualPts(layerId) {
   }
   const layers = layerId ? customPtLayers.filter(l => l.id === layerId) : manualLayers();
   const rows = [['Слой', 'Название', 'ДМС-код', 'Оборудование', 'Продажи',
-                 'Широта', 'Долгота', 'Город', 'Комментарий', 'Фото, шт', 'Ссылки на фото']];
+                 'Широта', 'Долгота', 'Город', 'Цвет', 'Комментарий', 'Фото, шт', 'Ссылки на фото']];
   layers.forEach(l => (l.recs || []).forEach(r => {
     const photos = (r.photos || []).filter(ph => ph && ph.id);
     rows.push([
@@ -2972,6 +3012,7 @@ function exportManualPts(layerId) {
       +(+r.lat).toFixed(6),
       +(+r.lon).toFixed(6),
       cityOf(r.lat, r.lon) || '',
+      r.color || l.color || '',
       r.comment || '',
       photos.length,
       photos.map(ph => SERVER_URL + '/photo/' + ph.id).join('\n'),
@@ -2981,7 +3022,7 @@ function exportManualPts(layerId) {
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!cols'] = [{ wch: 20 }, { wch: 30 }, { wch: 14 }, { wch: 26 }, { wch: 10 },
-                 { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 40 }, { wch: 9 }, { wch: 52 }];
+                 { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 40 }, { wch: 9 }, { wch: 52 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Точки');
   const base = layerId && layers[0] ? layers[0].name : 'tochki_vruchnuyu';
@@ -3715,7 +3756,7 @@ function stateFingerprint(snapshot) {
     // Правка карточки ручной точки не меняет их количество. Без этого отпечаток
     // совпал бы с прежним и сохранение на сервер было бы пропущено.
     layer.manual && Array.isArray(layer.recs)
-      ? layer.recs.map(r => [r.id, r.name, r.dms, r.equip, r.sales, r.comment,
+      ? layer.recs.map(r => [r.id, r.name, r.dms, r.equip, r.sales, r.comment, r.color,
           r.lat, r.lon, (r.photos || []).map(ph => ph.id).join(',')].join('~')).join('|')
       : '',
   ]);
