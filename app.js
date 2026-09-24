@@ -3447,6 +3447,16 @@ function authHeaders(extra = {}) {
 function authFetch(url, options = {}) {
   return fetch(url, { ...options, credentials: 'include', headers: authHeaders(options.headers || {}) });
 }
+// Ключ записи выдаёт сервер — при входе и при восстановлении сессии после F5.
+// Владельцу больше не нужно вводить его руками; ручное поле остаётся запасным
+// путём (старый сервер без writeKey либо статический API_KEY для скриптов).
+function applyWriteKey(key) {
+  if (typeof key === 'string' && key) SERVER_KEY = key;
+  const inp = document.getElementById('admin-key-input');
+  if (inp && SERVER_KEY) inp.placeholder = 'Ключ получен автоматически';
+  if (typeof syncRetailKeyWarn === 'function') syncRetailKeyWarn();
+}
+
 function rememberSessionToken(token) {
   SESSION_TOKEN = typeof token === 'string' ? token : '';
 }
@@ -4774,6 +4784,7 @@ async function startApp() {
       }
       const me = await res.json();
       if (me.token) rememberSessionToken(me.token);
+      applyWriteKey(me.writeKey);
       currentUser = me.username;
       currentRole = me.role;
       currentMap = sessionStorage.getItem('hm_map') || null;
@@ -4820,6 +4831,7 @@ async function startApp() {
       if (!res.ok) throw new Error('LOGIN_FAILED');
       const me = await res.json();
       if (me.token) rememberSessionToken(me.token);
+      applyWriteKey(me.writeKey);
       currentUser = me.username;
       currentRole = me.role;
       sessionStorage.setItem('hm_role', currentRole);

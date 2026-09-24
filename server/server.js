@@ -236,10 +236,27 @@ function verifySessionToken(token) {
   }
 }
 
+function sessionTokenFromReq(req) {
+  const bearer = readBearer(req);
+  if (bearer && verifySessionToken(bearer)) return bearer;
+  const cookie = readCookie(req, 'hm_session');
+  return cookie && verifySessionToken(cookie) ? cookie : '';
+}
+
 function readSession(req) {
   // Prefer the explicit bearer token for GitHub Pages ↔ Render, then fall back
   // to the HttpOnly cookie for same-site or browsers that retain third-party cookies.
   return verifySessionToken(readBearer(req)) || verifySessionToken(readCookie(req, 'hm_session'));
+}
+
+// Ключ записи, привязанный к конкретной сессии. Владелец больше не вводит его
+// руками: он выдаётся при входе и при восстановлении сессии. Значение нельзя
+// вычислить без SESSION_SECRET, поэтому заголовок остаётся защитой от CSRF —
+// чужая страница не сможет его подставить, даже если браузер пошлёт cookie.
+function writeTokenFor(sessionToken) {
+  if (!SESSION_SECRET || !sessionToken) return '';
+  return crypto.createHmac('sha256', SESSION_SECRET)
+    .update('write|').update(sessionToken).digest('base64url').slice(0, 43);
 }
 
 function isHttps(req) {
@@ -381,9 +398,14 @@ async function writeState(key, data) {
 }
 
 function verifyKey(req) {
-  if (!API_KEY) return false; // fail closed: no configured key means no writes
-  const header = req.headers['x-api-key'] || '';
-  return header === API_KEY;
+  const header = String(req.headers['x-api-key'] || '');
+  if (!header) return false;
+  // 1) Статический ключ из окружения — для скриптов и внешней автоматизации.
+  if (API_KEY && header === API_KEY) return true;
+  // 2) Ключ, выданный этой сессии при входе, — обычный путь для браузера.
+  const token = writeTokenFor(sessionTokenFromReq(req));
+  if (!token || header.length !== token.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(header), Buffer.from(token));
 }
 
 function requireSession(req, res, next) {
@@ -461,7 +483,13 @@ app.post('/auth/login', express.json({ limit: '32kb' }), rateLimitLogin, (req, r
   setSessionCookie(req, res, token);
   // The token is returned only as an in-memory fallback for the current page.
   // The frontend must never persist it in sessionStorage/localStorage.
-  res.json({ ok: true, username: user.username, role: user.role, token, expiresIn: SESSION_TTL_SEC });
+  // writeKey избавляет владельца от ручного ввода ключа записи; выдаётся только
+  // админу и только на эту сессию. Ответ читается лишь с разрешённого origin.
+  res.json({
+    ok: true, username: user.username, role: user.role, token,
+    writeKey: user.role === 'admin' ? writeTokenFor(token) : '',
+    expiresIn: SESSION_TTL_SEC,
+  });
 });
 
 app.post('/auth/logout', (req, res) => {
@@ -472,7 +500,12 @@ app.post('/auth/logout', (req, res) => {
 
 app.get('/auth/me', requireSession, (req, res) => {
   noStore(res);
-  res.json({ ok: true, username: req.user.username, role: req.user.role });
+  // После F5 сессия жива, но страница потеряла ключ записи — выдаём заново,
+  // иначе владельцу пришлось бы вводить его вручную на каждой перезагрузке.
+  res.json({
+    ok: true, username: req.user.username, role: req.user.role,
+    writeKey: req.user.role === 'admin' ? writeTokenFor(sessionTokenFromReq(req)) : '',
+  });
 });
 
 // Check the owner key before parsing multi-megabyte state bodies.
