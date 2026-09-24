@@ -2645,7 +2645,10 @@ function confirmLayerModal() {
 function focusNewLayer(key) {
   const d = DS[key]; if (!d) return;
   if (hasCityFilter() && d.recs.length && !d.recs.some(r => cityMatches(r.fil))) { selectedCities = []; buildCityUI(); }
-  buildHeatUI(); rebuildUpTarget(); buildAddrSrcSel(); buildRecBasisSel(); renderHeat(); renderRecs(); saveState();
+  // buildRtExclUI обязателен: без него новый слой не появлялся в списке
+  // исключений адресной программы до перезагрузки страницы.
+  buildHeatUI(); rebuildUpTarget(); buildAddrSrcSel(); buildRecBasisSel(); buildRtExclUI();
+  renderHeat(); renderRecs(); saveState();
   const bpts = d.recs.filter(r => cityMatches(r.fil)).map(r => [r.lat, r.lon]);
   if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6 });
 }
@@ -3033,8 +3036,16 @@ function exportManualPts(layerId) {
 
 /* ── RETRAFFIC FILTERED EXPORT ───────────────────────────────────────── */
 // Layers eligible for use as "exclusions" — custom layers, not base shipment layers
+// Сколько точек в слое НА САМОМ ДЕЛЕ. Записи тепловых слоёв грузятся лениво
+// (только видимые и основа рекомендаций), поэтому у остальных `recs` пуст, хотя
+// данные на сервере есть. Число берём из манифеста (`stats.n`).
+function layerRecordCount(d) {
+  if (!d) return 0;
+  if (d._recordsLoaded === false) return (d.stats && d.stats.n) || 0;
+  return (d.recs || []).length || ((d.stats && d.stats.n) || 0);
+}
 function rtExclLayerKeys() {
-  const hk = heatKeys.filter(k => k !== 'cig' && k !== 'sticks' && DS[k] && (DS[k].recs || []).length);
+  const hk = heatKeys.filter(k => k !== 'cig' && k !== 'sticks' && DS[k] && layerRecordCount(DS[k]) > 0);
   const ck = customPtLayers.filter(l => l.recs.length).map(l => '__cpt__' + l.id);
   return [...hk, ...ck];
 }
@@ -3058,7 +3069,7 @@ function buildRtExclUI() {
   rtExclKeys = rtExclKeys.filter(k => keys.includes(k));
 
   if (!keys.length) {
-    box.innerHTML = '<div class="rt-excl-empty">Нет дополнительных слоёв. Загрузите слой Re-traffic через «Свои точки».</div>';
+    box.innerHTML = '<div class="rt-excl-empty">Нет других слоёв с точками — загрузите слой на вкладке «Карта» или «Точки».</div>';
     return;
   }
   box.innerHTML = keys.map(k =>
@@ -3200,7 +3211,25 @@ function runAddrFilter() {
 }
 
 /* Show filtered points on map */
-function previewAddrOnMap() {
+// Адресная программа читает записи слоя-источника и слоёв-исключений напрямую.
+// Записи тепловых слоёв грузятся лениво, поэтому без явной подгрузки фильтр
+// считал бы по пустым массивам: ноль точек у источника и «исключено 0»,
+// причём молча — результат выглядел бы правдоподобным.
+async function ensureAddrLayers() {
+  const keys = [addrSrcKey, ...rtExclKeys].filter(k => DS[k] && DS[k]._recordsLoaded === false);
+  if (!keys.length) return true;
+  toast('Загружаем данные слоёв…', 'info', 2500);
+  try {
+    await ensureLayerRecords(keys);
+    return true;
+  } catch (e) {
+    toast('Не удалось загрузить данные слоёв: ' + (e.message || 'ошибка связи'), 'err', 5000);
+    return false;
+  }
+}
+
+async function previewAddrOnMap() {
+  if (!(await ensureAddrLayers())) return;
   addrLayer.clearLayers();
   const { points, noRef } = runAddrFilter();
   // Без референсных точек фильтр по расстоянию не имеет смысла — говорим прямо,
@@ -3265,8 +3294,9 @@ function previewAddrOnMap() {
   toast(`На карте: ${points.length} точек · ${usedRefs.size} ориентиров`, 'ok');
 }
 
-function exportRetraffic() {
+async function exportRetraffic() {
   if (!window.XLSX) { ensureSheetLibs().then(exportRetraffic).catch(() => toast('Не удалось загрузить XLSX', 'err')); return; }
+  if (!(await ensureAddrLayers())) return;
   const { points, excluded, avg, volThresh, srcName, hasVol, noRef } = runAddrFilter();
   const refName = addrRefName();
 
