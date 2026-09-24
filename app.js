@@ -226,6 +226,82 @@ function pointInCity(r, c) {
   return cityOf(r.lat, r.lon) === c && hav(r.lat, r.lon, CC[c][0], CC[c][1]) < 60000;
 }
 
+/* ── ОХВАТ ТАШКЕНТА: город или город + область ───────────────────────────
+   Правило «ближайший центр в пределах 60 км» относит к Ташкенту всю область.
+   Для режима «только город» берём НАСТОЯЩИЕ границы — объединение полигонов
+   районов из `/data` (те же, что рисует кнопка «Районы»), а не радиус. */
+const TSHK = 'Ташкент';
+let tashkentScope = 'region';   // 'region' — город + область; 'city' — только город
+
+let _tshkRings = null;
+function tashkentRings() {
+  if (_tshkRings) return _tshkRings;
+  const out = [];
+  (DATA.districts || []).forEach(f => {
+    (f.mp || []).forEach(poly => {
+      const ring = poly && poly[0];           // внешнее кольцо, координаты [lon, lat]
+      if (!Array.isArray(ring) || ring.length < 4) return;
+      let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+      for (const c of ring) {
+        const lon = +c[0], lat = +c[1];
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        if (lon < minLon) minLon = lon;
+        if (lon > maxLon) maxLon = lon;
+      }
+      out.push({ ring, minLat, maxLat, minLon, maxLon });
+    });
+  });
+  // Кэшируем только непустой результат: районы приезжают с `/data` позже, и
+  // пустой кэш навсегда отключил бы режим «только город».
+  if (out.length) _tshkRings = out;
+  return out;
+}
+function pointInRing(lat, lon, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = +ring[i][0], yi = +ring[i][1], xj = +ring[j][0], yj = +ring[j][1];
+    if (((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+// Кэш по координатам: тепловой слой может содержать десятки тысяч точек, а
+// фильтр пересчитывается на каждый рендер. Ключ — округлённые координаты, так
+// результат переиспользуется и между слоями. Записи точек не засоряем.
+const _tshkCache = new Map();
+function inTashkentCity(lat, lon) {
+  const rings = tashkentRings();
+  if (!rings.length) return null;            // границ нет — решает вызывающий
+  const key = lat.toFixed(5) + '|' + lon.toFixed(5);
+  const hit = _tshkCache.get(key);
+  if (hit !== undefined) return hit;
+  let inside = false;
+  for (const r of rings) {
+    if (lat < r.minLat || lat > r.maxLat || lon < r.minLon || lon > r.maxLon) continue;
+    if (pointInRing(lat, lon, r.ring)) { inside = true; break; }
+  }
+  _tshkCache.set(key, inside);
+  return inside;
+}
+function tashkentCityAvailable() {
+  return COUNTRY === 'uz' && tashkentRings().length > 0;
+}
+
+// Одна проверка принадлежности для ВСЕХ слоёв: у точек тепловых слоёв есть
+// готовая метка `fil`, у слоёв точек её нет. Раньше это были два независимых
+// пути, и охват Ташкента применился бы только к одному из них.
+function cityHolds(r, c) {
+  if (c === TSHK && tashkentScope === 'city') {
+    const v = inTashkentCity(+r.lat, +r.lon);
+    if (v !== null) return v;
+  }
+  if (r.fil) return r.fil === c;
+  return pointInCity(r, c);
+}
+function recInSelection(r) {
+  return !hasCityFilter() || allCitiesSelected() || selectedCities.some(c => cityHolds(r, c));
+}
+
 /* ── LAYER STATE ─────────────────────────────────────────────────────── */
 const DS = {
   cig:      Object.assign({ key: 'cig',      name: 'Сигареты', color: '#F4685C', intensity: 1, visible: true  }, DATA.cig),
@@ -254,10 +330,7 @@ function canonicalCities(list) {
   const ordered = CITIES.filter(c => list.includes(c));
   return ordered.length === CITIES.length ? [] : ordered;
 }
-function cityMatches(name) { return !hasCityFilter() || allCitiesSelected() || selectedCities.includes(name); }
-function selectedPointMatches(r) {
-  return !hasCityFilter() || allCitiesSelected() || selectedCities.some(c => pointInCity(r, c));
-}
+function selectedPointMatches(r) { return recInSelection(r); }
 function cityPlural(n) { return n === 1 ? 'город' : n < 5 ? 'города' : 'городов'; }
 function selectedCityLabel() {
   if (!hasCityFilter()) return 'Все города';
@@ -571,7 +644,7 @@ function renderHeat() {
     }
     needsUiRefresh = true;
     const fullSelection = !hasCityFilter() || allCitiesSelected();
-    const recs = fullSelection ? d.recs : d.recs.filter(r => cityMatches(r.fil));
+    const recs = fullSelection ? d.recs : d.recs.filter(recInSelection);
     let scale;
     if (fullSelection && d.stats && d.stats.p90) {
       // Full-layer p90 is already available from the server/local stats; avoid
@@ -825,7 +898,7 @@ function renderRecs() {
 
   // Compute candidates
   const cand = d.recs
-    .filter(s => cityMatches(s.fil) && s.nd > covR)
+    .filter(s => recInSelection(s) && s.nd > covR)
     .sort((a, b) => b.ld - a.ld || b.vol - a.vol);
 
   // Greedy suppression O(n log n) via Set
@@ -843,7 +916,7 @@ function renderRecs() {
 
   // Summary
   const uncSum    = cand.reduce((a, s) => a + s.vol, 0);
-  const cityTotal = d.recs.filter(s => cityMatches(s.fil)).reduce((a, s) => a + s.vol, 0) || 1;
+  const cityTotal = d.recs.filter(recInSelection).reduce((a, s) => a + s.vol, 0) || 1;
   document.getElementById('rec-count').textContent = recs.length;
   document.getElementById('rec-lbl').innerHTML =
     `зон для новой <b>BR</b> · основа: <b>${esc(d.name).toLowerCase()}</b> · вне покрытия <b>${Math.round(uncSum).toLocaleString('ru-RU')}</b> ед. (<b>${Math.round(uncSum / cityTotal * 100)}%</b>)`;
@@ -1257,9 +1330,11 @@ function updateCityFilterSummary() {
   const label = document.getElementById('city-filter-label');
   const count = document.getElementById('city-filter-count');
   if (label) {
+    const only = tashkentScope === 'city' && selectedCities.includes(TSHK) && tashkentCityAvailable();
+    const first = selectedCities[0] === TSHK && only ? TSHK + ' (город)' : selectedCities[0];
     label.textContent = selectedCities.length === 0
       ? 'Все города'
-      : selectedCities.length === 1 ? selectedCities[0] : selectedCities[0] + ` + ${selectedCities.length - 1}`;
+      : selectedCities.length === 1 ? first : first + ` + ${selectedCities.length - 1}`;
   }
   if (count) count.textContent = selectedCities.length > 1 ? String(selectedCities.length) : '';
   document.querySelectorAll('#seg-city [data-city-option]').forEach(b => {
@@ -1284,6 +1359,7 @@ function toggleCitySelection(name) {
     ? selectedCities.filter(c => c !== name)
     : [...selectedCities, name];
   selectedCities = canonicalCities(next);
+  buildTshkScopeUI();
   updateCityFilterSummary();
   scheduleCityFilterUpdate();
 }
@@ -1336,8 +1412,33 @@ function buildCityUI() {
   };
   mk('', 'Все города', true);
   CITIES.forEach(c => mk(c, c));
+  buildTshkScopeUI();
   bindCityFilter();
   updateCityFilterSummary();
+}
+
+/* Переключатель охвата Ташкента. Виден только там, где он имеет смысл: на
+   UZ-картах и при выбранном Ташкенте (границы берутся из полигонов районов). */
+function buildTshkScopeUI() {
+  const box = document.getElementById('tshk-scope');
+  if (!box) return;
+  const show = tashkentCityAvailable() && CITIES.includes(TSHK) && selectedCities.includes(TSHK);
+  box.hidden = !show;
+  if (!show) return;
+  box.querySelectorAll('[data-tshk]').forEach(btn => {
+    const on = btn.dataset.tshk === tashkentScope;
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', String(on));
+    if (btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', () => {
+      if (tashkentScope === btn.dataset.tshk) return;
+      tashkentScope = btn.dataset.tshk;
+      buildTshkScopeUI();
+      updateCityFilterSummary();
+      scheduleCityFilterUpdate();
+    });
+  });
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1759,7 +1860,7 @@ function visiblePts() {
   heatKeys.forEach(k => {
     const d = DS[k];
     if (!d || !d.visible || !d.recs) return;
-    for (const r of d.recs) if (cityMatches(r.fil)) out.push([r.lat, r.lon]);
+    for (const r of d.recs) if (recInSelection(r)) out.push([r.lat, r.lon]);
   });
   customPtLayers.forEach(l => {
     if (!l.visible) return;
@@ -2650,12 +2751,12 @@ function confirmLayerModal() {
 // Re-render everything after a layer's data changes, then fly the map to it.
 function focusNewLayer(key) {
   const d = DS[key]; if (!d) return;
-  if (hasCityFilter() && d.recs.length && !d.recs.some(r => cityMatches(r.fil))) { selectedCities = []; buildCityUI(); }
+  if (hasCityFilter() && d.recs.length && !d.recs.some(recInSelection)) { selectedCities = []; buildCityUI(); }
   // buildRtExclUI обязателен: без него новый слой не появлялся в списке
   // исключений адресной программы до перезагрузки страницы.
   buildHeatUI(); rebuildUpTarget(); buildAddrSrcSel(); buildRecBasisSel(); buildRtExclUI();
   renderHeat(); renderRecs(); saveState();
-  const bpts = d.recs.filter(r => cityMatches(r.fil)).map(r => [r.lat, r.lon]);
+  const bpts = d.recs.filter(recInSelection).map(r => [r.lat, r.lon]);
   if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6 });
 }
 
@@ -2834,6 +2935,7 @@ function buildStateSnapshot() {
     // Keep the legacy field for older consumers; it represents only a single selection.
     city: selectedCities.length === 1 ? selectedCities[0] : '',
     covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
+    tashkentScope,
     addrSrcKey, addrRefKey, rtRadius, rtRadiusOp, rtVolOp, rtVolMode, rtVolCustom, rtExclRadius, rtExclOp, rtExclKeys,
     // recs ручных слоёв несут карточку и идентификаторы фото — байты снимков
     // живут на сервере и в состояние не попадают.
@@ -2964,6 +3066,7 @@ function applySnapshot(st) {
   if (typeof st.heatBoost  === 'number')  heatBoost    = st.heatBoost;
   if (typeof st.heatBlend  === 'string')  heatBlend    = st.heatBlend;
   if (typeof st.heatRadius === 'number')  heatRadius   = st.heatRadius;
+  if (st.tashkentScope === 'city' || st.tashkentScope === 'region') tashkentScope = st.tashkentScope;
   if (typeof st.districtsOn  === 'boolean') districtsOn  = st.districtsOn;
   if (typeof st.incomeHeatOn === 'boolean') incomeHeatOn = st.incomeHeatOn;
   if (typeof st.coresOn      === 'boolean') coresOn      = st.coresOn;
@@ -3212,7 +3315,7 @@ function runAddrFilter() {
   const srcName = addrSrcOptions().find(o => o.key === addrSrcKey)?.name || addrSrcKey;
 
   let points = addrSrcRecs();
-  if (hasCityFilter()) points = points.filter(p => cityMatches(p.fil) || !p.fil);
+  if (hasCityFilter()) points = points.filter(recInSelection);
 
   const refPts = addrRefPoints();
 
@@ -3860,6 +3963,7 @@ function stateFingerprint(snapshot) {
     recBasis: snapshot.recBasis, recShow: snapshot.recShow,
     heatBoost: snapshot.heatBoost, heatBlend: snapshot.heatBlend,
     heatRadius: snapshot.heatRadius, districtsOn: snapshot.districtsOn,
+    tashkentScope: snapshot.tashkentScope,
     incomeHeatOn: snapshot.incomeHeatOn, coresOn: snapshot.coresOn,
     addrSrcKey: snapshot.addrSrcKey, addrRefKey: snapshot.addrRefKey,
     rtRadius: snapshot.rtRadius, rtRadiusOp: snapshot.rtRadiusOp,
@@ -4189,10 +4293,10 @@ function wireEvents() {
     reset();
     // The selected-city filter would otherwise silently hide points that fall
     // in other cities — reset to "Все" so the freshly uploaded layer is visible.
-    if (hasCityFilter() && !d.recs.some(r => cityMatches(r.fil))) { selectedCities = []; buildCityUI(); }
+    if (hasCityFilter() && !d.recs.some(recInSelection)) { selectedCities = []; buildCityUI(); }
     buildHeatUI(); renderHeat(); renderRecs(); buildRtExclUI();
     // Frame the map on the new data so it's obvious it loaded.
-    const bpts = d.recs.filter(r => cityMatches(r.fil)).map(r => [r.lat, r.lon]);
+    const bpts = d.recs.filter(recInSelection).map(r => [r.lat, r.lon]);
     if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6 });
     saveState();
     toast(`Слой «${d.name}» обновлён (${d.stats.n} точек)`, 'ok');

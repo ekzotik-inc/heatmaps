@@ -1542,6 +1542,29 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
   margin-bottom: 8px; font-family: "Manrope";
 }
 .rt-excl-item { padding: 5px 4px; }
+/* Охват Ташкента: город или город + область */
+.city-scope {
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 7px;
+}
+.city-scope[hidden] { display: none; }
+.city-scope-label {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--dim);
+}
+.city-scope-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.city-scope-btn {
+  padding: 8px 6px; border-radius: 9px; cursor: pointer;
+  border: 1px solid var(--line2); background: var(--card2); color: var(--mut);
+  font-family: "Manrope"; font-size: 11px; font-weight: 700; white-space: nowrap;
+  transition: .16s var(--ease);
+}
+.city-scope-btn:hover { border-color: var(--acc); color: var(--acc-d); }
+.city-scope-btn.on {
+  border-color: var(--acc); background: var(--acc-l); color: var(--acc-d);
+  box-shadow: inset 0 0 0 1px var(--acc);
+}
+
 .rt-excl-empty {
   font-size: 11px; color: var(--dim); line-height: 1.55;
   background: var(--card2); border: 1px dashed var(--line2);
