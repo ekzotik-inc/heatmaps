@@ -948,7 +948,10 @@ function renderRecs() {
   const cityTotal = d.recs.filter(recInSelection).reduce((a, s) => a + s.vol, 0) || 1;
   document.getElementById('rec-count').textContent = recs.length;
   document.getElementById('rec-lbl').innerHTML =
-    `зон для новой <b>BR</b> · основа: <b>${esc(d.name).toLowerCase()}</b> · вне покрытия <b>${Math.round(uncSum).toLocaleString('ru-RU')}</b> ед. (<b>${Math.round(uncSum / cityTotal * 100)}%</b>)`;
+    // Доля от общего объёма понятна всегда; абсолютную сумму для процентных
+    // слоёв не печатаем — сумма процентов ничего не значит.
+    `зон для новой <b>BR</b> · основа: <b>${esc(d.name).toLowerCase()}</b> · вне покрытия <b>${Math.round(uncSum / cityTotal * 100)}%</b>${
+      volUnitOf(d) ? '' : ` (${Math.round(uncSum).toLocaleString('ru-RU')} ед.)`}`;
 
   // Render list
   const el = document.getElementById('rec-list');
@@ -2874,9 +2877,14 @@ function toRecs(rows) {
 function volUnitOf(d) { return d && d.volUnit === '%' ? '%' : ''; }
 function fmtVol(d, v) {
   const n = +v || 0;
-  return volUnitOf(d)
-    ? n.toLocaleString('ru-RU', { maximumFractionDigits: 3 }) + '%'
-    : n.toLocaleString('ru-RU');
+  const abs = Math.abs(n);
+  // toLocaleString по умолчанию режет до 3 знаков — доли вида 0,00042
+  // превращались в «0». Берём столько знаков, чтобы осталось 3 значащих.
+  const digits = abs > 0 && abs < 1
+    ? Math.min(8, Math.max(3, 2 - Math.floor(Math.log10(abs))))
+    : 2;
+  const text = n.toLocaleString('ru-RU', { maximumFractionDigits: digits });
+  return volUnitOf(d) ? text + '%' : text;
 }
 
 /* nd — расстояние до ближайшей НАШЕЙ точки (все слои вкладки «Точки»).
@@ -3134,15 +3142,39 @@ function applySnapshot(st) {
 }
 
 /* ── EXPORT RECS ─────────────────────────────────────────────────────── */
+/* Значение в выгрузку — БЕЗ округления до фиксированного знака. Доли вида
+   0,00042 при round(v*1000)/1000 схлопывались в одинаковые 0,001 (а раньше, при
+   двух знаках, вообще в 0) — в файле получались одинаковые числа, не имеющие
+   отношения к загруженным. Храним 6 значащих цифр: и мелкие доли целы, и
+   хвосты двоичной арифметики не лезут. */
+function exportNum(v) {
+  const n = +v;
+  if (!isFinite(n)) return '';
+  if (n === 0) return 0;
+  return Number(n.toPrecision(6));
+}
+
 /* Процентную колонку в Excel оставляем ЧИСЛОМ и вешаем формат ячейки: так
    значение и читается как «0,356%», и продолжает сортироваться/суммироваться.
-   Текст с «%» превратил бы колонку в строки. */
-function markPercentColumn(ws, colIndex, rowCount) {
+   Текст с «%» превратил бы колонку в строки. Число знаков подбираем по самому
+   мелкому значению, иначе «0,00042%» показалось бы как «0,000%». */
+function percentCellFormat(values) {
+  let min = Infinity;
+  for (const v of values) {
+    const a = Math.abs(+v);
+    if (a > 0 && isFinite(a) && a < min) min = a;
+  }
+  if (!isFinite(min)) return '0.000"%"';
+  const decimals = Math.min(8, Math.max(3, 2 - Math.floor(Math.log10(min))));
+  return '0.' + '0'.repeat(decimals) + '"%"';
+}
+function markPercentColumn(ws, colIndex, rowCount, values) {
   try {
+    const z = percentCellFormat(values || []);
     for (let r = 1; r <= rowCount; r++) {
       const addr = XLSX.utils.encode_cell({ c: colIndex, r });
       const cell = ws[addr];
-      if (cell && typeof cell.v === 'number') { cell.z = '0.000"%"'; cell.t = 'n'; }
+      if (cell && typeof cell.v === 'number') { cell.z = z; cell.t = 'n'; }
     }
   } catch (e) { console.warn('Percent format skipped:', e.message); }
 }
@@ -3157,12 +3189,12 @@ function exportRecs() {
   lastRecs.forEach((s, i) => rows.push([
     i + 1, s.name || ('Зона ' + (i + 1)), s.fil || '',
     +s.lat.toFixed(6), +s.lon.toFixed(6),
-    Math.round(s.ld), s.lc, Math.round(s.vol * 100) / 100,
+    Math.round(s.ld), s.lc, exportNum(s.vol),
     isFinite(s.nd) ? s.nd : '',
   ]));
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!cols'] = [{ wch: 6 }, { wch: 30 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 20 }];
-  if (volUnitOf(basis)) markPercentColumn(ws, 7, lastRecs.length);
+  if (volUnitOf(basis)) markPercentColumn(ws, 7, lastRecs.length, lastRecs.map(s => s.vol));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Рекомендации BR');
   XLSX.writeFile(wb, 'rekomendacii_BR_' + lastBasisName.toLowerCase() + '_' + new Date().toISOString().slice(0, 10) + '.xlsx');
@@ -3543,14 +3575,14 @@ async function exportRetraffic() {
     rows.push([
       i + 1, p.name || '', p.fil || '', p.addr || '',
       +p.lat.toFixed(6), +p.lon.toFixed(6),
-      p.vol_total != null ? Math.round((p.vol_total || 0) * 1000) / 1000 : '',
+      p.vol_total != null ? exportNum(p.vol_total) : '',
       isFinite(p._distOwn) ? p._distOwn : '', p.code || '',
     ]);
   });
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!cols'] = [{ wch: 4 }, { wch: 38 }, { wch: 12 }, { wch: 36 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 18 }, { wch: 10 }];
-  if (volUnitOf(srcLayerForExport)) markPercentColumn(ws, 6, points.length);
+  if (volUnitOf(srcLayerForExport)) markPercentColumn(ws, 6, points.length, points.map(p => p.vol_total));
 
   const exclNames = rtExclKeys.map(k => {
     if (DS[k]) return DS[k].name;
@@ -3566,7 +3598,10 @@ async function exportRetraffic() {
     ['Исходный слой', srcName],
     ['Расстояние до ' + refName, opLabel(rtRadiusOp) + ' ' + fmtD(rtRadius)],
     ...(hasVol ? [
-      ['Объём', opLabel(rtVolOp) + ' ' + (rtVolMode === 'avg' ? `среднего (${avg.toFixed(1)} ед.)` : volThresh)],
+      [volUnitOf(srcLayerForExport) ? 'Значение' : 'Объём',
+       opLabel(rtVolOp) + ' ' + (rtVolMode === 'avg'
+         ? `среднего (${fmtVol(srcLayerForExport, avg)})`
+         : fmtVol(srcLayerForExport, volThresh))],
       ['Исключаемые слои', exclNames.length ? exclNames.join(', ') : 'не выбраны'],
       ['Расстояние до исключ. слоя', opLabel(rtExclOp) + ' ' + fmtD(rtExclRadius)],
       ['Исключено точек', excluded],
