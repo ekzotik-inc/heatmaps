@@ -784,7 +784,7 @@ function tagPopupHtml(d, r) {
   if (r.hours) rows.push(['Часы', r.hours]);
   if (r.code)  rows.push(['Код', r.code]);
   if (r.fil)   rows.push(['Город', r.fil]);
-  rows.push(['Значение', (+r.vol || 0).toLocaleString('ru-RU')]);
+  rows.push([volUnitOf(d) ? 'Значение, %' : 'Значение', fmtVol(d, r.vol)]);
   return `<div class="pp-title">${esc(r.name || 'Точка без названия')}</div>` +
     rows.map(([k, v]) =>
       `<div class="pp-row"><span>${esc(k)}</span><b style="font-family:Manrope;font-weight:600;text-align:right">${esc(String(v))}</b></div>`
@@ -1113,7 +1113,7 @@ function buildHeatUI() {
   const el = document.getElementById('heat-list');
   el.innerHTML = '';
   if (!heatKeys.length) {
-    el.innerHTML = '<div class="cpt-empty">Слоёв пока нет. Нажмите «Загрузить слой» и выберите CSV/XLSX с колонками name, lat, lon, value.</div>';
+    el.innerHTML = '<div class="cpt-empty">Слоёв пока нет. Нажмите «Загрузить слой» и выберите CSV/XLSX с колонками name, lat, lon, value. В value можно писать проценты — «0,356%».</div>';
   }
   heatKeys.forEach(k => {
     const d = DS[k];
@@ -1149,7 +1149,9 @@ function buildHeatUI() {
           <div class="grp" style="flex:1">Интенс. <input type="range" class="r-int" min="0.2" max="4" step="0.1" value="${d.intensity || 1}" style="flex:1"><span class="sl-val">${(d.intensity || 1).toFixed(1)}×</span></div>
           <div class="grp" style="flex:1">Прозр. <input type="range" class="r-op" min="0.05" max="1" step="0.05" value="${d.opacity == null ? 1 : d.opacity}" style="flex:1"><span class="sl-val">${Math.round((d.opacity == null ? 1 : d.opacity) * 100)}%</span></div>
         </div>
-        <div class="lyr-meta">Объём слоя: ${Math.round(d.stats.sum).toLocaleString('ru-RU')}</div>
+        <div class="lyr-meta">${volUnitOf(d)
+          ? 'Среднее значение: ' + fmtVol(d, d.stats.n ? d.stats.sum / d.stats.n : 0)
+          : 'Объём слоя: ' + Math.round(d.stats.sum).toLocaleString('ru-RU')}</div>
         <div class="lyr-actions">
           <button class="lyr-act lyr-tags${d.showTags ? ' on' : ''}" title="Показать точки этого слоя на карте">🏷 Ярлыки</button>
           <button class="lyr-act lyr-rename" title="Переименовать слой">✎ Имя</button>
@@ -2770,10 +2772,11 @@ function confirmLayerModal() {
   if (!name) { document.getElementById('layer-modal-input').focus(); return; }
   closeLayerModal();
   const rows = pendingHeatRows; pendingHeatRows = null;
-  const recs = rows ? enrich(toRecs(rows)) : [];
+  const parsed = rows ? toRecs(rows) : [];
+  const recs = rows ? enrich(parsed) : [];
   const key  = 'custom_' + Date.now();
   DS[key] = { key, name, color, ramp: 'custom', opacity: 1, intensity: 1, visible: true,
-              recs, stats: statsOf(recs), _userData: true };
+              volUnit: parsed._percent ? '%' : '', recs, stats: statsOf(recs), _userData: true };
   heatKeys.push(key);
   focusNewLayer(key);
   toast(recs.length ? `Слой «${name}» загружен (${recs.length} точек)` : `Слой «${name}» создан`, 'ok');
@@ -2848,16 +2851,32 @@ function pick(o, keys) {
 
 function toRecs(rows) {
   const out = [];
+  let percent = false;
   for (const r of rows) {
     const la = parseFloat(('' + pick(r, ['lat', 'широт'])).replace(',', '.'));
     const lo = parseFloat(('' + pick(r, ['lon', 'lng', 'долгот'])).replace(',', '.'));
-    let v = pick(r, ['value', 'объ', 'vol', 'amount', 'итог']);
-    v = parseFloat(('' + (v == null ? 1 : v)).replace(',', '.'));
+    const raw = pick(r, ['value', 'объ', 'vol', 'amount', 'итог']);
+    // Значение можно писать процентом: «0,356%». Храним само число (0.356),
+    // а знак запоминаем на уровне слоя — так показываем его везде одинаково.
+    const text = '' + (raw == null ? 1 : raw);
+    if (/%/.test(text)) percent = true;
+    let v = parseFloat(text.replace('%', '').replace(/\s/g, '').replace(',', '.'));
     if (!isFinite(v) || v <= 0) v = 1;
     const nm = pick(r, ['name', 'назв', 'точк']) || '';
     if (isFinite(la) && isFinite(lo)) out.push({ name: '' + nm, fil: cityOf(la, lo), lat: la, lon: lo, vol: v });
   }
+  // Флаг читают места, где слой создаётся или перезаливается из файла.
+  Object.defineProperty(out, '_percent', { value: percent, enumerable: false });
   return out;
+}
+
+/* Формат значения точки с учётом единицы слоя. */
+function volUnitOf(d) { return d && d.volUnit === '%' ? '%' : ''; }
+function fmtVol(d, v) {
+  const n = +v || 0;
+  return volUnitOf(d)
+    ? n.toLocaleString('ru-RU', { maximumFractionDigits: 3 }) + '%'
+    : n.toLocaleString('ru-RU');
 }
 
 /* nd — расстояние до ближайшей НАШЕЙ точки (все слои вкладки «Точки»).
@@ -2950,7 +2969,7 @@ function buildStateSnapshot() {
   const layers = {};
   heatKeys.forEach(k => {
     const d = DS[k]; if (!d) return;
-    const o = { name: d.name, color: d.color, ramp: d.ramp, opacity: d.opacity, intensity: d.intensity, visible: d.visible, showTags: !!d.showTags, stats: d.stats };
+    const o = { name: d.name, color: d.color, ramp: d.ramp, opacity: d.opacity, intensity: d.intensity, visible: d.visible, showTags: !!d.showTags, volUnit: d.volUnit || '', stats: d.stats };
     if (k.startsWith('custom_') || d._userData) {
       o._userData = true;
       if (d._recordsLoaded === false) o._recordsOmitted = true;
@@ -3054,6 +3073,7 @@ function applySnapshot(st) {
       if (typeof sv.ramp    === 'string') DS[k].ramp    = sv.ramp;
       if (typeof sv.opacity === 'number') DS[k].opacity = sv.opacity;
       DS[k].showTags = !!sv.showTags;
+      DS[k].volUnit = sv.volUnit === '%' ? '%' : '';
       if (Array.isArray(sv.recs)) {
         // Saved recs are slim (see slimRecs). Rebuild city and nearest-own-point
         // fields during hydration; defer expensive local-demand (`ld/lc`) work
@@ -3114,10 +3134,25 @@ function applySnapshot(st) {
 }
 
 /* ── EXPORT RECS ─────────────────────────────────────────────────────── */
+/* Процентную колонку в Excel оставляем ЧИСЛОМ и вешаем формат ячейки: так
+   значение и читается как «0,356%», и продолжает сортироваться/суммироваться.
+   Текст с «%» превратил бы колонку в строки. */
+function markPercentColumn(ws, colIndex, rowCount) {
+  try {
+    for (let r = 1; r <= rowCount; r++) {
+      const addr = XLSX.utils.encode_cell({ c: colIndex, r });
+      const cell = ws[addr];
+      if (cell && typeof cell.v === 'number') { cell.z = '0.000"%"'; cell.t = 'n'; }
+    }
+  } catch (e) { console.warn('Percent format skipped:', e.message); }
+}
+
 function exportRecs() {
   if (!lastRecs.length) { toast('Нет рекомендаций для экспорта', 'err'); return; }
   if (!window.XLSX) { ensureSheetLibs().then(exportRecs).catch(() => toast('Не удалось загрузить XLSX', 'err')); return; }
-  const header = ['Ранг', 'Название зоны', 'Город', 'Широта', 'Долгота', 'Спрос (ед/км²)', 'Точек рядом', 'Объём', 'До ближайшей ТТ, м'];
+  const basis = DS[recBasis] || null;
+  const volCol = volUnitOf(basis) ? 'Значение, %' : 'Объём';
+  const header = ['Ранг', 'Название зоны', 'Город', 'Широта', 'Долгота', 'Спрос (ед/км²)', 'Точек рядом', volCol, 'До ближайшей ТТ, м'];
   const rows   = [header];
   lastRecs.forEach((s, i) => rows.push([
     i + 1, s.name || ('Зона ' + (i + 1)), s.fil || '',
@@ -3126,7 +3161,8 @@ function exportRecs() {
     isFinite(s.nd) ? s.nd : '',
   ]));
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 6 }, { wch: 30 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 20 }];
+  ws['!cols'] = [{ wch: 6 }, { wch: 30 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 20 }];
+  if (volUnitOf(basis)) markPercentColumn(ws, 7, lastRecs.length);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Рекомендации BR');
   XLSX.writeFile(wb, 'rekomendacii_BR_' + lastBasisName.toLowerCase() + '_' + new Date().toISOString().slice(0, 10) + '.xlsx');
@@ -3421,6 +3457,7 @@ async function previewAddrOnMap() {
   if (!points.length) { toast('Нет точек по текущим фильтрам', 'warn'); return; }
 
   const refLabel = addrRefName();
+  const srcLayer = DS[addrSrcKey] || null;   // нужен, чтобы показать единицу значения
 
   // Collect unique nearest-ref points to highlight
   const usedRefs = new Map(); // key = 'lat|lon' → ref object
@@ -3466,7 +3503,7 @@ async function previewAddrOnMap() {
     if (p.addr) lines.push(esc(p.addr));
     if (p.fil)  lines.push(esc(p.fil));
     lines.push(`До ${esc(refLabel)}${nearName ? ' (' + esc(nearName) + ')' : ''}: <b>${fmtD(p._distOwn)}</b>`);
-    if (p.vol_total != null) lines.push(`Объём: ${Math.round(p.vol_total)}`);
+    if (p.vol_total != null) lines.push(`${volUnitOf(srcLayer) ? 'Значение' : 'Объём'}: ${fmtVol(srcLayer, p.vol_total)}`);
     m.bindPopup(lines.join('<br>'));
     addrLayer.addLayer(m);
   });
@@ -3486,6 +3523,7 @@ async function exportRetraffic() {
   if (!(await ensureAddrLayers())) return;
   const { points, excluded, avg, volThresh, srcName, hasVol, noRef } = runAddrFilter();
   const refName = addrRefName();
+  const srcLayerForExport = DS[addrSrcKey] || null;   // единица значения колонки
 
   if (noRef) {
     toast(`Нет точек-ориентиров («${refName}») — загрузите их во вкладке «Точки»`, 'err', 5000);
@@ -3499,18 +3537,20 @@ async function exportRetraffic() {
   points.sort((a, b) => (b.vol_total || 0) - (a.vol_total || 0));
 
   const distCol = `До ${refName}, м`;
-  const rows = [['№', 'Название', 'Город', 'Адрес', 'Широта', 'Долгота', 'Объём', distCol, 'Код']];
+  const volCol = volUnitOf(srcLayerForExport) ? 'Значение, %' : 'Объём';
+  const rows = [['№', 'Название', 'Город', 'Адрес', 'Широта', 'Долгота', volCol, distCol, 'Код']];
   points.forEach((p, i) => {
     rows.push([
       i + 1, p.name || '', p.fil || '', p.addr || '',
       +p.lat.toFixed(6), +p.lon.toFixed(6),
-      p.vol_total != null ? Math.round((p.vol_total || 0) * 100) / 100 : '',
+      p.vol_total != null ? Math.round((p.vol_total || 0) * 1000) / 1000 : '',
       isFinite(p._distOwn) ? p._distOwn : '', p.code || '',
     ]);
   });
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 4 }, { wch: 38 }, { wch: 12 }, { wch: 36 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 10 }];
+  ws['!cols'] = [{ wch: 4 }, { wch: 38 }, { wch: 12 }, { wch: 36 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 18 }, { wch: 10 }];
+  if (volUnitOf(srcLayerForExport)) markPercentColumn(ws, 6, points.length);
 
   const exclNames = rtExclKeys.map(k => {
     if (DS[k]) return DS[k].name;
@@ -4240,9 +4280,11 @@ function wireEvents() {
     heatUpdInp.value = ''; _heatUpdateTarget = null;
     if (!f || !k || !DS[k]) return;
     parseSheet(f, rows => {
-      const recs = enrich(toRecs(rows));
+      const parsed = toRecs(rows);
+      const recs = enrich(parsed);
       if (!recs.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
       DS[k].recs = recs; DS[k].stats = statsOf(recs); DS[k].visible = true; DS[k]._userData = true;
+      DS[k].volUnit = parsed._percent ? '%' : '';
       focusNewLayer(k);
       toast(`Слой «${DS[k].name}» обновлён (${recs.length} точек)`, 'ok');
     });
@@ -4256,8 +4298,12 @@ function wireEvents() {
   // files always match what the corresponding parser expects.
   const TEMPLATES = {
     heat: {
-      rows: [['name', 'lat', 'lon', 'value'], ['Пример ТТ', 41.311100, 69.279700, 12.5], ['Пример ТТ 2', 41.299000, 69.240000, 8]],
-      cols: [22, 12, 12, 10], file: 'shablon_sloy_heatmap.xlsx',
+      // Третья строка показывает, что value можно писать процентом.
+      rows: [['name', 'lat', 'lon', 'value'],
+             ['Пример ТТ', 41.311100, 69.279700, 12.5],
+             ['Пример ТТ 2', 41.299000, 69.240000, 8],
+             ['Пример в процентах', 41.290000, 69.230000, '0,356%']],
+      cols: [22, 12, 12, 14], file: 'shablon_sloy_heatmap.xlsx',
     },
     cpt: {
       rows: [['name', 'lat', 'lon', 'addr', 'hours', 'code'],
@@ -4320,7 +4366,9 @@ function wireEvents() {
     };
 
     const d = DS[tk]; if (!d) { toast('Выберите слой для загрузки', 'err'); return; }
-    d.recs = enrich(toRecs(pendingUpload)); d.stats = statsOf(d.recs); d.visible = true; d._userData = true;
+    const parsedUpload = toRecs(pendingUpload);
+    d.recs = enrich(parsedUpload); d.stats = statsOf(d.recs); d.visible = true; d._userData = true;
+    d.volUnit = parsedUpload._percent ? '%' : '';
     reset();
     // The selected-city filter would otherwise silently hide points that fall
     // in other cities — reset to "Все" so the freshly uploaded layer is visible.
