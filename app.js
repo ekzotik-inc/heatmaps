@@ -652,6 +652,12 @@ function updateLayerLegend() {
     }
   });
   if (recShow && lastRecs.length) items.push({ color: '#14B87D', name: 'Рекомендации' });
+  // Превью адресной программы рисуется поверх слоёв (оранжевые кандидаты и
+  // синие ориентиры) — без строк в легенде было непонятно, что это за точки.
+  if (addrPreview) {
+    items.push({ color: '#FF8C00', name: 'Адресная программа', count: addrPreview.count });
+    if (addrPreview.refs) items.push({ color: '#6C8EFF', name: addrPreview.refLabel, count: addrPreview.refs });
+  }
   if (!items.length) { el.style.display = 'none'; return; }
   el.style.display = '';
   el.innerHTML = '<div class="legend-title">Легенда</div>' + items.map(it => {
@@ -2556,7 +2562,7 @@ function buildCustomPtUI() {
       }
       customPtLayers = customPtLayers.filter(x => x.id !== id);
       _cptOpen.delete(id);
-      addrLayer.clearLayers();
+      clearAddrPreview();
       renderCustomPoints(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI();
       reenrichAll();
       renderCityInfo(); saveState();
@@ -3095,6 +3101,19 @@ function opLabel(op) { return OP_LABELS[op] || op; }
 const cmpDist = (d, thresh, op) =>
   op === 'lte' ? d <= thresh : op === 'lt' ? d < thresh : op === 'gte' ? d >= thresh : d > thresh;
 
+// Что сейчас показано превью адресной программы — для строк в легенде.
+// null — превью не на карте.
+let addrPreview = null;
+function syncAddrPreviewBtn() {
+  const btn = document.getElementById('btn-addr-preview');
+  if (btn) btn.textContent = addrPreview ? '🚫 Убрать с карты' : '👁 На карте';
+}
+function clearAddrPreview() {
+  addrLayer.clearLayers();
+  if (addrPreview) { addrPreview = null; updateLayerLegend(); }
+  syncAddrPreviewBtn();
+}
+
 /* Объясняет шаг исключений живым текстом: какой оператор выбран, то и пишем.
    Раньше подпись была жёстко «ближе чем», хотя оператор мог стоять на «>» —
    и тогда правило означало ровно обратное. */
@@ -3257,8 +3276,10 @@ async function ensureAddrLayers() {
 }
 
 async function previewAddrOnMap() {
+  // Повторный клик убирает превью — иначе оранжевые точки некуда девать.
+  if (addrPreview) { clearAddrPreview(); return; }
   if (!(await ensureAddrLayers())) return;
-  addrLayer.clearLayers();
+  clearAddrPreview();
   const { points, noRef } = runAddrFilter();
   // Без референсных точек фильтр по расстоянию не имеет смысла — говорим прямо,
   // а не «нет точек по фильтрам» (частый случай на карте KG).
@@ -3315,6 +3336,10 @@ async function previewAddrOnMap() {
     m.bindPopup(lines.join('<br>'));
     addrLayer.addLayer(m);
   });
+
+  addrPreview = { count: points.length, refs: usedRefs.size, refLabel: refLabel };
+  updateLayerLegend();
+  syncAddrPreviewBtn();
 
   const allPts = [...points.map(p => [p.lat, p.lon]),
                   ...[...usedRefs.values()].map(r => [r.lat, r.lon])];
@@ -4213,10 +4238,10 @@ function wireEvents() {
   $('btn-addr-preview').addEventListener('click', previewAddrOnMap);
 
   $('addr-src-sel').addEventListener('change', e => {
-    addrSrcKey = e.target.value; buildAddrSrcSel(); addrLayer.clearLayers(); saveState();
+    addrSrcKey = e.target.value; buildAddrSrcSel(); clearAddrPreview(); saveState();
   });
   $('addr-ref-sel').addEventListener('change', e => {
-    addrRefKey = e.target.value; addrLayer.clearLayers(); saveState();
+    addrRefKey = e.target.value; clearAddrPreview(); saveState();
   });
 
   $('op-rt-vol').addEventListener('change', e => { rtVolOp = e.target.value; saveState(); });
