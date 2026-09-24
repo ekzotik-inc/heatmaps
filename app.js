@@ -343,9 +343,6 @@ let addrSrcKey  = ''; // uploaded heat-layer key or '__cpt__<id>' (set to first 
 let addrRefKey  = '';             // reference points key: '__cpt__<id>' — слой наших точек
 let rtRadius    = 1000;           // distance threshold (m)
 let rtRadiusOp  = 'lte';         // lte ≤ | lt < | gte ≥ | gt >
-let rtVolOp     = 'gte';         // volume operator (shipment mode only)
-let rtVolMode   = 'avg';         // 'avg' | 'custom'
-let rtVolCustom = 0;             // custom volume threshold
 let rtExclRadius = 150;          // exclusion proximity (m)
 let rtExclOp    = 'lt';          // exclusion operator
 let rtExclKeys  = [];            // layer keys to exclude (shipment mode)
@@ -2994,7 +2991,7 @@ function buildStateSnapshot() {
     city: selectedCities.length === 1 ? selectedCities[0] : '',
     covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
     tashkentScope,
-    addrSrcKey, addrRefKey, rtRadius, rtRadiusOp, rtVolOp, rtVolMode, rtVolCustom, rtExclRadius, rtExclOp, rtExclKeys,
+    addrSrcKey, addrRefKey, rtRadius, rtRadiusOp, rtExclRadius, rtExclOp, rtExclKeys,
     // recs ручных слоёв несут карточку и идентификаторы фото — байты снимков
     // живут на сервере и в состояние не попадают.
     customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, manual: !!l.manual, visible: l.visible, shape: l.shape, size: l.size, opacity: l.opacity, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, recs: l.recs })),
@@ -3133,9 +3130,6 @@ function applySnapshot(st) {
   if (typeof st.addrRefKey   === 'string')  addrRefKey   = st.addrRefKey;
   if (typeof st.rtRadius     === 'number')  rtRadius     = st.rtRadius;
   if (typeof st.rtRadiusOp   === 'string')  rtRadiusOp   = st.rtRadiusOp;
-  if (typeof st.rtVolOp      === 'string')  rtVolOp      = st.rtVolOp;
-  if (typeof st.rtVolMode    === 'string')  rtVolMode    = st.rtVolMode;
-  if (typeof st.rtVolCustom  === 'number')  rtVolCustom  = st.rtVolCustom;
   if (typeof st.rtExclRadius === 'number')  rtExclRadius = st.rtExclRadius;
   if (typeof st.rtExclOp     === 'string')  rtExclOp     = st.rtExclOp;
   if (Array.isArray(st.rtExclKeys))         rtExclKeys   = st.rtExclKeys.slice();
@@ -3360,9 +3354,7 @@ function buildAddrSrcSel() {
     ? opts.map(o => `<option value="${o.key}"${o.key === addrSrcKey ? ' selected' : ''}>${esc(o.name)}</option>`).join('')
     : '<option value="">Нет слоёв — загрузите на вкладке «Карта»</option>';
   const isCpt = addrSrcKey.startsWith('__cpt__');
-  const volBlock  = document.getElementById('addr-vol-block');
   const exclBlock = document.getElementById('addr-excl-block');
-  if (volBlock)  volBlock.style.display  = isCpt ? 'none' : '';   // volume only for heat layers
   if (exclBlock) exclBlock.style.display = isCpt ? 'none' : '';   // exclusions for heat layers
   buildAddrRefSel();
 }
@@ -3408,7 +3400,7 @@ function addrSrcRecs() {
   return d && d.recs ? d.recs.map(r => ({ ...r, vol_total: r.vol || 0 })) : [];
 }
 
-/* Core filter: returns { points, excluded, avg, srcName } */
+/* Core filter: returns { points, excluded, srcName, hasVol, noRef } */
 function runAddrFilter() {
   const hasVol = !addrSrcKey.startsWith('__cpt__');   // heat layers carry volume + support exclusions
   const srcName = addrSrcOptions().find(o => o.key === addrSrcKey)?.name || addrSrcKey;
@@ -3426,13 +3418,8 @@ function runAddrFilter() {
     p._nearRef = n ? n.ref : null;   // reference point object
   });
 
-  // Volume filter (heat layers; skip for custom point layers)
-  let avg = 0, volThresh = 0;
-  if (hasVol) {
-    avg = points.reduce((s, p) => s + (p.vol_total || 0), 0) / (points.length || 1);
-    volThresh = rtVolMode === 'custom' ? rtVolCustom : avg;
-    points = points.filter(p => cmpDist(p.vol_total || 0, volThresh, rtVolOp));
-  }
+  // Фильтр по объёму точки убран по просьбе владельца: адресную программу
+  // задают расстояние до ориентиров и исключения.
 
   // Distance to the reference layer (our points)
   points = points.filter(p => cmpDist(p._distOwn, rtRadius, rtRadiusOp));
@@ -3456,7 +3443,7 @@ function runAddrFilter() {
     }
   }
 
-  return { points, excluded, avg, volThresh, srcName, hasVol, noRef: !refPts.length };
+  return { points, excluded, srcName, hasVol, noRef: !refPts.length };
 }
 
 /* Show filtered points on map */
@@ -3553,7 +3540,7 @@ async function previewAddrOnMap() {
 async function exportRetraffic() {
   if (!window.XLSX) { ensureSheetLibs().then(exportRetraffic).catch(() => toast('Не удалось загрузить XLSX', 'err')); return; }
   if (!(await ensureAddrLayers())) return;
-  const { points, excluded, avg, volThresh, srcName, hasVol, noRef } = runAddrFilter();
+  const { points, excluded, srcName, hasVol, noRef } = runAddrFilter();
   const refName = addrRefName();
   const srcLayerForExport = DS[addrSrcKey] || null;   // единица значения колонки
 
@@ -3598,10 +3585,6 @@ async function exportRetraffic() {
     ['Исходный слой', srcName],
     ['Расстояние до ' + refName, opLabel(rtRadiusOp) + ' ' + fmtD(rtRadius)],
     ...(hasVol ? [
-      [volUnitOf(srcLayerForExport) ? 'Значение' : 'Объём',
-       opLabel(rtVolOp) + ' ' + (rtVolMode === 'avg'
-         ? `среднего (${fmtVol(srcLayerForExport, avg)})`
-         : fmtVol(srcLayerForExport, volThresh))],
       ['Исключаемые слои', exclNames.length ? exclNames.join(', ') : 'не выбраны'],
       ['Расстояние до исключ. слоя', opLabel(rtExclOp) + ' ' + fmtD(rtExclRadius)],
       ['Исключено точек', excluded],
@@ -4073,8 +4056,7 @@ function stateFingerprint(snapshot) {
     incomeHeatOn: snapshot.incomeHeatOn, coresOn: snapshot.coresOn,
     addrSrcKey: snapshot.addrSrcKey, addrRefKey: snapshot.addrRefKey,
     rtRadius: snapshot.rtRadius, rtRadiusOp: snapshot.rtRadiusOp,
-    rtVolOp: snapshot.rtVolOp, rtVolMode: snapshot.rtVolMode,
-    rtVolCustom: snapshot.rtVolCustom, rtExclRadius: snapshot.rtExclRadius,
+    rtExclRadius: snapshot.rtExclRadius,
     rtExclOp: snapshot.rtExclOp, rtExclKeys: snapshot.rtExclKeys || [],
   });
 }
@@ -4250,10 +4232,6 @@ function syncControls() {
   $('s-rt-excl').value    = rtExclRadius; $('v-rt-excl').textContent   = fmtD(rtExclRadius);
   $('op-rt-excl').value   = rtExclOp;
   syncExclHint();
-  $('op-rt-vol').value    = rtVolOp;
-  $('vol-mode').value     = rtVolMode;
-  $('vol-custom-val').value = rtVolCustom;
-  $('vol-custom-val').style.display = rtVolMode === 'custom' ? '' : 'none';
   buildAddrSrcSel();
   buildRtExclUI();
   fillAllSliders();
@@ -4471,14 +4449,6 @@ function wireEvents() {
   $('addr-ref-sel').addEventListener('change', e => {
     addrRefKey = e.target.value; clearAddrPreview(); saveState();
   });
-
-  $('op-rt-vol').addEventListener('change', e => { rtVolOp = e.target.value; saveState(); });
-  $('vol-mode').addEventListener('change', e => {
-    rtVolMode = e.target.value;
-    $('vol-custom-val').style.display = rtVolMode === 'custom' ? '' : 'none';
-    saveState();
-  });
-  $('vol-custom-val').addEventListener('input', e => { rtVolCustom = +e.target.value; saveState(); });
 
   $('s-rt-radius').addEventListener('input', e => {
     rtRadius = +e.target.value; $('v-rt-radius').textContent = fmtD(rtRadius); fillSlider(e.target); saveState();
