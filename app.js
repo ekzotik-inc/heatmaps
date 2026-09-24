@@ -633,6 +633,7 @@ function renderHeat() {
     if (!d.visible) {
       if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; needsUiRefresh = true; }
       d._heatCache = null;
+      d._shownCount = 0;
       return;
     }
     // Reuse the existing Leaflet heat layer when neither the source records nor
@@ -640,6 +641,7 @@ function renderHeat() {
     // selection and avoids rebuilding canvases during repeated UI updates.
     if (cached && cached.sourceRef === sourceRef && cached.key === renderKey && layerAlive) {
       total += cached.count;
+      d._shownCount = cached.count;
       return;
     }
     needsUiRefresh = true;
@@ -673,6 +675,7 @@ function renderHeat() {
       if (fullSelection) d._fullPtsCache = { sourceRef, scale, boost, pts };
     }
     total += recs.length;
+    d._shownCount = recs.length;   // ровно столько нарисовано — это же число в легенде
     d._pts = pts;
     // Sparse layers get a wider brush so isolated points read as heat, not specks.
     const rMul = Math.min(Math.max(Math.pow(600 / Math.max(recs.length, 1), 0.18), 1), 1.6);
@@ -698,30 +701,53 @@ function renderHeat() {
     d._heatCache = { sourceRef, key: renderKey, count: recs.length };
     requestAnimationFrame(() => applyHeatCanvas(d));
   });
-  const countText = total.toLocaleString('ru-RU');
-  const countEl = document.getElementById('b-count');
-  if (countEl && (needsUiRefresh || countEl.textContent !== countText)) countEl.textContent = countText;
+  updateCountBadge();
   if (needsUiRefresh) updateLayerLegend();
   renderTags(); // ярлыки следуют за видимостью слоёв и фильтром городов
+}
+
+/* Одно число — один смысл: «сколько точек этого слоя сейчас на карте».
+   Раньше бейдж считал отфильтрованные записи, легенда — весь размер слоя
+   (`stats.n`), а подпись ярлыков — только видимую область. При включённом
+   фильтре городов все трое показывали разное. */
+function shownCount(x) {
+  if (!x) return 0;
+  const n = x._shownCount;
+  if (Number.isFinite(n)) return Math.max(0, n);
+  // Легенду могут собрать до первой отрисовки слоя. Без фильтра городов
+  // «нарисовано» равно всему слою; с фильтром честнее показать 0 и дождаться
+  // рендера, чем вывести неотфильтрованное число.
+  if (!hasCityFilter() || allCitiesSelected()) return (x.recs || []).length;
+  return 0;
+}
+function updateCountBadge() {
+  let total = 0;
+  heatKeys.forEach(k => { const d = DS[k]; if (d && d.visible) total += shownCount(d); });
+  customPtLayers.forEach(l => { if (l.visible) total += shownCount(l); });
+  const el = document.getElementById('b-count');
+  if (el) el.textContent = total.toLocaleString('ru-RU');
 }
 
 function updateLayerLegend() {
   const el = document.getElementById('layer-legend');
   if (!el) return;
+  updateCountBadge();   // бейдж = сумма строк легенды, иначе они разойдутся
   const items = [];
   heatKeys.forEach(k => {
     const d = DS[k];
     if (!d || !d.visible || !d.recs || !d.recs.length) return;
+    // Слой без точек в выбранных городах ничего не рисует — в легенде не нужен.
+    if (!shownCount(d)) return;
     // Тепловой слой показывается своей полосой-градиентом: когда включено
     // несколько слоёв, полоса отличает их надёжнее, чем одна точка цвета.
     items.push({
       key: k, ramp: rampCss(gradOf(d), '#ffffff'), name: d.name,
-      count: d.stats && d.stats.n, tags: !!d.showTags,
+      count: shownCount(d), tags: !!d.showTags,
     });
   });
   customPtLayers.forEach(l => {
-    if (l.visible && l.recs && l.recs.length) {
-      items.push({ color: l.color, name: l.name, count: l.recs.length });
+    if (l.visible && l.recs && l.recs.length && shownCount(l)) {
+      items.push({ color: l.color, name: l.name, count: shownCount(l) });
     }
   });
   if (recShow && lastRecs.length) items.push({ color: '#14B87D', name: 'Рекомендации' });
@@ -812,13 +838,16 @@ function renderTags(force) {
       m.addTo(tagRoot);
     });
   });
+  // Подпись всегда говорит «в этой области»: число ярлыков считается по
+  // видимой части карты и потому меньше счётчиков в легенде — без этой
+  // оговорки расхождение выглядело ошибкой.
   if (note) {
     if (inViewTotal > shown) {
       note.style.display = '';
-      note.textContent = `Ярлыки: показано ${shown.toLocaleString('ru-RU')} из ${inViewTotal.toLocaleString('ru-RU')} — приблизьте карту`;
+      note.textContent = `Ярлыки: ${shown.toLocaleString('ru-RU')} из ${inViewTotal.toLocaleString('ru-RU')} в этой области — приблизьте карту`;
     } else if (shown) {
       note.style.display = '';
-      note.textContent = `Ярлыки: ${shown.toLocaleString('ru-RU')} точек`;
+      note.textContent = `Ярлыки: ${shown.toLocaleString('ru-RU')} в этой области`;
     } else {
       note.style.display = 'none';
     }
@@ -1883,6 +1912,7 @@ function renderCustomPoints() {
   customPtLayers.forEach(l => {
     l._group = L.layerGroup();
     cptRoot.addLayer(l._group);
+    l._shownCount = 0;
     if (!l.visible || !l.recs.length) return;
     const shape = l.shape || 'teardrop';
     const markerSize = Math.min(44, Math.max(20, Number.isFinite(+l.size) ? +l.size : 30));
@@ -1896,6 +1926,7 @@ function renderCustomPoints() {
       return iconCache.get(key);
     };
     const recs = l.recs.filter(r => selectedPointMatches(r));
+    l._shownCount = recs.length;   // столько же показывает легенда
     // coverage radius circles (under markers)
     if (l.radiusOn) {
       const rc = l.radiusColor || l.color, rop = l.radiusOpacity == null ? 0.15 : l.radiusOpacity;
