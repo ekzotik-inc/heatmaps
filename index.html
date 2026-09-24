@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260924a"/>
+  <link rel="stylesheet" href="style.css?v=20260924b"/>
 </head>
 <body>
 
@@ -255,10 +255,11 @@
 
         <!-- Step 4: Exclusions (shipment mode only) -->
         <div class="addr-step" id="addr-excl-block">
-          <div class="addr-step-label"><span class="addr-num">4</span> Исключить точки, которые уже рядом с</div>
+          <div class="addr-step-label"><span class="addr-num">4</span> Исключить точки, которые уже рядом с
+            <span class="tip-icon" data-tip="Из адресной программы убираются кандидаты, рядом с которыми уже есть точка отмеченных слоёв. Совпадение по колонке code исключает адрес независимо от расстояния.">ⓘ</span></div>
           <div id="rt-excl-list"></div>
           <div class="addr-dist-row" style="margin-top:8px">
-            <span style="font-size:11px;color:var(--dim)">ближе чем</span>
+            <span style="font-size:11px;color:var(--dim)" id="rt-excl-op-label">ближе чем</span>
             <select id="op-rt-excl" class="op-sel">
               <option value="lt">&lt;</option>
               <option value="lte">≤</option>
@@ -268,6 +269,7 @@
             <span class="val" id="v-rt-excl">150 м</span>
           </div>
           <input type="range" class="full" id="s-rt-excl" min="50" max="1000" step="50" value="150"/>
+          <div class="addr-hint" id="rt-excl-hint"></div>
         </div>
 
         <!-- Actions -->
@@ -598,7 +600,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20260924a'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20260924b'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();

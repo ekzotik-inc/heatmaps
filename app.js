@@ -3070,6 +3070,7 @@ function buildRtExclUI() {
 
   if (!keys.length) {
     box.innerHTML = '<div class="rt-excl-empty">Нет других слоёв с точками — загрузите слой на вкладке «Карта» или «Точки».</div>';
+    syncExclHint();
     return;
   }
   box.innerHTML = keys.map(k =>
@@ -3082,15 +3083,42 @@ function buildRtExclUI() {
       if (rtExclKeys.includes(k)) rtExclKeys = rtExclKeys.filter(x => x !== k);
       else rtExclKeys.push(k);
       cb.classList.toggle('on');
+      syncExclHint();
       saveState();
     });
   });
+  syncExclHint();
 }
 
 const OP_LABELS = { lte: '≤', lt: '<', gte: '≥', gt: '>' };
 function opLabel(op) { return OP_LABELS[op] || op; }
 const cmpDist = (d, thresh, op) =>
   op === 'lte' ? d <= thresh : op === 'lt' ? d < thresh : op === 'gte' ? d >= thresh : d > thresh;
+
+/* Объясняет шаг исключений живым текстом: какой оператор выбран, то и пишем.
+   Раньше подпись была жёстко «ближе чем», хотя оператор мог стоять на «>» —
+   и тогда правило означало ровно обратное. */
+function syncExclHint() {
+  const label = document.getElementById('rt-excl-op-label');
+  const hint  = document.getElementById('rt-excl-hint');
+  if (!label || !hint) return;
+  const far = rtExclOp === 'gt' || rtExclOp === 'gte';
+  label.textContent = far ? 'дальше чем' : 'ближе чем';
+  const n = rtExclKeys.length;
+  if (!n) {
+    hint.className = 'addr-hint';
+    hint.textContent = 'Ни один слой не отмечен — исключения не применяются.';
+    return;
+  }
+  const layers = n === 1 ? 'отмеченного слоя' : `отмеченных слоёв (${n})`;
+  if (far) {
+    hint.className = 'addr-hint warn';
+    hint.textContent = `Уберём адреса, у которых ближайшая точка ${layers} ДАЛЬШЕ ${fmtD(rtExclRadius)}. Обычно нужен обратный знак — «<» или «≤».`;
+  } else {
+    hint.className = 'addr-hint';
+    hint.textContent = `Уберём адреса, рядом с которыми уже есть точка ${layers} — ближе ${fmtD(rtExclRadius)}.`;
+  }
+}
 
 /* Returns all available source layers for address program (name → key map) */
 function addrSrcOptions() {
@@ -3976,6 +4004,7 @@ function syncControls() {
   $('op-rt-radius').value = rtRadiusOp;
   $('s-rt-excl').value    = rtExclRadius; $('v-rt-excl').textContent   = fmtD(rtExclRadius);
   $('op-rt-excl').value   = rtExclOp;
+  syncExclHint();
   $('op-rt-vol').value    = rtVolOp;
   $('vol-mode').value     = rtVolMode;
   $('vol-custom-val').value = rtVolCustom;
@@ -4203,9 +4232,9 @@ function wireEvents() {
   });
   $('op-rt-radius').addEventListener('change', e => { rtRadiusOp = e.target.value; saveState(); });
   $('s-rt-excl').addEventListener('input', e => {
-    rtExclRadius = +e.target.value; $('v-rt-excl').textContent = fmtD(rtExclRadius); fillSlider(e.target); saveState();
+    rtExclRadius = +e.target.value; $('v-rt-excl').textContent = fmtD(rtExclRadius); fillSlider(e.target); syncExclHint(); saveState();
   });
-  $('op-rt-excl').addEventListener('change', e => { rtExclOp = e.target.value; saveState(); });
+  $('op-rt-excl').addEventListener('change', e => { rtExclOp = e.target.value; syncExclHint(); saveState(); });
 
   // Share / import state
   $('btn-export-state').addEventListener('click', exportState);

@@ -1547,6 +1547,16 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
   background: var(--card2); border: 1px dashed var(--line2);
   border-radius: 10px; padding: 10px 12px;
 }
+/* Живая расшифровка правила исключений — пишет, что произойдёт с текущими
+   настройками, вместо того чтобы оставлять знак «<» без объяснения. */
+.addr-hint {
+  margin-top: 9px; padding: 9px 11px; border-radius: 10px;
+  font-size: 10.5px; line-height: 1.55; color: var(--mut);
+  background: var(--card2); border: 1px solid var(--line);
+}
+.addr-hint.warn {
+  color: #8a5a00; background: rgba(240,173,78,.12); border-color: rgba(240,173,78,.45);
+}
 
 /* settings sub-groups */
 .settings-group { margin-bottom: 18px; }
