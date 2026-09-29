@@ -339,7 +339,7 @@ function selectedCityLabel() {
 }
 
 // Address-program state
-let addrSrcKey  = ''; // uploaded heat-layer key or '__cpt__<id>' (set to first layer at boot)
+let addrSrcKeys = []; // ключи слоёв-основ: 'custom_*' и/или '__cpt__<id>' (можно несколько)
 let addrRefKey  = '';             // reference points key: '__cpt__<id>' — слой наших точек
 let rtRadius    = 1000;           // distance threshold (m)
 let rtRadiusOp  = 'lte';         // lte ≤ | lt < | gte ≥ | gt >
@@ -2991,7 +2991,7 @@ function buildStateSnapshot() {
     city: selectedCities.length === 1 ? selectedCities[0] : '',
     covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
     tashkentScope,
-    addrSrcKey, addrRefKey, rtRadius, rtRadiusOp, rtExclRadius, rtExclOp, rtExclKeys,
+    addrSrcKeys, addrRefKey, rtRadius, rtRadiusOp, rtExclRadius, rtExclOp, rtExclKeys,
     // recs ручных слоёв несут карточку и идентификаторы фото — байты снимков
     // живут на сервере и в состояние не попадают.
     customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, manual: !!l.manual, visible: l.visible, shape: l.shape, size: l.size, opacity: l.opacity, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, recs: l.recs })),
@@ -3126,7 +3126,9 @@ function applySnapshot(st) {
   if (typeof st.districtsOn  === 'boolean') districtsOn  = st.districtsOn;
   if (typeof st.incomeHeatOn === 'boolean') incomeHeatOn = st.incomeHeatOn;
   if (typeof st.coresOn      === 'boolean') coresOn      = st.coresOn;
-  if (typeof st.addrSrcKey   === 'string')  addrSrcKey   = st.addrSrcKey;
+  // Старые состояния хранили один ключ строкой — переносим в список.
+  if (Array.isArray(st.addrSrcKeys))        addrSrcKeys  = st.addrSrcKeys.slice();
+  else if (typeof st.addrSrcKey === 'string' && st.addrSrcKey) addrSrcKeys = [st.addrSrcKey];
   if (typeof st.addrRefKey   === 'string')  addrRefKey   = st.addrRefKey;
   if (typeof st.rtRadius     === 'number')  rtRadius     = st.rtRadius;
   if (typeof st.rtRadiusOp   === 'string')  rtRadiusOp   = st.rtRadiusOp;
@@ -3343,20 +3345,69 @@ function addrSrcOptions() {
   return opts;
 }
 
-/* Rebuilds the source selector dropdown */
+/* Источником могут быть НЕСКОЛЬКО слоёв сразу — их точки объединяются.
+   Список тумблеров, как в шаге «Исключить»: выпадающий список позволял
+   выбрать только один слой. */
 function buildAddrSrcSel() {
-  const sel = document.getElementById('addr-src-sel');
-  if (!sel) return;
+  const box = document.getElementById('addr-src-list');
+  if (!box) return;
   const opts = addrSrcOptions();
-  // If current key no longer exists, reset to the first available layer
-  if (!opts.find(o => o.key === addrSrcKey)) addrSrcKey = opts[0] ? opts[0].key : '';
-  sel.innerHTML = opts.length
-    ? opts.map(o => `<option value="${o.key}"${o.key === addrSrcKey ? ' selected' : ''}>${esc(o.name)}</option>`).join('')
-    : '<option value="">Нет слоёв — загрузите на вкладке «Карта»</option>';
-  const isCpt = addrSrcKey.startsWith('__cpt__');
+  const valid = new Set(opts.map(o => o.key));
+  addrSrcKeys = addrSrcKeys.filter(k => valid.has(k));
+  if (!addrSrcKeys.length && opts.length) addrSrcKeys = [opts[0].key];
+
+  if (!opts.length) {
+    box.innerHTML = '<div class="rt-excl-empty">Нет слоёв — загрузите на вкладке «Карта» или «Точки».</div>';
+  } else {
+    box.innerHTML = opts.map(o =>
+      `<label class="chk rt-excl-item"><div class="cbx${addrSrcKeys.includes(o.key) ? ' on' : ''}" data-addrsrc="${esc(o.key)}" aria-label="Использовать слой «${esc(o.name)}» как основу"></div><span>${esc(o.name)}</span></label>`
+    ).join('');
+    a11ySwitches();
+    box.querySelectorAll('[data-addrsrc]').forEach(cb => {
+      cb.addEventListener('click', () => {
+        const k = cb.dataset.addrsrc;
+        // Хотя бы один слой должен остаться — иначе анализировать нечего.
+        if (addrSrcKeys.includes(k)) {
+          if (addrSrcKeys.length === 1) { toast('Оставьте хотя бы один слой', 'err'); return; }
+          addrSrcKeys = addrSrcKeys.filter(x => x !== k);
+        } else {
+          addrSrcKeys.push(k);
+        }
+        cb.classList.toggle('on', addrSrcKeys.includes(k));
+        buildAddrSrcSel();
+        clearAddrPreview();
+        saveState();
+      });
+    });
+  }
   const exclBlock = document.getElementById('addr-excl-block');
-  if (exclBlock) exclBlock.style.display = isCpt ? 'none' : '';   // exclusions for heat layers
+  // Исключения работают, когда среди выбранных есть слой со значениями.
+  if (exclBlock) exclBlock.style.display = addrSrcHasVol() ? '' : 'none';
   buildAddrRefSel();
+}
+
+/* Слои-источники, разложенные по типу. */
+function addrSrcLayers() {
+  return addrSrcKeys.map(k => {
+    if (k.startsWith('__cpt__')) {
+      const layer = customPtLayers.find(l => l.id === k.slice(7));
+      return layer ? { key: k, name: layer.name, recs: layer.recs, heat: null } : null;
+    }
+    const d = DS[k];
+    return d ? { key: k, name: d.name || k, recs: d.recs || [], heat: d } : null;
+  }).filter(Boolean);
+}
+function addrSrcHasVol() { return addrSrcLayers().some(l => l.heat); }
+function addrSrcName() {
+  const names = addrSrcLayers().map(l => l.name);
+  if (!names.length) return '—';
+  return names.length <= 2 ? names.join(' + ') : `${names[0]} и ещё ${names.length - 1}`;
+}
+/* Общая единица значения: только если ВСЕ слои со значениями процентные. */
+function addrSrcUnitLayer() {
+  const withVol = addrSrcLayers().filter(l => l.heat);
+  if (!withVol.length) return null;
+  return withVol.every(l => volUnitOf(l.heat) === '%') ? withVol[0].heat : null;
 }
 
 /* Rebuilds the reference-points selector dropdown */
@@ -3389,21 +3440,32 @@ function addrRefPoints() {
   return layer ? layer.recs : [];
 }
 
-/* Get source records for current addrSrcKey */
+/* Точки всех выбранных слоёв одним списком. Одна и та же точка, попавшая в
+   два слоя, в адресной программе должна быть одним адресом — поэтому
+   объединяем по координатам, запоминая, из каких слоёв она пришла. */
 function addrSrcRecs() {
-  if (addrSrcKey.startsWith('__cpt__')) {
-    const id = addrSrcKey.slice(7);
-    const layer = customPtLayers.find(l => l.id === id);
-    return layer ? layer.recs.map(r => ({ ...r, vol_total: null })) : [];
-  }
-  const d = DS[addrSrcKey];
-  return d && d.recs ? d.recs.map(r => ({ ...r, vol_total: r.vol || 0 })) : [];
+  const byCoord = new Map();
+  addrSrcLayers().forEach(l => {
+    for (const r of l.recs) {
+      const key = (+r.lat).toFixed(5) + '|' + (+r.lon).toFixed(5);
+      const prev = byCoord.get(key);
+      if (prev) {
+        if (!prev._srcNames.includes(l.name)) prev._srcNames.push(l.name);
+        // Значение берём максимальное из слоёв — точка «весит» столько,
+        // сколько её самый крупный источник.
+        if (l.heat && (prev.vol_total == null || (r.vol || 0) > prev.vol_total)) prev.vol_total = r.vol || 0;
+        continue;
+      }
+      byCoord.set(key, { ...r, vol_total: l.heat ? (r.vol || 0) : null, _srcNames: [l.name] });
+    }
+  });
+  return [...byCoord.values()];
 }
 
 /* Core filter: returns { points, excluded, srcName, hasVol, noRef } */
 function runAddrFilter() {
-  const hasVol = !addrSrcKey.startsWith('__cpt__');   // heat layers carry volume + support exclusions
-  const srcName = addrSrcOptions().find(o => o.key === addrSrcKey)?.name || addrSrcKey;
+  const hasVol = addrSrcHasVol();   // хотя бы один слой со значениями
+  const srcName = addrSrcName();
 
   let points = addrSrcRecs();
   if (hasCityFilter()) points = points.filter(recInSelection);
@@ -3452,7 +3514,7 @@ function runAddrFilter() {
 // считал бы по пустым массивам: ноль точек у источника и «исключено 0»,
 // причём молча — результат выглядел бы правдоподобным.
 async function ensureAddrLayers() {
-  const keys = [addrSrcKey, ...rtExclKeys].filter(k => DS[k] && DS[k]._recordsLoaded === false);
+  const keys = [...addrSrcKeys, ...rtExclKeys].filter(k => DS[k] && DS[k]._recordsLoaded === false);
   if (!keys.length) return true;
   toast('Загружаем данные слоёв…', 'info', 2500);
   try {
@@ -3476,7 +3538,8 @@ async function previewAddrOnMap() {
   if (!points.length) { toast('Нет точек по текущим фильтрам', 'warn'); return; }
 
   const refLabel = addrRefName();
-  const srcLayer = DS[addrSrcKey] || null;   // нужен, чтобы показать единицу значения
+  const srcLayer = addrSrcUnitLayer();   // единица значения, если она общая для слоёв
+  const multiSrc = addrSrcKeys.length > 1;
 
   // Collect unique nearest-ref points to highlight
   const usedRefs = new Map(); // key = 'lat|lon' → ref object
@@ -3521,6 +3584,8 @@ async function previewAddrOnMap() {
     const lines = [`<b style="color:#FF8C00">#${i + 1} ${esc(p.name || '—')}</b>`];
     if (p.addr) lines.push(esc(p.addr));
     if (p.fil)  lines.push(esc(p.fil));
+    // При объединении слоёв важно видеть, откуда точка.
+    if (multiSrc && p._srcNames) lines.push(`Слой: <b>${esc(p._srcNames.join(', '))}</b>`);
     lines.push(`До ${esc(refLabel)}${nearName ? ' (' + esc(nearName) + ')' : ''}: <b>${fmtD(p._distOwn)}</b>`);
     if (p.vol_total != null) lines.push(`${volUnitOf(srcLayer) ? 'Значение' : 'Объём'}: ${fmtVol(srcLayer, p.vol_total)}`);
     m.bindPopup(lines.join('<br>'));
@@ -3542,7 +3607,7 @@ async function exportRetraffic() {
   if (!(await ensureAddrLayers())) return;
   const { points, excluded, srcName, hasVol, noRef } = runAddrFilter();
   const refName = addrRefName();
-  const srcLayerForExport = DS[addrSrcKey] || null;   // единица значения колонки
+  const srcLayerForExport = addrSrcUnitLayer();   // единица значения колонки
 
   if (noRef) {
     toast(`Нет точек-ориентиров («${refName}») — загрузите их во вкладке «Точки»`, 'err', 5000);
@@ -3557,18 +3622,22 @@ async function exportRetraffic() {
 
   const distCol = `До ${refName}, м`;
   const volCol = volUnitOf(srcLayerForExport) ? 'Значение, %' : 'Объём';
-  const rows = [['№', 'Название', 'Город', 'Адрес', 'Широта', 'Долгота', volCol, distCol, 'Код']];
+  // Колонка «Слой» нужна только когда основ несколько — иначе это шум.
+  const multiSrc = addrSrcKeys.length > 1;
+  const rows = [['№', 'Название', 'Город', 'Адрес', 'Широта', 'Долгота', volCol, distCol, 'Код']
+    .concat(multiSrc ? ['Слой'] : [])];
   points.forEach((p, i) => {
     rows.push([
       i + 1, p.name || '', p.fil || '', p.addr || '',
       +p.lat.toFixed(6), +p.lon.toFixed(6),
       p.vol_total != null ? exportNum(p.vol_total) : '',
       isFinite(p._distOwn) ? p._distOwn : '', p.code || '',
-    ]);
+    ].concat(multiSrc ? [(p._srcNames || []).join(', ')] : []));
   });
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 4 }, { wch: 38 }, { wch: 12 }, { wch: 36 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 18 }, { wch: 10 }];
+  ws['!cols'] = [{ wch: 4 }, { wch: 38 }, { wch: 12 }, { wch: 36 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 18 }, { wch: 10 }]
+    .concat(multiSrc ? [{ wch: 26 }] : []);
   if (volUnitOf(srcLayerForExport)) markPercentColumn(ws, 6, points.length, points.map(p => p.vol_total));
 
   const exclNames = rtExclKeys.map(k => {
@@ -4054,7 +4123,7 @@ function stateFingerprint(snapshot) {
     heatRadius: snapshot.heatRadius, districtsOn: snapshot.districtsOn,
     tashkentScope: snapshot.tashkentScope,
     incomeHeatOn: snapshot.incomeHeatOn, coresOn: snapshot.coresOn,
-    addrSrcKey: snapshot.addrSrcKey, addrRefKey: snapshot.addrRefKey,
+    addrSrcKeys: snapshot.addrSrcKeys, addrRefKey: snapshot.addrRefKey,
     rtRadius: snapshot.rtRadius, rtRadiusOp: snapshot.rtRadiusOp,
     rtExclRadius: snapshot.rtExclRadius,
     rtExclOp: snapshot.rtExclOp, rtExclKeys: snapshot.rtExclKeys || [],
@@ -4443,9 +4512,6 @@ function wireEvents() {
   $('btn-retraffic-export').addEventListener('click', exportRetraffic);
   $('btn-addr-preview').addEventListener('click', previewAddrOnMap);
 
-  $('addr-src-sel').addEventListener('change', e => {
-    addrSrcKey = e.target.value; buildAddrSrcSel(); clearAddrPreview(); saveState();
-  });
   $('addr-ref-sel').addEventListener('change', e => {
     addrRefKey = e.target.value; clearAddrPreview(); saveState();
   });
