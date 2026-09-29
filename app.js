@@ -340,7 +340,7 @@ function selectedCityLabel() {
 
 // Address-program state
 let addrSrcKeys = []; // ключи слоёв-основ: 'custom_*' и/или '__cpt__<id>' (можно несколько)
-let addrRefKey  = '';             // reference points key: '__cpt__<id>' — слой наших точек
+let addrRefKeys = [];             // слои-ориентиры: ['__cpt__<id>', …] (можно несколько)
 let rtRadius    = 1000;           // distance threshold (m)
 let rtRadiusOp  = 'lte';         // lte ≤ | lt < | gte ≥ | gt >
 let rtExclRadius = 150;          // exclusion proximity (m)
@@ -2991,7 +2991,7 @@ function buildStateSnapshot() {
     city: selectedCities.length === 1 ? selectedCities[0] : '',
     covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
     tashkentScope,
-    addrSrcKeys, addrRefKey, rtRadius, rtRadiusOp, rtExclRadius, rtExclOp, rtExclKeys,
+    addrSrcKeys, addrRefKeys, rtRadius, rtRadiusOp, rtExclRadius, rtExclOp, rtExclKeys,
     // recs ручных слоёв несут карточку и идентификаторы фото — байты снимков
     // живут на сервере и в состояние не попадают.
     customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, manual: !!l.manual, visible: l.visible, shape: l.shape, size: l.size, opacity: l.opacity, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, recs: l.recs })),
@@ -3129,7 +3129,9 @@ function applySnapshot(st) {
   // Старые состояния хранили один ключ строкой — переносим в список.
   if (Array.isArray(st.addrSrcKeys))        addrSrcKeys  = st.addrSrcKeys.slice();
   else if (typeof st.addrSrcKey === 'string' && st.addrSrcKey) addrSrcKeys = [st.addrSrcKey];
-  if (typeof st.addrRefKey   === 'string')  addrRefKey   = st.addrRefKey;
+  // Старые состояния хранили один ключ строкой — переносим в список.
+  if (Array.isArray(st.addrRefKeys))        addrRefKeys  = st.addrRefKeys.slice();
+  else if (typeof st.addrRefKey === 'string' && st.addrRefKey) addrRefKeys = [st.addrRefKey];
   if (typeof st.rtRadius     === 'number')  rtRadius     = st.rtRadius;
   if (typeof st.rtRadiusOp   === 'string')  rtRadiusOp   = st.rtRadiusOp;
   if (typeof st.rtExclRadius === 'number')  rtExclRadius = st.rtExclRadius;
@@ -3410,34 +3412,70 @@ function addrSrcUnitLayer() {
   return withVol.every(l => volUnitOf(l.heat) === '%') ? withVol[0].heat : null;
 }
 
-/* Rebuilds the reference-points selector dropdown */
+/* Ориентиры — НЕСКОЛЬКО слоёв точек: расстояние считается до ближайшей точки
+   среди всех отмеченных. Раньше был `<select>` и работал ровно один слой. */
 function buildAddrRefSel() {
-  const sel = document.getElementById('addr-ref-sel');
-  if (!sel) return;
-  // Ориентиром может быть любой слой наших точек (вкладка «Точки»).
+  const box = document.getElementById('addr-ref-list');
+  if (!box) return;
   const opts = [];
   customPtLayers.forEach(l => {
     if (l.recs.length) opts.push({ key: '__cpt__' + l.id, name: l.name });
   });
-  // If current ref key no longer valid, reset
-  if (!opts.find(o => o.key === addrRefKey)) addrRefKey = opts[0] ? opts[0].key : '';
-  sel.innerHTML = opts.length
-    ? opts.map(o => `<option value="${esc(o.key)}"${o.key === addrRefKey ? ' selected' : ''}>${esc(o.name)}</option>`).join('')
-    : '<option value="">Нет точек — загрузите на вкладке «Точки»</option>';
+  const valid = new Set(opts.map(o => o.key));
+  addrRefKeys = addrRefKeys.filter(k => valid.has(k));
+  if (!addrRefKeys.length && opts.length) addrRefKeys = [opts[0].key];
+
+  if (!opts.length) {
+    box.innerHTML = '<div class="rt-excl-empty">Нет точек — загрузите их на вкладке «Точки».</div>';
+    return;
+  }
+  box.innerHTML = opts.map(o =>
+    `<label class="chk rt-excl-item"><div class="cbx${addrRefKeys.includes(o.key) ? ' on' : ''}" data-addrref="${esc(o.key)}" aria-label="Считать расстояние до слоя «${esc(o.name)}»"></div><span>${esc(o.name)}</span></label>`
+  ).join('');
+  a11ySwitches();
+  box.querySelectorAll('[data-addrref]').forEach(cb => {
+    cb.addEventListener('click', () => {
+      const k = cb.dataset.addrref;
+      // Без ориентиров расстояние считать не от чего — один слой оставляем.
+      if (addrRefKeys.includes(k)) {
+        if (addrRefKeys.length === 1) { toast('Оставьте хотя бы один слой точек', 'err'); return; }
+        addrRefKeys = addrRefKeys.filter(x => x !== k);
+      } else {
+        addrRefKeys.push(k);
+      }
+      cb.classList.toggle('on', addrRefKeys.includes(k));
+      buildAddrRefSel();
+      clearAddrPreview();
+      saveState();
+    });
+  });
 }
 
-/* Returns reference layer name for display */
+function addrRefLayers() {
+  return addrRefKeys
+    .map(k => customPtLayers.find(l => '__cpt__' + l.id === k))
+    .filter(l => l && l.recs.length);
+}
+
+/* Подпись ориентиров для попапов, тостов и выгрузки */
 function addrRefName() {
-  const layer = customPtLayers.find(l => '__cpt__' + l.id === addrRefKey);
-  return layer ? layer.name : 'наши точки';
+  const names = addrRefLayers().map(l => l.name);
+  if (!names.length) return 'наши точки';
+  return names.length <= 2 ? names.join(' + ') : `${names[0]} и ещё ${names.length - 1}`;
 }
 
-/* Returns reference points array for distance calculation */
+/* Точки-ориентиры для расчёта расстояния. Одна точка, попавшая в два слоя,
+   не должна считаться дважды — сводим по координатам и помним слой, чтобы
+   показать его в карточке кандидата. */
 function addrRefPoints() {
-  if (!addrRefKey.startsWith('__cpt__')) return [];
-  const id = addrRefKey.slice(7);
-  const layer = customPtLayers.find(l => l.id === id);
-  return layer ? layer.recs : [];
+  const byCoord = new Map();
+  addrRefLayers().forEach(l => {
+    for (const r of l.recs) {
+      const key = (+r.lat).toFixed(5) + '|' + (+r.lon).toFixed(5);
+      if (!byCoord.has(key)) byCoord.set(key, { ...r, _layerName: l.name });
+    }
+  });
+  return [...byCoord.values()];
 }
 
 /* Точки всех выбранных слоёв одним списком. Одна и та же точка, попавшая в
@@ -3540,6 +3578,7 @@ async function previewAddrOnMap() {
   const refLabel = addrRefName();
   const srcLayer = addrSrcUnitLayer();   // единица значения, если она общая для слоёв
   const multiSrc = addrSrcKeys.length > 1;
+  const multiRef = addrRefLayers().length > 1;
 
   // Collect unique nearest-ref points to highlight
   const usedRefs = new Map(); // key = 'lat|lon' → ref object
@@ -3568,7 +3607,7 @@ async function previewAddrOnMap() {
       fillOpacity: 1, pane: 'markerPane',
     });
     m.bindTooltip(
-      `<b style="color:#6C8EFF">${esc(refLabel)}</b><br>${esc(refName)}`,
+      `<b style="color:#6C8EFF">${esc(ref._layerName || refLabel)}</b><br>${esc(refName)}`,
       { className: 'tt', direction: 'top', offset: [0, -8] }
     );
     addrLayer.addLayer(m);
@@ -3581,12 +3620,14 @@ async function previewAddrOnMap() {
       fillOpacity: 0.92, pane: 'markerPane',
     });
     const nearName = p._nearRef ? (p._nearRef.name || p._nearRef.ch || '') : '';
+    // При нескольких слоях-ориентирах важнее, к какому именно ближе всего.
+    const nearLabel = multiRef && p._nearRef && p._nearRef._layerName ? p._nearRef._layerName : refLabel;
     const lines = [`<b style="color:#FF8C00">#${i + 1} ${esc(p.name || '—')}</b>`];
     if (p.addr) lines.push(esc(p.addr));
     if (p.fil)  lines.push(esc(p.fil));
     // При объединении слоёв важно видеть, откуда точка.
     if (multiSrc && p._srcNames) lines.push(`Слой: <b>${esc(p._srcNames.join(', '))}</b>`);
-    lines.push(`До ${esc(refLabel)}${nearName ? ' (' + esc(nearName) + ')' : ''}: <b>${fmtD(p._distOwn)}</b>`);
+    lines.push(`До ${esc(nearLabel)}${nearName ? ' (' + esc(nearName) + ')' : ''}: <b>${fmtD(p._distOwn)}</b>`);
     if (p.vol_total != null) lines.push(`${volUnitOf(srcLayer) ? 'Значение' : 'Объём'}: ${fmtVol(srcLayer, p.vol_total)}`);
     m.bindPopup(lines.join('<br>'));
     addrLayer.addLayer(m);
@@ -4123,7 +4164,7 @@ function stateFingerprint(snapshot) {
     heatRadius: snapshot.heatRadius, districtsOn: snapshot.districtsOn,
     tashkentScope: snapshot.tashkentScope,
     incomeHeatOn: snapshot.incomeHeatOn, coresOn: snapshot.coresOn,
-    addrSrcKeys: snapshot.addrSrcKeys, addrRefKey: snapshot.addrRefKey,
+    addrSrcKeys: snapshot.addrSrcKeys, addrRefKeys: snapshot.addrRefKeys,
     rtRadius: snapshot.rtRadius, rtRadiusOp: snapshot.rtRadiusOp,
     rtExclRadius: snapshot.rtExclRadius,
     rtExclOp: snapshot.rtExclOp, rtExclKeys: snapshot.rtExclKeys || [],
@@ -4512,9 +4553,6 @@ function wireEvents() {
   $('btn-retraffic-export').addEventListener('click', exportRetraffic);
   $('btn-addr-preview').addEventListener('click', previewAddrOnMap);
 
-  $('addr-ref-sel').addEventListener('change', e => {
-    addrRefKey = e.target.value; clearAddrPreview(); saveState();
-  });
 
   $('s-rt-radius').addEventListener('input', e => {
     rtRadius = +e.target.value; $('v-rt-radius').textContent = fmtD(rtRadius); fillSlider(e.target); saveState();
