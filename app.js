@@ -4591,8 +4591,8 @@ function wireEvents() {
     if (tag === 'input' || tag === 'select' || tag === 'textarea' || e.metaKey || e.ctrlKey || e.altKey) return;
     // Порядок как в нижней навигации — иначе «Город» недостижим с клавиатуры,
     // а «4» открывает не то, что подписано.
-    const tabs = ['tab-map', 'tab-points', 'tab-analysis', 'tab-city', 'tab-data'];
-    if (e.key >= '1' && e.key <= '5') {
+    const tabs = ['tab-map', 'tab-points', 'tab-recs', 'tab-analysis', 'tab-city', 'tab-data'];
+    if (e.key >= '1' && e.key <= '6') {
       const t = document.querySelector(`.side-tab[data-tab="${tabs[+e.key - 1]}"]`);
       if (t && t.offsetParent !== null) t.click(); // skip if hidden (e.g. data tab for viewers)
     }

@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
-  <link rel="stylesheet" href="style.css?v=20260929b"/>
+  <link rel="stylesheet" href="style.css?v=20260930a"/>
 </head>
 <body>
 
@@ -175,7 +175,8 @@
       </div>
 
       <!-- TAB: АНАЛИЗ -->
-      <div class="tab-panel" id="tab-analysis">
+      <!-- TAB: РЕКОМЕНДАЦИИ -->
+      <div class="tab-panel" id="tab-recs">
         <p class="tab-section-title">Рекомендации</p>
         <div class="addr-step" style="margin-bottom:12px">
           <div class="addr-step-label">Слой-основа спроса</div>
@@ -207,10 +208,11 @@
         <button class="rec-toggle" id="rec-toggle" style="display:none"></button>
         <button class="btn" id="rec-export" style="margin-top:8px">⬇ Экспорт рекомендаций (Excel)</button>
 
-        <div class="tab-section-divider"></div>
-        <details class="adv-group">
-          <summary>Адресная программа<span class="chev">›</span></summary>
-          <div class="adv-body">
+      </div>
+
+      <!-- TAB: АДРЕСНАЯ ПРОГРАММА -->
+      <div class="tab-panel" id="tab-analysis">
+        <p class="tab-section-title">Адресная программа</p>
 
         <!-- Step 1: Source -->
         <div class="addr-step">
@@ -260,8 +262,6 @@
           <button class="btn addr-btn-map" id="btn-addr-preview">👁 На карте</button>
           <button class="btn addr-btn-xls btn-retraffic" id="btn-retraffic-export">⬇ Excel</button>
         </div>
-          </div>
-        </details>
       </div>
 
       <!-- TAB: ГОРОД -->
@@ -337,12 +337,18 @@
         </div>
         <span class="tab-label">Точки</span>
       </button>
-      <button class="side-tab" data-tab="tab-analysis">
+      <button class="side-tab" data-tab="tab-recs">
         <div class="tab-icon-wrap">
           <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/></svg></span>
           <span class="acc-badge acc-badge-green" id="acc-badge-rec"></span>
         </div>
-        <span class="tab-label">Анализ</span>
+        <span class="tab-label">Рекомен.</span>
+      </button>
+      <button class="side-tab" data-tab="tab-analysis">
+        <div class="tab-icon-wrap">
+          <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/><circle cx="18.5" cy="18" r="2.5"/></svg></span>
+        </div>
+        <span class="tab-label">Адреска</span>
       </button>
       <button class="side-tab" data-tab="tab-city">
         <div class="tab-icon-wrap">
@@ -590,7 +596,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20260929b'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20260930a'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();
