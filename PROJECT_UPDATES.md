@@ -350,3 +350,67 @@ The in-memory solo smoke also passed: four visible layers changed to `[true, fal
 Read-only production verification confirmed that the shared layer/point state remains synchronized after the latest UI changes. On Com Dep, heat visibility was `[true, false, false, false, false, false]` with badge `1/6`, while point visibility was `[false, false, false, true]` with badge `1/4`; the visible point layer rendered 58 markers. Switching `Карта → Точки → Карта` preserved both visibility vectors, badges, and map rendering. The point-card visibility switch was separately distinguished from the green coverage-radius switch, and its `aria-checked` matched runtime for all four point layers.
 
 After full reload, re-authentication and reopening Com Dep, the same heat/point vectors, badges, active tab and 58 markers were restored. No write/configuration action was performed. Evidence: `qa/layers-points-sync-20260819.md`.
+
+## 2026-09-17 — Publish/refresh flow for viewers
+
+Open tabs previously learned about a new owner publication only by reloading the page: `fetchFromServer()` ran once at startup and nothing polled afterwards. A new cheap `GET /state/revision` endpoint answers from the 30-second read cache, and clients poll it every 45 seconds plus on tab focus and on regaining network. When the server revision differs, a banner over the map offers «Обновить».
+
+Applying the update is visible: the map desaturates and regains colour as a percentage climbs, driven by records hydrated against the record counts promised by the manifest, so the progress is real rather than a timed animation. Success reports the published version time; failure explains the cause — session expired, no map access, timeout, offline — with concrete next steps and a retry that re-reads the manifest from a clean revision. `applySnapshot` now drops derived heat caches for metadata-only manifests so a refresh cannot paint the previous revision over new records.
+
+## 2026-09-17 — Layer palettes, colour sets and touchpoint tags
+
+The palette picker became a grid of gradient chips instead of a text select, and six ramps were added including cividis for colourblind safety and a brand teal. A shared fourteen-colour swatch row now serves both the custom heat colour and point markers, with hues spaced apart so enabled layers stay distinguishable. Picking a point colour no longer rebuilds the whole card on every pointer move, which used to interrupt the drag.
+
+A new «Ярлыки» button per heat layer draws that layer's own touchpoints over the heat; clicking one opens the card from the uploaded file. The overlay is viewport-scoped, canvas-rendered and capped at 1200 markers ordered by value, with an on-map note when capped, so a 50k-point layer stays usable. The legend shows each layer's actual gradient strip plus its point count.
+
+The same commit restored the 2GIS basemap required by `CLAUDE.md`. It had been swapped for OpenStreetMap as a «deprecated endpoint»; the endpoint answered 200 with a 70 KB detailed tile over Tashkent, so the premise did not hold.
+
+## 2026-09-22 — Manual trade points with photos
+
+A new kind of point is entered one at a time rather than uploaded from a file: name, DMS code, installed equipment, up to three photos, coordinates, sales count and a comment. Coordinates can be typed or picked by clicking the map.
+
+Photos never enter the map state. The state already weighs megabytes and is posted whole on every save, so three phone photos per point would have made it unsendable. The browser downscales to 1400 px at JPEG q82 and uploads to a new `photos` table; the state carries only ids. `POST /photo` is owner-only and per-map, rejects non-images and anything over 4 MB, and keys rows by a content hash so re-uploading the same file does not duplicate. `GET /photo/:id` serves it only to a session that may open that map, with a one-year immutable cache. The client loads photos lazily through `authFetch` into blob URLs rather than `<img src>`, since an image tag carries no Authorization header and the session may live in memory on the cross-origin frontend.
+
+Verified end to end: upload, dedupe, admin read 200, other-map read 403, no session 401, non-image 415, malformed id 400.
+
+## 2026-09-22 — Manual points live in ordinary point layers
+
+Manually entered points initially sat in their own fixed block and could not be recoloured, reshaped, soloed or given a coverage radius the way uploaded layers can. They are now ordinary point layers carrying a `manual` flag. The point form picks a target layer or creates one inline, so several manual layers coexist alongside uploaded ones, and a manual layer's card gets «+ Точка» in place of «⬆ Данные» plus a list of its points. Legacy `retailPts` migrate into a «Торговые точки» layer on load, matched by point id so a state holding both shapes cannot duplicate them.
+
+`stateFingerprint` now digests manual point fields. Editing a card does not change the point count, so the save was being skipped as unchanged — the same trap later caught per-point colour.
+
+Follow-ups in the same week: an Excel export for manual points, with photo links since XLSX cannot embed images; and per-point colour, where an empty value means inherit from the layer, with marker icons cached per colour so a mixed-colour layer builds one SVG per distinct colour rather than one per point.
+
+## 2026-09-22 — Write-key failures made legible
+
+Photo upload reported «HTTP 401», which named neither of the server's two 401s: no write key, or no session. The key is memory-only by design and is wiped on every page refresh, so the real cause was a missing key. Upload errors now carry the server's reason mapped to plain Russian, the point form shows a persistent notice with a key field, and saving a point without a key says it stayed in this browser only. `pushToServer` used to return silently without a key, hiding that the owner's edits were not syncing at all; it now sets the sync badge.
+
+## 2026-09-24 — Address program correctness
+
+Three independent defects kept layers out of the exclusion list: `focusNewLayer` did not rebuild it, `rtExclLayerKeys` counted in-memory records which are zero for lazily unloaded layers, and — worst — a ticked but unloaded exclusion layer contributed nothing while reporting «исключено 0» without a word. Both callers now await the records first, and counting goes through the manifest's `stats.n`.
+
+The exclusion step also explains itself: a live sentence states the outcome for the current settings, the «ближе чем» caption follows the operator since `>` and `≥` invert the rule, and a tooltip documents that a matching `code` column excludes an address regardless of distance. The address preview gained legend rows and an off switch: «На карте» toggles to «Убрать с карты».
+
+## 2026-09-24 — Tashkent scope, unified counters, percent values
+
+Selecting Tashkent always meant Tashkent plus the whole region, because membership was «nearest city centre within 60 km», which reaches Chirchiq and Angren. The city filter now offers «Город + область» and «Только город», the latter using the real boundary — the union of the district polygons already shipped for the «Районы» overlay. Heat records and point layers had been filtered by two independent paths; both now go through one predicate, `recInSelection`.
+
+The three on-map counters meant three different things and never matched under a city filter: the badge summed filtered heat records only, the legend printed whole-layer sizes, and the tag note counted the viewport. Every layer now records how many points it actually drew; the badge equals the sum of the legend rows, and the tag note says «в этой области».
+
+The `value` column accepts percentages such as «0,356%». The parser strips the sign and marks the layer, the unit travels with the map state, and Excel keeps the cell numeric with a percent display format so the column still sorts and sums. A follow-up fixed a deeper problem this exposed: exports rounded to a fixed decimal place, flattening small fractions into identical 0,001 values, and `toLocaleString` showed the same values as «0» on screen. Both now scale with magnitude.
+
+## 2026-09-24 — Write key issued with the session
+
+The owner had to paste the server API key after every refresh. The session already proves who the owner is; the shared secret was only still carrying its CSRF role, which a custom header fulfils. `/auth/login` and `/auth/me` now return a `writeKey` for admins, derived as `HMAC(SESSION_SECRET, "write|" + session token)`, so it cannot be computed without the server secret and is worthless on another session. `verifyKey` accepts either that token or the static `API_KEY`, keeping scripts working. Verified: admin gets a key, a viewer does not, writes succeed with no manual entry, `/auth/me` returns the same key after a refresh, another session's key is rejected, and a missing or forged key is refused.
+
+## 2026-09-24 — Volume filter removed
+
+Step «Объём точки» dropped every candidate below the sample average by default, silently halving the result set before distance and exclusions were considered. The step, its state, its fingerprint entry and its export settings row are gone; old saved states carrying the fields are ignored. The value itself stays in the export and on the point.
+
+## 2026-09-29 — Multi-layer address program
+
+Both selectors became toggle lists. Step 1 accepts several source layers at once, merging records by rounded coordinates so a point present in two layers is one address, keeping which layers it came from and the largest value among them. Step 2 accepts several reference layers, measuring distance to the nearest point across all of them, and a candidate's card names the layer its nearest reference actually belongs to. Exclusions now depend on any selected layer carrying values, and the percent cell format applies only when every value-carrying layer is a percent layer. States holding the old single keys migrate into lists.
+
+## 2026-09-30 — Recommendations split into their own tab
+
+Recommendations and the address program shared one tab, so the address program sat behind a collapsed disclosure. Recommendations moved to «Рекомен.» with their count badge; «Анализ» became «Адреска» and holds only the address program, unwrapped from the disclosure. Keyboard shortcuts extend to 1–6 and the tab strip tightens so six fit without wrapping. The app name also dropped «BR» from the sidebar, both login cards and the page title; BR is left alone where it is a business term.

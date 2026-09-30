@@ -1,7 +1,7 @@
 # Heatmap App — Feature Tracking Spreadsheet
 
 > **Legend** — Status: ✅ OK · ❌ Bug · ⚠️ UX issue · 🔲 Not tested  
-> Last updated: 2026-08-19
+> Last updated: 2026-09-30
 
 ---
 
@@ -137,6 +137,22 @@
 | P16 | Point layer visibility toggled | Unified switch hides/shows markers, updates badge and persists state without changing `ourPts()` metrics semantics | All | ✅ | |
 | P17 | Point layer isolated with «Соло» | Only the selected point layer remains visible; clicking again restores the previous visibility state | All | ✅ | |
 | P18 | Point layer settings changed | Rename, data refresh, icon shape, color, marker size, marker opacity and coverage-radius settings are available in the shared card style | All | ✅ | |
+| P19 | Admin adds a point by hand | Form with name, DMS code, equipment, up to 3 photos, coordinates, sales, comment; target layer chosen or created inline | Admin | ✅ | 2026-09-22 |
+| P20 | Manual point clicked | Card shows thumbnails plus fields; a thumbnail opens the photo full screen with arrows and Esc | All | ✅ | 2026-09-22 |
+| P21 | Coordinates picked on the map | Form hides, next map click fills lat/lon, Esc cancels | Admin | ✅ | 2026-09-22 |
+| P22 | Manual layer exported | Excel with layer, name, DMS, equipment, sales, coordinates, city, colour, comment, photo count and links | Admin | ✅ | 2026-09-22 |
+| P23 | Per-point colour set | Marker, coverage circle, popup tag and list dot follow it; empty means inherit from the layer | Admin | ✅ | 2026-09-22 |
+| P24 | Legacy `retailPts` state loaded | Migrated into a «Торговые точки» layer, matched by point id, no duplicates | All | ✅ | 2026-09-22 |
+| P25 | Photo uploaded | Downscaled to 1400 px JPEG q82, stored server-side by content hash; state keeps only ids | Admin | ✅ | 2026-09-22 |
+| P26 | Photo requested by another map's user | HTTP 403; no session → 401; non-image → 415 | All | ✅ | Verified 2026-09-22 |
+
+---
+
+| H20 | Palette chosen from gradient chips | 12 ramps incl. cividis and brand teal; custom colour uses the shared swatch row | All | ✅ | 2026-09-17 |
+| H21 | «Ярлыки» toggled on a heat layer | Layer's own touchpoints drawn over the heat, viewport-scoped and capped at 1200 with an on-map note | All | ✅ | 2026-09-17 |
+| H22 | Tag marker clicked | Card shows the fields from the uploaded file | All | ✅ | 2026-09-17 |
+| H23 | `value` written as a percent | «0,356%» parsed, layer marked, shown with % on the point, in the address popup and in both exports | All | ✅ | 2026-09-24 |
+| H24 | Counters compared | Badge equals the sum of legend rows; both count what is drawn; tag note says «в этой области» | All | ✅ | Fixed 2026-09-24 |
 
 ---
 
@@ -154,7 +170,8 @@
 | R8 | Rec pin clicked | Popup with zone name, demand, basis, distance, count | All | ✅ | |
 | R9 | Export recommendations | Excel downloaded; contains top-N rows with all columns | All | ✅ | |
 | R10 | City filter active | Recs show only zones in selected city | All | ✅ | |
-| R11 | Summary panel shows correct stats | Count, uncovered demand %, basis label all accurate | All | ✅ | |
+| R11 | Summary panel shows correct stats | Leads with uncovered share; absolute volume omitted for percent layers | All | ✅ | 2026-09-24 |
+| R12 | Recommendations live in their own tab | «Рекомен.» tab holds basis, sliders, list, export and the count badge | All | ✅ | 2026-09-30 |
 
 ---
 
@@ -162,15 +179,17 @@
 
 | # | User Story | Expected Behaviour | Role | Status | Notes |
 |---|---|---|---|---|---|
-| AP1 | Source dropdown changed | Step 3 (volume block) hidden if custom points selected | All | ✅ | |
-| AP2 | Reference layer changed | Distance calc uses selected reference layer | All | ✅ | |
-| AP3 | Distance operator + slider set | Filter uses operator (≤/≥/</>/=) + value | All | ✅ | |
-| AP4 | Volume mode = average | Threshold auto-computed from sample mean | All | ✅ | |
-| AP5 | Volume mode = custom | Input field shown; user enters manual threshold | All | ✅ | |
-| AP6 | Exclusion layer selected | Points within excl-radius of that layer removed from result | All | ✅ | |
-| AP7 | Preview button clicked | Orange markers + blue refs + dashed lines drawn on map | All | ✅ | |
-| AP8 | Export button clicked | Excel with results sheet + parameters sheet downloaded | All | ✅ | |
-| AP9 | City filter active | Address program respects city filter | All | ✅ | |
+| AP1 | Several source layers toggled | Records of all selected layers merged; duplicates by coordinate become one address; `Слой` column appears in the export | All | ✅ | 2026-09-29 |
+| AP2 | Several reference layers toggled | Distance taken to nearest point across all selected layers; card names the nearest layer | All | ✅ | 2026-09-29 |
+| AP3 | Distance operator + slider set | Filter uses operator (≤/≥/</>) + value | All | ✅ | |
+| AP4 | Last source/reference layer unticked | Refused with a toast; at least one stays selected | All | ✅ | 2026-09-29 |
+| AP5 | Volume filter | Removed from the UI and state | — | ➖ | Removed 2026-09-24 |
+| AP6 | Exclusion layer selected | Points within excl-radius of that layer removed; layer appears in the list even when its records are lazily unloaded | All | ✅ | Fixed 2026-09-24 |
+| AP7 | Preview button clicked | Orange markers + blue refs + dashed lines; legend rows added; button toggles to «Убрать с карты» | All | ✅ | 2026-09-24 |
+| AP8 | Export button clicked | Excel with results sheet + parameters sheet; values keep six significant digits; percent layers get a percent cell format | All | ✅ | Fixed 2026-09-24 |
+| AP9 | City filter active | Address program respects city filter through the single `recInSelection` predicate | All | ✅ | |
+| AP10 | Exclusion distance explained | Live sentence states the outcome; caption follows the operator; `code` match documented | All | ✅ | 2026-09-24 |
+| AP11 | Source/exclusion layer records not loaded | Loaded on demand before filtering; never silently filters on empty arrays | All | ✅ | Fixed 2026-09-24 |
 
 ---
 

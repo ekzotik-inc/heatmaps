@@ -30,7 +30,10 @@
 | `render.yaml` | Деплой сервера данных на Render (секреты — `sync: false`, значения в дашборде). |
 | `.github/workflows/keep-warm.yml` | Пинг `/health` каждые 10 мин (против засыпания Render). |
 | `.github/workflows/ci.yml` | `node --check` + ESLint на каждый push/PR; на PR — проверка, что поднята версия кэша. |
-| `.claude/agents/` | Субагенты: `senior-engineer`, `code-reviewer`, `security-auditor`, `frontend-ux`, `performance-optimizer`, `geo-analyst`, `docs-keeper` (+ README со списком). |
+| `.claude/agents/` | Субагенты: `senior-engineer`, `code-reviewer`, `security-auditor`, `frontend-ux`, `performance-optimizer`, `geo-analyst`, `docs-keeper`. |
+| `.claude/skills/` | Скилы-процедуры: `release` (версия кэша → проверки → пуш → что сказать владельцу), `state-inspect` (диагностика сервера и состояния), `layer-setting` (чек-лист новой настройки слоя). |
+| `.claude/README.md` | Что когда вызывать; чем скил отличается от агента. |
+| `PROJECT_UPDATES.md` | Журнал изменений по датам. |
 | `README.md` | Что это, как запустить локально, как деплоить. |
 | `AUDIT.md` | Экспертный аудит + план работ со статусами. |
 | `CLAUDE.md` | Правила проекта (главное: **2ГИС навсегда**). |
