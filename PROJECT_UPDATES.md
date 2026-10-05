@@ -414,3 +414,7 @@ Both selectors became toggle lists. Step 1 accepts several source layers at once
 ## 2026-09-30 — Recommendations split into their own tab
 
 Recommendations and the address program shared one tab, so the address program sat behind a collapsed disclosure. Recommendations moved to «Рекомен.» with their count badge; «Анализ» became «Адреска» and holds only the address program, unwrapped from the disclosure. Keyboard shortcuts extend to 1–6 and the tab strip tightens so six fit without wrapping. The app name also dropped «BR» from the sidebar, both login cards and the page title; BR is left alone where it is a business term.
+
+## 2026-10-05 — Nearest reference named in the address export
+
+The address export reported «До BR/IPSE, м» without saying which point the distance was measured to, so a candidate could only be checked against its nearest outlet by opening the preview and clicking the marker. The nearest reference is now named immediately after the distance column. Two further columns appear only when they carry information: the reference's code — or the DMS code for a manually entered point — when any reference has one, and its layer when more than one reference layer is selected. A reference with neither a name nor a code falls back to its coordinates, so the point is always identifiable. The recommendations sheet is unchanged: `enrichNd` discards the nearest-point reference and retaining it would add a field to every heat record.

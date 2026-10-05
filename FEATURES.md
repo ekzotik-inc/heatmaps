@@ -1,7 +1,7 @@
 # Heatmap App — Feature Tracking Spreadsheet
 
 > **Legend** — Status: ✅ OK · ❌ Bug · ⚠️ UX issue · 🔲 Not tested  
-> Last updated: 2026-09-30
+> Last updated: 2026-10-05
 
 ---
 
@@ -190,6 +190,7 @@
 | AP9 | City filter active | Address program respects city filter through the single `recInSelection` predicate | All | ✅ | |
 | AP10 | Exclusion distance explained | Live sentence states the outcome; caption follows the operator; `code` match documented | All | ✅ | 2026-09-24 |
 | AP11 | Source/exclusion layer records not loaded | Loaded on demand before filtering; never silently filters on empty arrays | All | ✅ | Fixed 2026-09-24 |
+| AP12 | Export names the nearest reference | «Ближайшая точка» after the distance; code and layer columns appear only when informative; falls back to coordinates | All | ✅ | 2026-10-05 |
 
 ---
 
