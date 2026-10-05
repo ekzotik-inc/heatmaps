@@ -3665,19 +3665,42 @@ async function exportRetraffic() {
   const volCol = volUnitOf(srcLayerForExport) ? 'Значение, %' : 'Объём';
   // Колонка «Слой» нужна только когда основ несколько — иначе это шум.
   const multiSrc = addrSrcKeys.length > 1;
-  const rows = [['№', 'Название', 'Город', 'Адрес', 'Широта', 'Долгота', volCol, distCol, 'Код']
+  // Расстояние само по себе не говорит, ДО КАКОЙ точки оно посчитано —
+  // ставим ориентир сразу за ним. Код и слой добавляем только если им есть
+  // что показать, чтобы не плодить пустые колонки.
+  const refNameOf = p => {
+    const r = p._nearRef;
+    if (!r) return '';
+    return r.name || r.code || r.dms || `${(+r.lat).toFixed(5)}, ${(+r.lon).toFixed(5)}`;
+  };
+  const refCodeOf = p => (p._nearRef && (p._nearRef.code || p._nearRef.dms)) || '';
+  const refHasCode = points.some(p => refCodeOf(p));
+  const multiRef = addrRefLayers().length > 1;
+
+  const rows = [['№', 'Название', 'Город', 'Адрес', 'Широта', 'Долгота', volCol, distCol,
+                 'Ближайшая точка']
+    .concat(refHasCode ? ['Код ориентира'] : [])
+    .concat(multiRef ? ['Слой ориентира'] : [])
+    .concat(['Код'])
     .concat(multiSrc ? ['Слой'] : [])];
   points.forEach((p, i) => {
     rows.push([
       i + 1, p.name || '', p.fil || '', p.addr || '',
       +p.lat.toFixed(6), +p.lon.toFixed(6),
       p.vol_total != null ? exportNum(p.vol_total) : '',
-      isFinite(p._distOwn) ? p._distOwn : '', p.code || '',
-    ].concat(multiSrc ? [(p._srcNames || []).join(', ')] : []));
+      isFinite(p._distOwn) ? p._distOwn : '',
+      refNameOf(p),
+    ].concat(refHasCode ? [refCodeOf(p)] : [])
+     .concat(multiRef ? [(p._nearRef && p._nearRef._layerName) || ''] : [])
+     .concat([p.code || ''])
+     .concat(multiSrc ? [(p._srcNames || []).join(', ')] : []));
   });
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 4 }, { wch: 38 }, { wch: 12 }, { wch: 36 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 18 }, { wch: 10 }]
+  ws['!cols'] = [{ wch: 4 }, { wch: 38 }, { wch: 12 }, { wch: 36 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 18 }, { wch: 30 }]
+    .concat(refHasCode ? [{ wch: 16 }] : [])
+    .concat(multiRef ? [{ wch: 22 }] : [])
+    .concat([{ wch: 10 }])
     .concat(multiSrc ? [{ wch: 26 }] : []);
   if (volUnitOf(srcLayerForExport)) markPercentColumn(ws, 6, points.length, points.map(p => p.vol_total));
 
