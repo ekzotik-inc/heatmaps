@@ -369,13 +369,25 @@ function isManualRec(r) {
 const map = L.map('map', { preferCanvas: true, zoomControl: false, minZoom: 5, zoomSnap: .5 })
               .setView([41, 67], 6);
 
-// Подложка — 2ГИС. Правило владельца (CLAUDE.md): НИКОГДА не менять.
-// Эндпоинт живой и отдаёт детальные тайлы по городам УЗ/КГ — проверено.
-L.tileLayer('https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1', {
-  subdomains: '0123',
-  attribution: '&copy; 2ГИС',
-  maxZoom: 18,
-}).addTo(map);
+/* Подложка — 2ГИС. Правило владельца (CLAUDE.md): НИКОГДА не менять.
+   Октябрь 2026: старый эндпоинт (`/tiles?x=&y=&z=&v=1`) 2ГИС объявил
+   неподдерживаемым и постепенно, по регионам, подменяет тайлы заглушкой
+   «сервис более не поддерживается». Новый Raster Tiles API — тот же 2ГИС, но
+   требует ключ доступа (Platform Manager, тарификация по числу тайлов).
+   Ключ кладётся в `window._HM_2GIS_KEY` в index.html: есть ключ — работаем по
+   новому сервису, нет — остаёмся на старом, чтобы ничего не сломать там, где
+   он ещё отдаёт карту. */
+const TG_KEY = (window._HM_2GIS_KEY || '').trim();
+L.tileLayer(
+  TG_KEY
+    ? 'https://tile{s}.maps.2gis.com/v2/tiles/online_hd/{z}/{x}/{y}.png?key=' + encodeURIComponent(TG_KEY)
+    : 'https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1',
+  {
+    subdomains: TG_KEY ? '01234' : '0123',
+    attribution: '&copy; 2ГИС',
+    maxZoom: 18,
+  }
+).addTo(map);
 
 map.createPane('districts'); map.getPane('districts').style.zIndex = 460;
 map.createPane('income');    map.getPane('income').style.zIndex = 445;
