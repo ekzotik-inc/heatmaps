@@ -369,25 +369,57 @@ function isManualRec(r) {
 const map = L.map('map', { preferCanvas: true, zoomControl: false, minZoom: 5, zoomSnap: .5 })
               .setView([41, 67], 6);
 
-/* Подложка — 2ГИС. Правило владельца (CLAUDE.md): НИКОГДА не менять.
-   Октябрь 2026: старый эндпоинт (`/tiles?x=&y=&z=&v=1`) 2ГИС объявил
-   неподдерживаемым и постепенно, по регионам, подменяет тайлы заглушкой
-   «сервис более не поддерживается». Новый Raster Tiles API — тот же 2ГИС, но
-   требует ключ доступа (Platform Manager, тарификация по числу тайлов).
-   Ключ кладётся в `window._HM_2GIS_KEY` в index.html: есть ключ — работаем по
-   новому сервису, нет — остаёмся на старом, чтобы ничего не сломать там, где
-   он ещё отдаёт карту. */
+/* ── ПОДЛОЖКА ────────────────────────────────────────────────────────────
+   Октябрь 2026: 2ГИС вывел старый эндпоинт тайлов из эксплуатации и подменяет
+   их заглушкой, а поддерживаемый Raster Tiles API требует платный ключ.
+   По решению владельца переходим на бесплатную подложку — **OpenFreeMap**
+   (векторные тайлы OSM): без ключа, без лимитов, коммерческое использование
+   разрешено. Данные планеты пересобираются каждые несколько дней — проверено,
+   что по Ташкенту и Бишкеку застройка и дороги на месте, включая новые
+   кварталы, где у глобальных растровых провайдеров пусто.
+
+   Если владелец когда-нибудь заведёт ключ 2ГИС и положит его в
+   `window._HM_2GIS_KEY`, подложка вернётся к 2ГИС без других правок.
+   Если MapLibre не загрузился, падаем на растровые тайлы OSM, чтобы карта
+   никогда не осталась пустой. */
 const TG_KEY = (window._HM_2GIS_KEY || '').trim();
-L.tileLayer(
-  TG_KEY
-    ? 'https://tile{s}.maps.2gis.com/v2/tiles/online_hd/{z}/{x}/{y}.png?key=' + encodeURIComponent(TG_KEY)
-    : 'https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1',
-  {
-    subdomains: TG_KEY ? '01234' : '0123',
-    attribution: '&copy; 2ГИС',
-    maxZoom: 18,
+const OFM_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · ' +
+                 '<a href="https://openfreemap.org">OpenFreeMap</a> · ' +
+                 '<a href="https://www.openmaptiles.org/">OpenMapTiles</a>';
+
+function addRasterBasemap() {
+  // Запасной путь: растровые тайлы OSM. Используются, только если векторная
+  // подложка не поднялась, — чтобы карта никогда не осталась пустой.
+  L.tileLayer('https://tile.openstreetmap.de/{z}/{x}/{y}.png',
+    { attribution: OSM_ATTR, maxZoom: 18 }).addTo(map);
+}
+
+function addBasemap() {
+  if (TG_KEY) {
+    L.tileLayer('https://tile{s}.maps.2gis.com/v2/tiles/online_hd/{z}/{x}/{y}.png?key=' + encodeURIComponent(TG_KEY),
+      { subdomains: '01234', attribution: '&copy; 2ГИС', maxZoom: 18 }).addTo(map);
+    return;
   }
-).addTo(map);
+  let gl = null;
+  if (typeof L.maplibreGL === 'function' && window.maplibregl) {
+    try { gl = L.maplibreGL({ style: OFM_STYLE, attribution: OSM_ATTR }).addTo(map); }
+    catch (e) { console.warn('MapLibre basemap failed:', e && e.message); gl = null; }
+  }
+  if (!gl) { addRasterBasemap(); return; }
+
+  // Сторож: нет WebGL, не открылся стиль, не дошли тайлы — через 12 с молча
+  // уходим на растр. Пустая карта хуже любой подложки.
+  setTimeout(() => {
+    const m = gl._glMap;
+    const alive = m && typeof m.isStyleLoaded === 'function' && m.isStyleLoaded();
+    if (alive) return;
+    console.warn('Vector basemap did not render — switching to raster tiles');
+    try { map.removeLayer(gl); } catch (_) {}
+    addRasterBasemap();
+  }, 12000);
+}
+addBasemap();
 
 map.createPane('districts'); map.getPane('districts').style.zIndex = 460;
 map.createPane('income');    map.getPane('income').style.zIndex = 445;
