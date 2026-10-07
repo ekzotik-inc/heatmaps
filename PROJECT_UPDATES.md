@@ -434,3 +434,20 @@ Candidates were measured rather than assumed. OpenStreetMap's own tile servers r
 OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commercial use explicitly allowed. Its planet build was dated 2026-10-04, two days before the switch, and it returned 217 KB of vector data over Tashkent City and 212 KB over central Bishkek against 0 bytes over empty desert, confirming the measurement was meaningful. Rendering goes through MapLibre GL embedded as a Leaflet layer by `maplibre-gl-leaflet`, so the rest of the map — panes, heat canvases, markers — is untouched.
 
 `addBasemap()` picks 2GIS when `window._HM_2GIS_KEY` is set, OpenFreeMap otherwise, and falls back to raster OSM tiles if the vector layer has not rendered after twelve seconds, since a blank map is worse than any basemap. Browser verification in the sandbox confirmed MapLibre, the plugin and the GL canvas initialise, but tile rendering could not be screenshotted: the container's proxy drops connections to the CDNs, with the same `ERR_TOO_MANY_RETRIES` appearing for a known-good cdnjs asset.
+
+## 2026-10-07 — Basemap no longer flickers on zoom
+
+- **Symptom:** the map blinked on every zoom.
+- **Cause 1:** `maplibre-gl-leaflet` 0.1.4 resets the CSS scale of the basemap
+  canvas on the proxy's `transitionend`, which on real machines can arrive
+  before Leaflet's zoom end. For one frame the canvas showed the *old* zoom
+  unscaled, then jumped to the new one. Reproduced with a frame-by-frame trace:
+  3 snap-back frames on 3 zooms before, 0 after.
+- **Fix:** `patchGlLayer()` — container position, MapLibre view and transform
+  reset happen in one task with a synchronous `redraw()`; `transitionend` is
+  ignored, `zoomend` ends the zoom. Pinch zoom also repositions the container.
+- **Cause 2:** the 12 s basemap watchdog used `isStyleLoaded()`, which is false
+  while tiles are loading — zooming at the 12th second replaced the live vector
+  basemap with raster tiles. Now it checks `style.load` + first loaded tile.
+- Cache version `20261007a`.
+

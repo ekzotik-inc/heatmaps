@@ -395,6 +395,51 @@ function addRasterBasemap() {
     { attribution: OSM_ATTR, maxZoom: 18 }).addTo(map);
 }
 
+/* Плагин maplibre-gl-leaflet 0.1.4 моргает при зуме. Во время анимации он
+   растягивает CSS-трансформом старый кадр подложки, а в конце сбрасывает
+   трансформ и только *просит* MapLibre перерисоваться — кадр приходит позже.
+   Хуже того, сброс висит и на `transitionend` прокси-элемента, который может
+   сработать раньше конца зума Leaflet: тогда подложка на кадр отскакивает к
+   старому масштабу и прыгает обратно (поймано покадровой записью).
+   Чиним так: позицию контейнера, вид MapLibre и сброс трансформа меняем в
+   одной задаче, отрисовывая подложку синхронно (`redraw()`), — браузер
+   показывает уже готовый новый кадр. `transitionend` больше не слушаем:
+   конец зума ловит `zoomend`. */
+function patchGlLayer() {
+  const P = L.MaplibreGL && L.MaplibreGL.prototype;
+  if (!P || P._hmSync) return;
+  P._hmSync = true;
+  P._syncGL = function () {
+    const m = this._map, gl = this._glMap;
+    if (!m || !gl) return;
+    const c = m.getCenter();
+    gl.jumpTo({ center: [c.lng, c.lat], zoom: m.getZoom() - 1 });
+    try { gl.redraw(); } catch (_) { /* стиль ещё грузится — MapLibre дорисует сам */ }
+    const topLeft = m.containerPointToLayerPoint([0, 0]).subtract(m.getSize().multiplyBy(this.options.padding));
+    L.DomUtil.setPosition(this._container, this._roundPoint(topLeft));
+    L.DomUtil.setTransform(gl._actualCanvas, L.point(0, 0), 1);
+  };
+  P._update = function () {
+    if (!this._map) return;
+    this._offset = this._map.containerPointToLayerPoint([0, 0]);
+    if (this._zooming) return;
+    this._syncGL();
+  };
+  P._pinchZoom = function () {
+    if (!this._map) return;
+    this._offset = this._map.containerPointToLayerPoint([0, 0]);
+    this._syncGL();
+  };
+  P._zoomEnd = function () { this._zooming = false; this._update(); };
+  P._transitionEnd = function () {};
+  P._resize = function () {
+    if (!this._map || !this._glMap) return;
+    this._resizeContainer();
+    try { this._glMap.resize(); } catch (_) {}
+    this._update();
+  };
+}
+
 function addBasemap() {
   if (TG_KEY) {
     L.tileLayer('https://tile{s}.maps.2gis.com/v2/tiles/online_hd/{z}/{x}/{y}.png?key=' + encodeURIComponent(TG_KEY),
@@ -403,17 +448,26 @@ function addBasemap() {
   }
   let gl = null;
   if (typeof L.maplibreGL === 'function' && window.maplibregl) {
-    try { gl = L.maplibreGL({ style: OFM_STYLE, attribution: OSM_ATTR }).addTo(map); }
+    try { patchGlLayer(); gl =L.maplibreGL({ style: OFM_STYLE, attribution: OSM_ATTR }).addTo(map); }
     catch (e) { console.warn('MapLibre basemap failed:', e && e.message); gl = null; }
   }
   if (!gl) { addRasterBasemap(); return; }
 
-  // Сторож: нет WebGL, не открылся стиль, не дошли тайлы — через 12 с молча
-  // уходим на растр. Пустая карта хуже любой подложки.
+  // Сторож: нет WebGL, не открылся стиль, не дошёл ни один тайл — через 12 с
+  // молча уходим на растр. Пустая карта хуже любой подложки.
+  // Смотрим на факты «стиль загрузился» и «пришёл хотя бы один тайл», а не на
+  // isStyleLoaded(): тот возвращает false всё время, пока догружаются тайлы,
+  // и сторож выкидывал живую подложку, если на 12-й секунде пользователь зумил.
+  let styleOk = false, tileOk = false;
+  const m = gl._glMap;
+  if (m && typeof m.on === 'function') {
+    m.once('style.load', () => { styleOk = true; });
+    m.on('sourcedata', function onTile(e) {
+      if (e && e.tile) { tileOk = true; m.off('sourcedata', onTile); }
+    });
+  }
   setTimeout(() => {
-    const m = gl._glMap;
-    const alive = m && typeof m.isStyleLoaded === 'function' && m.isStyleLoaded();
-    if (alive) return;
+    if (styleOk && tileOk) return;
     console.warn('Vector basemap did not render — switching to raster tiles');
     try { map.removeLayer(gl); } catch (_) {}
     addRasterBasemap();
