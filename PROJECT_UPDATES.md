@@ -451,3 +451,24 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   basemap with raster tiles. Now it checks `style.load` + first loaded tile.
 - Cache version `20261007a`.
 
+## 2026-10-13 — Point names on the map without overlaps
+
+- «Точки» tab: switch «Названия всех точек на карте» (all visible layers) and a
+  per-layer switch «Названия на карте» (layer field `labels`, saved in state
+  and in `stateFingerprint`).
+- Greedy placement in `renderPointLabels()`: each point tries right, left,
+  top, bottom of its marker; a label is drawn only where it does not touch
+  another label, any marker, or the floating map panels (city bar, legend,
+  counter, zoom). Order: manual layers first, then layer order, then name —
+  stable while panning. Long names are cut to 28 chars (full name in the hover
+  tooltip). Labels are hidden during the zoom animation and re-placed after.
+- The note under the switch says how many names fit in the current view
+  («Подписано N из M точек в этой области»).
+- Verified in a browser on 400 test points: 0 label/label overlaps, 0
+  label/marker overlaps, 0 labels under panels.
+- Fixed in passing: `stateFingerprint` ignored marker size, opacity and all
+  coverage-radius settings, so changing only those was never saved to the
+  server. The small switch (radius toggle) had a knob larger than its track —
+  new `.cbx.sm`.
+- Cache version `20261013a`.
+

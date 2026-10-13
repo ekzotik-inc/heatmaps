@@ -2013,6 +2013,7 @@ function renderCustomPoints() {
     l._group = L.layerGroup();
     cptRoot.addLayer(l._group);
     l._shownCount = 0;
+    l._shownRecs = [];
     if (!l.visible || !l.recs.length) return;
     const shape = l.shape || 'teardrop';
     const markerSize = Math.min(44, Math.max(20, Number.isFinite(+l.size) ? +l.size : 30));
@@ -2027,6 +2028,7 @@ function renderCustomPoints() {
     };
     const recs = l.recs.filter(r => selectedPointMatches(r));
     l._shownCount = recs.length;   // столько же показывает легенда
+    l._shownRecs = recs;           // для подписей — ровно то, что нарисовано
     // coverage radius circles (under markers)
     if (l.radiusOn) {
       const rc = l.radiusColor || l.color, rop = l.radiusOpacity == null ? 0.15 : l.radiusOpacity;
@@ -2067,6 +2069,154 @@ function renderCustomPoints() {
     });
   });
   updateLayerLegend();
+  scheduleLabels();
+}
+
+/* ── НАЗВАНИЯ ТОЧЕК НА КАРТЕ ─────────────────────────────────────────────
+   Подписи слоёв вкладки «Точки» (флаг слоя `labels`). Раскладка жадная: для
+   каждой точки пробуем четыре места вокруг маркера (справа, слева, сверху,
+   снизу) и ставим подпись в первое, где она не задевает ни уже поставленные
+   подписи, ни маркеры. Не влезла — не рисуем: при приближении место
+   появится. Пересчёт после каждого сдвига/зума; во время анимации зума
+   подписи скрыты, иначе они «плывут» мимо маркеров. */
+map.createPane('ptlabels');
+map.getPane('ptlabels').style.zIndex = 640;          // над маркерами (600), под всплывающими подсказками (650)
+map.getPane('ptlabels').style.pointerEvents = 'none';
+const lblBox = L.DomUtil.create('div', 'pt-labels', map.getPane('ptlabels'));
+const LABEL_FONT = '600 11px Manrope, system-ui, sans-serif';
+const LABEL_H = 18, LABEL_PAD = 15, LABEL_MAX = 28, LABEL_GAP = 2;
+const _lblCtx = document.createElement('canvas').getContext('2d');
+const _lblWidth = new Map();
+const MAP_OVERLAYS = '#city-bar, #layer-legend, #tag-note, #sync-badge, #mode-badge, #update-banner, #zoom-ctl, #side-reopen, .badge';
+let _lblFrame = 0;
+
+function labelText(name) {
+  const t = String(name == null ? '' : name).replace(/\s+/g, ' ').trim();
+  return t.length > LABEL_MAX ? t.slice(0, LABEL_MAX - 1) + '…' : t;
+}
+function labelWidth(text) {
+  let w = _lblWidth.get(text);
+  if (w == null) {
+    _lblCtx.font = LABEL_FONT;
+    w = Math.ceil(_lblCtx.measureText(text).width) + LABEL_PAD + 2;
+    _lblWidth.set(text, w);
+  }
+  return w;
+}
+// Шрифт Manrope догружается позже первой отрисовки — ширины надо перемерить.
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { _lblWidth.clear(); scheduleLabels(); });
+
+function scheduleLabels() {
+  if (_lblFrame) return;
+  _lblFrame = requestAnimationFrame(() => { _lblFrame = 0; renderPointLabels(); });
+}
+
+function labelLayers() {
+  return customPtLayers.filter(l => l.visible && l.labels && l._shownRecs && l._shownRecs.length);
+}
+
+function renderPointLabels() {
+  const layers = labelLayers();
+  const note = document.getElementById('pt-label-note');
+  lblBox.style.display = '';
+  if (!layers.length) {
+    lblBox.innerHTML = '';
+    if (note) note.textContent = '';
+    return;
+  }
+  const size = map.getSize();
+  const origin = map.containerPointToLayerPoint([0, 0]);
+  const CELL = 64, cols = Math.ceil(size.x / CELL) + 1;
+  const grid = new Map();
+  const cellsOf = (x, y, w, h, fn) => {
+    const c0 = Math.max(0, Math.floor(x / CELL)), c1 = Math.floor((x + w) / CELL);
+    const r0 = Math.max(0, Math.floor(y / CELL)), r1 = Math.floor((y + h) / CELL);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (fn(r * cols + c) === false) return false;
+    return true;
+  };
+  const put = b => cellsOf(b[0], b[1], b[2], b[3], k => { let a = grid.get(k); if (!a) grid.set(k, a = []); a.push(b); });
+  const free = (x, y, w, h) => cellsOf(x, y, w, h, k => {
+    const a = grid.get(k); if (!a) return true;
+    for (const b of a) if (x < b[0] + b[2] && x + w > b[0] && y < b[1] + b[3] && y + h > b[1]) return false;
+    return true;
+  });
+
+  // Плавающие панели поверх карты (фильтр городов, легенда, счётчик, зум) —
+  // тоже препятствия: подпись под панелью всё равно не прочитать.
+  const mr = map.getContainer().getBoundingClientRect();
+  document.querySelectorAll(MAP_OVERLAYS).forEach(el => {
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    put([r.left - mr.left - 4, r.top - mr.top - 4, r.width + 8, r.height + 8]);
+  });
+
+  // Маркеры всех видимых слоёв точек в кадре — препятствия для подписей.
+  const pad = 40;
+  const cands = [];
+  customPtLayers.forEach((l, li) => {
+    if (!l.visible || !l._shownRecs || !l._shownRecs.length) return;
+    const ms = Math.min(44, Math.max(20, Number.isFinite(+l.size) ? +l.size : 30));
+    const anc = shp(l.shape || 'teardrop', l.color || '#888', ms).anchor;
+    const inset = ms * .16;
+    l._shownRecs.forEach(r => {
+      const p = map.latLngToContainerPoint([r.lat, r.lon]);
+      if (p.x < -pad || p.y < -pad || p.x > size.x + pad || p.y > size.y + pad) return;
+      const box = [p.x - anc[0] + inset, p.y - anc[1] + inset, ms - 2 * inset, ms - 2 * inset];
+      put(box);
+      if (l.labels && r.name) cands.push({ l, li, r, box });
+    });
+  });
+
+  // Порядок важности: ручные точки, затем слои по порядку в списке, затем имя —
+  // стабильно, чтобы при сдвиге карты подписи не перескакивали между точками.
+  cands.sort((a, b) => (b.l.manual ? 1 : 0) - (a.l.manual ? 1 : 0) || a.li - b.li ||
+    String(a.r.name).localeCompare(String(b.r.name), 'ru'));
+
+  const html = [];
+  let shown = 0;
+  for (const c of cands) {
+    const text = labelText(c.r.name);
+    if (!text) continue;
+    const w = labelWidth(text), h = LABEL_H;
+    const [bx, by, bw, bh] = c.box;
+    const cx = bx + bw / 2, cy = by + bh / 2;
+    const spots = [
+      [bx + bw + LABEL_GAP, cy - h / 2],       // справа
+      [bx - LABEL_GAP - w, cy - h / 2],        // слева
+      [cx - w / 2, by - LABEL_GAP - h],        // сверху
+      [cx - w / 2, by + bh + LABEL_GAP],       // снизу
+    ];
+    for (const [x, y] of spots) {
+      if (x < 0 || y < 0 || x + w > size.x || y + h > size.y) continue;
+      if (!free(x - 1, y - 1, w + 2, h + 2)) continue;
+      put([x, y, w, h]);
+      const color = c.r.color || c.l.color || '#888';
+      html.push(`<span class="pt-label" style="left:${Math.round(x + origin.x)}px;top:${Math.round(y + origin.y)}px;border-left-color:${esc(color)}">${esc(text)}</span>`);
+      shown++;
+      break;
+    }
+  }
+  lblBox.innerHTML = html.join('');
+  const total = cands.length;
+  if (note) {
+    note.textContent = !total ? 'В этой области нет точек с названиями'
+      : shown < total
+        ? `Подписано ${shown.toLocaleString('ru-RU')} из ${total.toLocaleString('ru-RU')} точек в этой области — остальные не помещаются без наложения, приблизьте карту`
+        : `Подписаны все ${total.toLocaleString('ru-RU')} точек в этой области`;
+  }
+}
+map.on('zoomstart', () => { if (labelLayers().length) lblBox.style.display = 'none'; });
+map.on('moveend zoomend resize', scheduleLabels);
+
+function syncLabelAllBtn() {
+  const btn = document.getElementById('pt-labels-all');
+  if (!btn) return;
+  const vis = customPtLayers.filter(l => l.visible);
+  const on = vis.length > 0 && vis.every(l => l.labels);
+  btn.classList.toggle('on', on);
+  btn.setAttribute('aria-checked', on ? 'true' : 'false');
+  const row = document.getElementById('pt-label-row');
+  if (row) row.style.display = customPtLayers.length ? '' : 'none';
 }
 
 /* ── ТОРГОВЫЕ ТОЧКИ (ручной ввод) ────────────────────────────────────── */
@@ -2538,6 +2688,7 @@ function buildCustomPtUI() {
     exportAll.style.display = filled.length > 1 ? '' : 'none';
   }
 
+  syncLabelAllBtn();
   if (!customPtLayers.length) {
     box.innerHTML = '<div class="cpt-empty">Добавьте слой и загрузите CSV/XLSX с колонками name, lat, lon (опц.: addr, hours, code)</div>';
     return;
@@ -2571,9 +2722,15 @@ function buildCustomPtUI() {
           <div class="grp" style="flex:1">Размер <input type="range" class="cpt-size" data-cpsize="${esc(l.id)}" min="20" max="44" step="1" value="${size}" style="flex:1"/><span class="sl-val cpt-size-val">${size}px</span></div>
           <div class="grp" style="flex:1">Прозр. <input type="range" class="cpt-opacity" data-cpopacity="${esc(l.id)}" min="0.2" max="1" step="0.05" value="${opacity}" style="flex:1"/><span class="sl-val cpt-opacity-val">${Math.round(opacity * 100)}%</span></div>
         </div>
+        <div class="pt-label-block">
+          <div class="lyr-top" style="margin-top:10px;padding:0">
+            <div class="cbx sm cpt-lbl-cbx${l.labels ? ' on' : ''}" data-cplbl="${esc(l.id)}" role="switch" aria-checked="${l.labels ? 'true' : 'false'}" aria-label="Названия точек слоя «${esc(l.name)}» на карте"></div>
+            <div class="nm" style="font-size:11.5px;color:var(--mut)">Названия на карте</div>
+          </div>
+        </div>
         <div class="pt-radius-block">
           <div class="lyr-top" style="margin-top:10px;padding:0">
-            <div class="cbx green cpt-rad-cbx${l.radiusOn ? ' on' : ''}" style="width:34px;height:19px" data-cprad="${esc(l.id)}" aria-label="Радиус охвата для «${esc(l.name)}»"></div>
+            <div class="cbx sm green cpt-rad-cbx${l.radiusOn ? ' on' : ''}" data-cprad="${esc(l.id)}" aria-label="Радиус охвата для «${esc(l.name)}»"></div>
             <div class="nm" style="font-size:11.5px;color:var(--mut)">Радиус охвата</div>
           </div>
           <div class="pt-radius-ctl" data-cpradctl="${esc(l.id)}" style="${l.radiusOn ? '' : 'display:none'}">
@@ -2690,6 +2847,15 @@ function buildCustomPtUI() {
       l.opacity = +el.value; el.style.setProperty('--pct', ((l.opacity - .2) / .8) * 100 + '%');
       const v = el.parentElement.querySelector('.cpt-opacity-val'); if (v) v.textContent = Math.round(l.opacity * 100) + '%';
       renderCustomPoints(); saveState();
+    });
+  });
+
+  box.querySelectorAll('[data-cplbl]').forEach(el => {
+    el.addEventListener('click', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cplbl); if (!l) return;
+      l.labels = !l.labels;
+      el.classList.toggle('on', l.labels); el.setAttribute('aria-checked', l.labels ? 'true' : 'false');
+      syncLabelAllBtn(); scheduleLabels(); saveState();
     });
   });
 
@@ -3092,7 +3258,7 @@ function buildStateSnapshot() {
     addrSrcKeys, addrRefKeys, rtRadius, rtRadiusOp, rtExclRadius, rtExclOp, rtExclKeys,
     // recs ручных слоёв несут карточку и идентификаторы фото — байты снимков
     // живут на сервере и в состояние не попадают.
-    customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, manual: !!l.manual, visible: l.visible, shape: l.shape, size: l.size, opacity: l.opacity, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, recs: l.recs })),
+    customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, manual: !!l.manual, visible: l.visible, shape: l.shape, size: l.size, opacity: l.opacity, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, labels: !!l.labels, recs: l.recs })),
   };
 }
 
@@ -4268,6 +4434,8 @@ function stateFingerprint(snapshot) {
   ]);
   const custom = (snapshot.customPtLayers || []).map(layer => [
     layer.id, layer.name, layer.color, layer.visible, layer.shape, layer.manual,
+    layer.size, layer.opacity, !!layer.labels,
+    layer.radiusOn, layer.radiusM, layer.radiusColor, layer.radiusOpacity,
     Array.isArray(layer.recs) ? layer.recs.length : 0,
     // Правка карточки ручной точки не меняет их количество. Без этого отпечаток
     // совпал бы с прежним и сохранение на сервер было бы пропущено.
@@ -4747,6 +4915,16 @@ function wireEvents() {
   wireRetailUI();
 
   // Custom point layers — modal
+  // Одна кнопка на все слои: включает подписи всем видимым слоям, если хоть
+  // у одного они выключены, иначе выключает всем.
+  $('pt-labels-all').addEventListener('click', () => {
+    const vis = customPtLayers.filter(l => l.visible);
+    if (!vis.length) { toast('Включите хотя бы один слой точек', 'warn'); return; }
+    const on = !vis.every(l => l.labels);
+    vis.forEach(l => { l.labels = on; });
+    buildCustomPtUI(); scheduleLabels(); saveState();
+  });
+
   $('add-custom-pt-btn').addEventListener('click', () => {
     $('cpt-modal-name').value = '';
     $('cpt-modal-color').value = '#E84393';

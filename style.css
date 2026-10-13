@@ -489,6 +489,10 @@ html, body {
 .cbx.on { background: var(--acc); }
 .cbx.on::after { transform: translateX(17px); }
 .cbx.green.on { background: var(--rec); }
+/* Малый переключатель для вложенных настроек: ползунок под размер дорожки. */
+.cbx.sm { width: 34px; height: 19px; }
+.cbx.sm::after { left: 3px; top: 3px; width: 13px; height: 13px; }
+.cbx.sm.on::after { transform: translateX(15px); }
 
 /* ── FORM CONTROLS ───────────────────────────────────────────────────── */
 input[type=color] {
@@ -543,7 +547,22 @@ input[type=range].full { width: 100%; }
 .lyr-solo { user-select: none; }
 
 /* ── POINT COVERAGE RADIUS CONTROLS ──────────────────────────────────── */
-.pt-radius-block { border-top: 1px dashed var(--line2); margin-top: 8px; padding-top: 2px; }
+.pt-radius-block, .pt-label-block { border-top: 1px dashed var(--line2); margin-top: 8px; padding-top: 2px; }
+
+/* ── НАЗВАНИЯ ТОЧЕК НА КАРТЕ ─────────────────────────────────────────── */
+.pt-label-row { background: var(--card2); border: 1px solid var(--line2); border-radius: 12px; padding: 9px 11px; margin: 0 0 10px; }
+.pt-label-top { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 600; color: var(--ink); }
+.pt-label-note { font-size: 11px; color: var(--mut); line-height: 1.35; margin-top: 5px; }
+.pt-label-note:empty { display: none; }
+.pt-labels { position: absolute; left: 0; top: 0; }
+.pt-label {
+  position: absolute; white-space: nowrap; box-sizing: border-box;
+  height: 18px; padding: 0 6px 0 5px;
+  font: 600 11px/16px "Manrope", system-ui, sans-serif; color: var(--ink);
+  background: color-mix(in srgb, var(--card) 90%, transparent);
+  border: 1px solid var(--line2); border-left: 3px solid var(--acc);
+  border-radius: 6px; box-shadow: var(--shadow-card);
+}
 .pt-radius-ctl { margin-top: 8px; }
 .pt-radius-ctl .grp.full { display: flex; align-items: center; gap: 8px; }
 .pt-radius-ctl .grp.full > span:first-child { font-size: 11px; color: var(--mut); min-width: 52px; flex: 0 0 auto; }
