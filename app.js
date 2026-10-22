@@ -1861,13 +1861,12 @@ const COUNTRIES = {
   uz: { centers: UZ_CENTERS, stats: UZ_STATS, smokeM: 0.194, smokeF: 0.009, wageUnit: 'млн', wageCur: 'сум/мес (янв–сен 2025)' },
   kg: { centers: KG_CENTERS, stats: KG_STATS, smokeM: 0.328, smokeF: 0.029, wageUnit: 'тыс', wageCur: 'сом/мес (2025)' },
 };
-const MAP_COUNTRY = { comdep: 'uz', other: 'uz', main: 'uz', kg: 'kg' };
 let COUNTRY = 'uz';
 
 // Activate a map's country: set city list, centroids, stats, smoking rates,
 // wage units. Called at the start of startApp() once the map is known.
 function applyCountry(mapId) {
-  COUNTRY = MAP_COUNTRY[mapId] || 'uz';
+  COUNTRY = mapInfo(mapId).country === 'kg' ? 'kg' : 'uz';
   const co = COUNTRIES[COUNTRY];
   CITY_STATS   = co.stats;
   SMOKE_M = co.smokeM; SMOKE_F = co.smokeF; SMOKE_AVG = (SMOKE_M + SMOKE_F) / 2;
@@ -4004,7 +4003,8 @@ async function exportRetraffic() {
 }
 
 /* ── ROLE / MAP ──────────────────────────────────────────────────────── */
-// currentMap: 'comdep' | 'other'  ·  currentRole: 'admin' | 'comdep' | 'other'
+// currentMap: id карты из реестра (comdep, other, kg или созданная владельцем)
+// currentRole: 'admin' | 'comdep' | 'other' | 'kg'
 let currentMap  = sessionStorage.getItem('hm_map')  || null;
 let currentRole = null; // populated only from the server session
 let currentUser = null; // populated only from the server session
@@ -4546,6 +4546,7 @@ async function pushToServer(snapshot, isRetry = false) {
     const res = await postJson(SERVER_URL + '/state?map=' + encodeURIComponent(currentMap), snapshot, 120000);
     if (res.status === 415) { _gzipOk = false; throw new Error('gzip не поддержан сервером'); }
     if (!res.ok) {
+      _lastPushFailed = true;
       setSyncBadge('err', res.status === 413 ? 'Данные слишком большие' : 'Ошибка сохранения');
       console.warn('Server sync error:', res.status);
       if (res.status === 413) toast('Данные слишком большие для сервера', 'err');
@@ -4559,10 +4560,12 @@ async function pushToServer(snapshot, isRetry = false) {
         cacheStateSnapshot(snapshot);
         _lastServerStateFingerprint = stateFingerprint(snapshot);
       }
+      _lastPushFailed = false;
       const now = new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
       setSyncBadge('ok', 'Сохранено ' + now);
     }
   } catch (e) {
+    _lastPushFailed = true;
     setSyncBadge('err', isRetry ? 'Сервер недоступен' : 'Сервер недоступен — повтор через 6 с');
     console.warn('Server unreachable, saved locally only:', e.message);
     if (!isRetry) setTimeout(() => pushToServer(buildStateSnapshot(), true), 6000);
@@ -4976,20 +4979,339 @@ function wireEvents() {
 let pendingUpload = null;
 
 /* ── ROLE UI ─────────────────────────────────────────────────────────── */
-const MAP_LABEL = { comdep: 'Com Dep', other: 'Другая', kg: 'Кыргызстан' };
+/* ── КАРТЫ: реестр, переключение, управление ─────────────────────────────
+   Список карт отдаёт сервер (`GET /maps`) — уже отфильтрованный по правам.
+   Если сервер старый и маршрута нет, работаем с тремя исходными картами,
+   как раньше. */
+const BUILTIN_MAPS = [
+  { id: 'comdep', name: 'Com Dep', desc: 'Карта коммерческого отдела', icon: '🗂', country: 'uz', viewers: ['comdep'], base: true },
+  { id: 'other', name: 'Другая', desc: 'Карта второго отдела', icon: '🗺', country: 'uz', viewers: ['other'], base: true },
+  { id: 'kg', name: 'Кыргызстан', desc: 'Карта по городам Кыргызстана', icon: '🇰🇬', country: 'kg', viewers: ['kg'], base: true },
+];
+const MAP_ROLES = ['comdep', 'other', 'kg'];
+const MAP_ICONS = ['🗺', '🗂', '🏙', '🏪', '📦', '🚚', '⭐', '🎯', '🇺🇿', '🇰🇬'];
+let MAP_LIST = BUILTIN_MAPS.slice();
+let _mapsFromServer = false;
+
+function mapInfo(id) {
+  return MAP_LIST.find(m => m.id === id) || BUILTIN_MAPS.find(m => m.id === id)
+    || { id, name: id || '—', desc: '', icon: '🗺', country: 'uz', viewers: [], base: false };
+}
+// Чьи пользователи: роль называется по своей исходной карте.
+function roleLabel(role) { return (BUILTIN_MAPS.find(m => m.id === role) || { name: role }).name; }
+
+async function fetchMaps() {
+  try {
+    const res = await authFetch(SERVER_URL + '/maps', { signal: AbortSignal.timeout(20000) });
+    if (res.ok) {
+      const j = await res.json();
+      if (j && Array.isArray(j.maps)) { MAP_LIST = j.maps; _mapsFromServer = true; return MAP_LIST; }
+    }
+  } catch (e) { console.warn('Maps list unavailable:', e.message); }
+  _mapsFromServer = false;
+  MAP_LIST = BUILTIN_MAPS.filter(m => isAdmin() || m.id === currentRole);
+  return MAP_LIST;
+}
 
 function showRoleBadge() {
   const badge = document.getElementById('mode-badge');
   if (!badge) return;
   badge.style.display = '';
-  const mapName = MAP_LABEL[currentMap] || '';
-  if (isAdmin()) {
-    badge.textContent = '✏ Админ · ' + mapName;
-    badge.className = 'mode-badge mode-edit';
-  } else {
-    badge.textContent = '👁 ' + mapName;
-    badge.className = 'mode-badge mode-view';
+  const m = mapInfo(currentMap);
+  const many = MAP_LIST.length > 1;
+  badge.textContent = (isAdmin() ? '✏ Админ · ' : '👁 ') + m.name + (many ? ' ▾' : '');
+  badge.className = 'mode-badge ' + (isAdmin() ? 'mode-edit' : 'mode-view') + (many ? ' clickable' : '');
+  badge.title = many ? 'Переключить карту' : '';
+  badge.setAttribute('role', many ? 'button' : 'status');
+  badge.tabIndex = many ? 0 : -1;
+  const sw = document.getElementById('map-switch');
+  if (sw) {
+    document.getElementById('map-switch-icon').textContent = m.icon || '🗺';
+    document.getElementById('map-switch-name').textContent = m.name;
+    sw.classList.toggle('single', !many);
+    sw.disabled = !many;
+    sw.title = many ? 'Переключить карту' : m.name;
   }
+}
+
+// Дождаться, пока последние правки уйдут на сервер, — иначе перезагрузка при
+// переключении карты оборвала бы сохранение.
+let _lastPushFailed = false;
+async function flushSaves() {
+  if (!stateReady) return true;
+  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; doSave(); }
+  const until = Date.now() + 30000;
+  while ((_pushing || _pushPending) && Date.now() < until) await new Promise(r => setTimeout(r, 200));
+  return !(_pushing || _pushPending) && !(isAdmin() && _lastPushFailed);
+}
+
+async function switchMap(id) {
+  closeMapMenu();
+  if (!id || id === currentMap) return;
+  const target = mapInfo(id);
+  toast(`Открываем «${target.name}»…`, 'info', 4000);
+  const saved = await flushSaves();
+  if (!saved && !confirm('Последние правки этой карты не дошли до сервера. Всё равно переключиться?')) return;
+  sessionStorage.setItem('hm_map', id);
+  location.reload();   // чистый старт: у каждой карты свои слои, города и кэш
+}
+
+function closeMapMenu() {
+  const menu = document.getElementById('map-menu');
+  if (menu) menu.hidden = true;
+  document.querySelectorAll('[aria-controls="map-menu"]').forEach(el => el.setAttribute('aria-expanded', 'false'));
+}
+function openMapMenu(anchor) {
+  let menu = document.getElementById('map-menu');
+  if (!menu) {
+    menu = document.createElement('div');
+    menu.id = 'map-menu';
+    menu.setAttribute('role', 'menu');
+    document.body.appendChild(menu);
+    document.addEventListener('pointerdown', e => {
+      if (!menu.hidden && !menu.contains(e.target) && !e.target.closest('[aria-controls="map-menu"]')) closeMapMenu();
+    });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !menu.hidden) closeMapMenu(); });
+  }
+  menu.innerHTML = `<div class="map-menu-head">Карты</div>` + MAP_LIST.map(m => `
+    <button type="button" class="map-menu-item${m.id === currentMap ? ' on' : ''}" role="menuitem" data-mapgo="${esc(m.id)}">
+      <span class="mm-ic">${esc(m.icon || '🗺')}</span>
+      <span class="mm-body"><b>${esc(m.name)}</b>${m.desc ? `<small>${esc(m.desc)}</small>` : ''}</span>
+      ${m.id === currentMap ? '<span class="mm-cur">открыта</span>' : ''}
+    </button>`).join('') +
+    (isAdmin() ? `<button type="button" class="map-menu-new" data-mapnew="1">＋ Новая карта · управление</button>` : '');
+  menu.querySelectorAll('[data-mapgo]').forEach(b => b.addEventListener('click', () => switchMap(b.dataset.mapgo)));
+  const nb = menu.querySelector('[data-mapnew]');
+  if (nb) nb.addEventListener('click', () => { closeMapMenu(); openMapsAdmin(true); });
+  menu.hidden = false;
+  const r = anchor.getBoundingClientRect();
+  const w = Math.min(300, window.innerWidth - 24);
+  menu.style.width = w + 'px';
+  const left = Math.max(12, Math.min(r.left, window.innerWidth - w - 12));
+  menu.style.left = left + 'px';
+  const h = menu.offsetHeight;
+  const below = r.bottom + 8;
+  menu.style.top = (below + h < window.innerHeight - 8 ? below : Math.max(8, r.top - h - 8)) + 'px';
+  anchor.setAttribute('aria-expanded', 'true');
+  const cur = menu.querySelector('.map-menu-item.on') || menu.querySelector('.map-menu-item');
+  if (cur) cur.focus();
+}
+async function toggleMapMenu(anchor) {
+  const menu = document.getElementById('map-menu');
+  if (menu && !menu.hidden) { closeMapMenu(); return; }
+  await fetchMaps();          // свежий список: карту могли только что создать
+  showRoleBadge();
+  if (MAP_LIST.length > 1 || isAdmin()) openMapMenu(anchor);
+}
+function wireMapSwitch() {
+  const sw = document.getElementById('map-switch');
+  if (sw) sw.addEventListener('click', () => toggleMapMenu(sw));
+  const badge = document.getElementById('mode-badge');
+  if (badge) {
+    badge.setAttribute('aria-controls', 'map-menu');
+    badge.addEventListener('click', () => { if (badge.classList.contains('clickable')) toggleMapMenu(badge); });
+    badge.addEventListener('keydown', e => {
+      if ((e.key === 'Enter' || e.key === ' ') && badge.classList.contains('clickable')) { e.preventDefault(); toggleMapMenu(badge); }
+    });
+  }
+}
+
+/* Управление картами — вкладка «Данные» (только владелец). */
+let _mapEditId = null;
+function openMapsAdmin(focusForm) {
+  const tab = document.querySelector('.side-tab[data-tab="tab-data"]');
+  if (tab) tab.click();
+  const reopen = document.getElementById('side-reopen');
+  if (reopen && document.getElementById('app').classList.contains('side-hidden')) reopen.click();
+  renderMapsAdmin();
+  if (focusForm) {
+    resetMapForm();
+    const g = document.getElementById('map-form-group');
+    if (g) { g.open = true; g.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+    setTimeout(() => { const n = document.getElementById('mf-name'); if (n) n.focus(); }, 250);
+  }
+}
+
+function fmtBytes(b) {
+  if (!b) return '0 КБ';
+  return b >= 1048576 ? (b / 1048576).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + ' МБ'
+    : Math.max(1, Math.round(b / 1024)) + ' КБ';
+}
+
+async function renderMapsAdmin() {
+  const box = document.getElementById('maps-admin-list');
+  if (!box || !isAdmin()) return;
+  box.innerHTML = '<div class="maps-empty">Загружаем список карт…</div>';
+  await fetchMaps();
+  showRoleBadge();
+  if (!_mapsFromServer) {
+    box.innerHTML = '<div class="maps-empty">Сервер ещё старой версии — создание карт заработает после передеплоя на Render.</div>';
+    syncMapForm();
+    return;
+  }
+  box.innerHTML = MAP_LIST.map(m => {
+    const st = m.stats || {};
+    const viewers = (m.viewers || []).filter(r => MAP_ROLES.includes(r)).map(roleLabel);
+    const upd = st.updatedAt ? new Date(st.updatedAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+    const meta = [
+      m.country === 'kg' ? 'Кыргызстан' : 'Узбекистан',
+      'видят: ' + (viewers.length ? viewers.join(', ') : 'только владелец'),
+      st.bytes ? fmtBytes(st.bytes) + (upd ? ' · ' + upd : '') : 'пустая',
+      st.photos ? `фото: ${st.photos} (${fmtBytes(st.photoBytes)})` : '',
+    ].filter(Boolean).join(' · ');
+    const cur = m.id === currentMap;
+    return `<div class="map-row${cur ? ' cur' : ''}">
+      <span class="map-row-ic">${esc(m.icon || '🗺')}</span>
+      <div class="map-row-main">
+        <b>${esc(m.name)}${cur ? '<span class="map-row-tag">открыта</span>' : ''}${m.base ? '<span class="map-row-tag base">исходная</span>' : ''}</b>
+        <small>${esc(meta)}</small>
+      </div>
+      <div class="map-row-acts">
+        ${cur ? '' : `<button type="button" class="lyr-act" data-mapopen="${esc(m.id)}" title="Открыть карту">Открыть</button>`}
+        <button type="button" class="lyr-act" data-mapedit="${esc(m.id)}" title="Название, значок, доступ">✎</button>
+        ${m.base ? '' : `<button type="button" class="lyr-act lyr-del" data-mapdel="${esc(m.id)}" title="Удалить карту">&times;</button>`}
+      </div>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('[data-mapopen]').forEach(b => b.addEventListener('click', () => switchMap(b.dataset.mapopen)));
+  box.querySelectorAll('[data-mapedit]').forEach(b => b.addEventListener('click', () => editMap(b.dataset.mapedit)));
+  box.querySelectorAll('[data-mapdel]').forEach(b => b.addEventListener('click', () => deleteMap(b.dataset.mapdel)));
+  syncMapForm();
+}
+
+// Форма одна на создание и правку: при правке поле «Начать с» скрыто, а у
+// исходных карт нельзя менять страну.
+function syncMapForm() {
+  const copy = document.getElementById('mf-copy');
+  if (copy) {
+    const keep = copy.value;
+    copy.innerHTML = '<option value="">Пустая карта</option>' + MAP_LIST.map(m =>
+      `<option value="${esc(m.id)}">Копия «${esc(m.name)}» — все слои и точки</option>`).join('');
+    copy.value = MAP_LIST.some(m => m.id === keep) ? keep : '';
+  }
+  const roles = document.getElementById('mf-roles');
+  if (roles && !roles.dataset.built) {
+    roles.dataset.built = '1';
+    roles.innerHTML = MAP_ROLES.map(r => `
+      <label class="mf-role"><input type="checkbox" value="${r}"/> <span>Пользователи ${esc(roleLabel(r))}</span></label>`).join('');
+  }
+  const icons = document.getElementById('mf-icons');
+  if (icons && !icons.dataset.built) {
+    icons.dataset.built = '1';
+    icons.innerHTML = MAP_ICONS.map(ic => `<button type="button" class="mf-icon" data-ic="${ic}" aria-label="Значок ${ic}">${ic}</button>`).join('');
+    icons.querySelectorAll('[data-ic]').forEach(b => b.addEventListener('click', () => setMapFormIcon(b.dataset.ic)));
+  }
+}
+function setMapFormIcon(ic) {
+  const box = document.getElementById('mf-icons');
+  if (!box) return;
+  box.dataset.value = ic;
+  box.querySelectorAll('[data-ic]').forEach(b => b.classList.toggle('on', b.dataset.ic === ic));
+}
+function resetMapForm() {
+  _mapEditId = null;
+  syncMapForm();
+  const $ = id => document.getElementById(id);
+  $('mf-name').value = ''; $('mf-desc').value = '';
+  $('mf-country').value = 'uz'; $('mf-country').disabled = false;
+  $('mf-copy').value = ''; $('mf-copy-row').style.display = '';
+  document.querySelectorAll('#mf-roles input').forEach(i => { i.checked = false; });
+  setMapFormIcon('🗺');
+  $('mf-title').textContent = '＋ Новая карта';
+  $('mf-submit').textContent = 'Создать карту';
+  $('mf-cancel').style.display = 'none';
+}
+function editMap(id) {
+  const m = mapInfo(id);
+  syncMapForm();
+  _mapEditId = id;
+  const $ = id2 => document.getElementById(id2);
+  $('mf-name').value = m.name; $('mf-desc').value = m.desc || '';
+  $('mf-country').value = m.country === 'kg' ? 'kg' : 'uz';
+  $('mf-country').disabled = !!m.base;
+  $('mf-copy-row').style.display = 'none';
+  document.querySelectorAll('#mf-roles input').forEach(i => {
+    i.checked = (m.viewers || []).includes(i.value);
+    // Роль исходной карты всегда видит свою карту.
+    i.disabled = m.base && i.value === m.id;
+  });
+  setMapFormIcon(m.icon || '🗺');
+  $('mf-title').textContent = '✎ ' + m.name;
+  $('mf-submit').textContent = 'Сохранить изменения';
+  $('mf-cancel').style.display = '';
+  const g = $('map-form-group');
+  if (g) { g.open = true; g.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+}
+
+async function mapsPost(path, body, timeoutMs = 60000) {
+  if (!SERVER_KEY) throw new Error('Нет ключа записи — войдите заново под владельцем');
+  const res = await postJson(SERVER_URL + path, body, timeoutMs);
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || ('Ошибка сервера: HTTP ' + res.status));
+  return j;
+}
+
+async function submitMapForm() {
+  const $ = id => document.getElementById(id);
+  const name = $('mf-name').value.trim();
+  if (!name) { toast('Укажите название карты', 'warn'); $('mf-name').focus(); return; }
+  const body = {
+    name, desc: $('mf-desc').value.trim(),
+    icon: $('mf-icons').dataset.value || '🗺',
+    country: $('mf-country').value,
+    viewers: Array.from(document.querySelectorAll('#mf-roles input:checked')).map(i => i.value),
+  };
+  const btn = $('mf-submit'), old = btn.textContent;
+  btn.disabled = true;
+  try {
+    if (_mapEditId) {
+      btn.textContent = 'Сохраняем…';
+      await mapsPost('/maps/update', { id: _mapEditId, ...body });
+      toast(`Карта «${name}» обновлена`, 'ok');
+      resetMapForm();
+      await renderMapsAdmin();
+    } else {
+      body.copyFrom = $('mf-copy').value || '';
+      btn.textContent = body.copyFrom ? 'Копируем слои…' : 'Создаём…';
+      const j = await mapsPost('/maps', body, 120000);
+      resetMapForm();
+      $('map-form-group').open = false;
+      await renderMapsAdmin();
+      toast(`Карта «${j.map.name}» создана`, 'ok', 4000);
+      if (confirm(`Карта «${j.map.name}» создана. Открыть её сейчас?`)) switchMap(j.map.id);
+    }
+  } catch (e) {
+    toast(e.message, 'err', 5000);
+  } finally {
+    btn.disabled = false;
+    if (btn.textContent.endsWith('…')) btn.textContent = old;
+  }
+}
+
+async function deleteMap(id) {
+  const m = mapInfo(id);
+  if (id === currentMap) { toast('Эта карта сейчас открыта — сначала переключитесь на другую', 'warn', 4000); return; }
+  const typed = prompt(`Удалить карту «${m.name}» вместе со всеми слоями, точками и фото? Это необратимо.\n\nДля подтверждения введите название карты:`);
+  if (typed == null) return;
+  try {
+    await mapsPost('/maps/delete', { id, confirm: typed.trim() });
+    toast(`Карта «${m.name}» удалена`, 'ok');
+    if (_mapEditId === id) resetMapForm();
+    await renderMapsAdmin();
+  } catch (e) {
+    toast(e.message, 'err', 5000);
+  }
+}
+
+function wireMapsAdmin() {
+  const $ = id => document.getElementById(id);
+  if (!$('maps-admin-list')) return;
+  $('mf-submit').addEventListener('click', submitMapForm);
+  $('mf-cancel').addEventListener('click', resetMapForm);
+  $('maps-refresh').addEventListener('click', renderMapsAdmin);
+  $('mf-name').addEventListener('keydown', e => { if (e.key === 'Enter') submitMapForm(); });
+  resetMapForm();
+  if (isAdmin()) renderMapsAdmin();
 }
 
 // Viewers may freely tune the view (colours, layers, cities) but cannot
@@ -5263,6 +5585,7 @@ async function startApp() {
   _appStarted = true;
   applyRoleUI();
   showRoleBadge();
+  wireMapSwitch();
   applyCountry(currentMap);
   const distBtn = document.getElementById('districts-toggle');
   if (distBtn) distBtn.style.display = COUNTRY === 'uz' ? '' : 'none';
@@ -5281,6 +5604,7 @@ async function startApp() {
     renderCurrentState();
   }
   wireEvents();
+  wireMapsAdmin();
   stateReady = true;
   setTimeout(() => { if (map && map.invalidateSize) map.invalidateSize(); }, 60);
 
@@ -5345,15 +5669,29 @@ async function startApp() {
     stepLogin.style.display = '';
     stepMap.style.display = 'none';
   };
-  const mapCards = () => Array.from(document.querySelectorAll('#auth-step-map .map-card'));
-  const showMapStep = () => {
+  // Карточки выбора строятся из реестра — там только карты, доступные роли.
+  const renderMapCards = () => {
+    const box = document.getElementById('map-cards');
+    if (!box) return;
+    box.innerHTML = MAP_LIST.map(m => `
+      <button class="mode-card map-card" data-map="${esc(m.id)}">
+        <div class="mode-icon">${esc(m.icon || '🗺')}</div>
+        <div class="mode-body">
+          <div class="mode-name">${esc(m.name)}</div>
+          <div class="mode-desc">${esc(m.desc || (m.country === 'kg' ? 'Кыргызстан' : 'Узбекистан'))}</div>
+        </div>
+      </button>`).join('') || '<div class="mode-desc">Для этого логина нет доступных карт — напишите владельцу.</div>';
+    box.querySelectorAll('.map-card').forEach(card => card.addEventListener('click', () => enterMap(card.dataset.map)));
+  };
+  const showMapStep = async () => {
     stepLogin.style.display = 'none';
     stepMap.style.display = '';
-    mapCards().forEach(card => {
-      const allowed = isAdmin() || currentRole === card.dataset.map;
-      card.classList.toggle('locked', !allowed);
-      card.disabled = !allowed;
-    });
+    const box = document.getElementById('map-cards');
+    if (box) box.innerHTML = '<div class="mode-desc">Загружаем список карт…</div>';
+    await fetchMaps();
+    // Единственная доступная карта — открываем сразу, выбирать нечего.
+    if (!isAdmin() && MAP_LIST.length === 1) { enterMap(MAP_LIST[0].id); return; }
+    renderMapCards();
   };
   const enterMap = m => {
     currentMap = m;
@@ -5379,7 +5717,8 @@ async function startApp() {
       currentUser = me.username;
       currentRole = me.role;
       currentMap = sessionStorage.getItem('hm_map') || null;
-      if (!isAdmin() && currentMap !== currentRole) currentMap = null;
+      await fetchMaps();
+      if (currentMap && !MAP_LIST.some(m => m.id === currentMap)) currentMap = null;
       sessionStorage.setItem('hm_role', currentRole);
       if (currentMap) { unlock(); startApp(); } else showMapStep();
     } catch (e) {
@@ -5440,9 +5779,6 @@ async function startApp() {
     document.getElementById(id).addEventListener('input', function () {
       this.classList.remove('err'); errEl.classList.remove('show');
     });
-  });
-  mapCards().forEach(card => {
-    card.addEventListener('click', () => { if (!card.disabled) enterMap(card.dataset.map); });
   });
   logoutBtn.addEventListener('click', async () => {
     try { await authFetch(SERVER_URL + '/auth/logout', { method: 'POST' }); } catch (_) {}

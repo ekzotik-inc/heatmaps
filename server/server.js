@@ -333,16 +333,98 @@ async function initDb() {
   console.log('PostgreSQL connected — state will persist across restarts');
 }
 
-const MAPS = ['comdep', 'other', 'kg'];
+// ---------------------------------------------------------------------------
+// Реестр карт. Три исходные карты зашиты (их роли пользователей заданы в
+// AUTH_USERS_JSON); новые владелец создаёт из админки, и они хранятся в
+// app_state под ключом `maps`. Доступ к карте: владелец — ко всем; роль —
+// к карте со своим именем и к картам, где она перечислена в `viewers`.
+// ---------------------------------------------------------------------------
+const BASE_MAPS = [
+  { id: 'comdep', name: 'Com Dep', desc: 'Карта коммерческого отдела', icon: '🗂', country: 'uz', viewers: ['comdep'] },
+  { id: 'other', name: 'Другая', desc: 'Карта второго отдела', icon: '🗺', country: 'uz', viewers: ['other'] },
+  { id: 'kg', name: 'Кыргызстан', desc: 'Карта по городам Кыргызстана', icon: '🇰🇬', country: 'kg', viewers: ['kg'] },
+];
+const BASE_IDS = new Set(BASE_MAPS.map(m => m.id));
+const VIEWER_ROLES = ['comdep', 'other', 'kg'];
+const MAP_COUNTRIES = new Set(['uz', 'kg']);
+const MAP_REGISTRY_KEY = 'maps';
+const MAX_CUSTOM_MAPS = 40;
+let mapRegistry = [];          // сохранённые записи: правки исходных карт + новые карты
+let registryChain = Promise.resolve();
+
+function cleanText(v, max) {
+  return String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+function cleanIcon(v, fallback) {
+  const t = cleanText(v, 16);
+  return t && Array.from(t).length <= 4 ? t : fallback;
+}
+function cleanViewers(v) {
+  return Array.isArray(v) ? [...new Set(v.filter(r => VIEWER_ROLES.includes(r)))] : [];
+}
+function allMaps() {
+  const byId = new Map(mapRegistry.map(m => [m.id, m]));
+  const base = BASE_MAPS.map(b => {
+    const e = byId.get(b.id) || {};
+    // Роль исходной карты всегда видит свою карту — убрать её нельзя.
+    const viewers = [...new Set([b.id, ...cleanViewers(e.viewers || b.viewers)])];
+    return { ...b, name: e.name || b.name, desc: e.desc != null ? e.desc : b.desc, icon: e.icon || b.icon, viewers, base: true };
+  });
+  const custom = mapRegistry.filter(m => !BASE_IDS.has(m.id)).map(m => ({ ...m, base: false }));
+  return base.concat(custom);
+}
+function findMap(id) {
+  return allMaps().find(m => m.id === id) || null;
+}
+function canAccessMap(user, map) {
+  if (!user || !map) return false;
+  return user.role === 'admin' || user.role === map.id || (map.viewers || []).includes(user.role);
+}
 function mapKey(req) {
   const m = (req.query.map || '').toString();
-  return MAPS.includes(m) ? m : null;
+  return findMap(m) ? m : null;
+}
+async function loadMapRegistry() {
+  const v = await readState(MAP_REGISTRY_KEY);
+  mapRegistry = Array.isArray(v && v.maps) ? v.maps.filter(m => m && typeof m.id === 'string') : [];
+  stateReadCache.delete(MAP_REGISTRY_KEY);   // дальше источник правды — переменная
+}
+// Записи реестра идут строго по очереди: два быстрых «создать» не должны
+// перетереть друг друга.
+function updateRegistry(fn) {
+  const run = registryChain.then(async () => {
+    const next = mapRegistry.map(m => ({ ...m }));
+    const result = await fn(next);
+    await writeState(MAP_REGISTRY_KEY, { maps: next, _savedAt: new Date().toISOString() });
+    mapRegistry = next;
+    stateReadCache.delete(MAP_REGISTRY_KEY);
+    return result;
+  });
+  registryChain = run.catch(() => {});
+  return run;
 }
 function stateFileFor(key) {
   return key === 'main' ? STATE_FILE : path.join(__dirname, `state.${key}.json`);
 }
 
+// Разобранные карты держим в памяти только пока их читают. Без этой чистки
+// каждая когда-либо открытая карта оставалась в памяти до перезапуска
+// (~12 МБ на карту размером с Com Dep), и с ростом числа карт сервер упёрся
+// бы в 512 МБ.
+function pruneStateCache() {
+  const now = Date.now();
+  for (const [k, v] of stateReadCache) {
+    const ttl = k === 'dataset' ? DATA_CACHE_TTL_MS : STATE_CACHE_TTL_MS;
+    if (now - v.at >= ttl) stateReadCache.delete(k);
+  }
+  for (const [k, v] of layerChunkCache) {
+    if (now - v.at >= CHUNK_CACHE_TTL_MS) layerChunkCache.delete(k);
+  }
+}
+setInterval(pruneStateCache, 60_000).unref();
+
 async function readState(key) {
+  pruneStateCache();
   const hit = stateReadCache.get(key);
   const ttl = key === 'dataset' ? DATA_CACHE_TTL_MS : STATE_CACHE_TTL_MS;
   if (hit && Date.now() - hit.at < ttl) return hit.value;
@@ -426,7 +508,7 @@ function requireAdmin(req, res, next) {
 function requireMapAccess(req, res, next) {
   const map = mapKey(req);
   if (!map) return res.status(400).json({ error: 'Invalid map' });
-  if (req.user.role !== 'admin' && req.user.role !== map) return res.status(403).json({ error: 'Map access denied' });
+  if (!canAccessMap(req.user, findMap(map))) return res.status(403).json({ error: 'Map access denied' });
   req.map = map;
   next();
 }
@@ -669,13 +751,191 @@ app.get('/photo/:id', requireSession, async (req, res) => {
   if (!/^[0-9a-f]{32}$/.test(id)) return res.status(400).json({ error: 'Bad photo id' });
   const photo = await readPhoto(id);
   if (!photo) { noStore(res); return res.status(404).json({ error: 'Photo not found' }); }
-  if (req.user.role !== 'admin' && req.user.role !== photo.map) {
+  if (!canAccessMap(req.user, findMap(photo.map))) {
     noStore(res);
     return res.status(403).json({ error: 'Photo access denied' });
   }
   res.setHeader('Content-Type', photo.mime);
   res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
   res.send(photo.buf);
+});
+
+// ---------------------------------------------------------------------------
+// Карты: список, создание, правка, удаление (последние три — только владелец).
+// ---------------------------------------------------------------------------
+async function mapStorageStats(ids) {
+  const out = {};
+  ids.forEach(id => { out[id] = { bytes: 0, updatedAt: '', photos: 0, photoBytes: 0 }; });
+  try {
+    if (db) {
+      const r = await db.query('SELECT key, updated_at, length(json) AS bytes FROM app_state WHERE key = ANY($1::text[])', [ids]);
+      r.rows.forEach(row => { if (out[row.key]) { out[row.key].bytes = Number(row.bytes) || 0; out[row.key].updatedAt = row.updated_at || ''; } });
+      const p = await db.query('SELECT map, count(*)::int AS n, coalesce(sum(length(bytes)), 0)::bigint AS b FROM photos GROUP BY map');
+      p.rows.forEach(row => { if (out[row.map]) { out[row.map].photos = row.n; out[row.map].photoBytes = Number(row.b) || 0; } });
+    } else {
+      ids.forEach(id => {
+        try {
+          const st = fs.statSync(stateFileFor(id));
+          out[id].bytes = st.size; out[id].updatedAt = st.mtime.toISOString();
+        } catch (_) {}
+      });
+    }
+  } catch (e) {
+    console.error('Map stats error:', e.message);
+  }
+  return out;
+}
+
+function publicMap(m) {
+  return { id: m.id, name: m.name, desc: m.desc || '', icon: m.icon || '🗺', country: m.country || 'uz',
+    viewers: m.viewers || [], base: !!m.base, createdAt: m.createdAt || '' };
+}
+
+app.get('/maps', requireSession, async (req, res) => {
+  noStore(res);
+  const maps = allMaps().filter(m => canAccessMap(req.user, m)).map(publicMap);
+  if (req.user.role === 'admin') {
+    const stats = await mapStorageStats(maps.map(m => m.id));
+    maps.forEach(m => { m.stats = stats[m.id]; });
+  }
+  res.json({ maps, roles: VIEWER_ROLES });
+});
+
+function newMapId() {
+  return 'm' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
+}
+
+// Копия карты: состояние целиком; фото ручных точек дублируются под новую
+// карту (идентификатор снимка зависит от карты, а доступ проверяется по ней).
+async function copyMapState(fromId, toId) {
+  const src = await readState(fromId);
+  if (!src) return false;
+  const next = JSON.parse(JSON.stringify(src));
+  const remap = new Map();
+  for (const layer of next.customPtLayers || []) {
+    for (const rec of (layer && layer.recs) || []) {
+      for (const ph of (rec && Array.isArray(rec.photos) ? rec.photos : [])) {
+        if (!ph || typeof ph.id !== 'string') continue;
+        if (!remap.has(ph.id)) {
+          const photo = await readPhoto(ph.id);
+          if (photo) {
+            const nid = photoId(toId, photo.buf);
+            await writePhoto(nid, toId, photo.mime, photo.buf);
+            remap.set(ph.id, nid);
+          } else {
+            remap.set(ph.id, ph.id);
+          }
+        }
+        ph.id = remap.get(ph.id);
+      }
+    }
+  }
+  next._savedAt = new Date().toISOString();
+  await writeState(toId, next);
+  return true;
+}
+
+app.post('/maps', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const b = req.body || {};
+  const name = cleanText(b.name, 60);
+  if (!name) return res.status(400).json({ error: 'Укажите название карты' });
+  const country = MAP_COUNTRIES.has(b.country) ? b.country : 'uz';
+  const copyFrom = b.copyFrom ? String(b.copyFrom) : '';
+  if (copyFrom && !findMap(copyFrom)) return res.status(400).json({ error: 'Карта-образец не найдена' });
+  try {
+    const created = await updateRegistry(async list => {
+      const custom = list.filter(m => !BASE_IDS.has(m.id));
+      if (custom.length >= MAX_CUSTOM_MAPS) {
+        const e = new Error('Достигнут предел: ' + MAX_CUSTOM_MAPS + ' новых карт'); e.status = 409; throw e;
+      }
+      if (allMaps().some(m => m.name.toLowerCase() === name.toLowerCase())) {
+        const e = new Error('Карта с таким названием уже есть'); e.status = 409; throw e;
+      }
+      const m = {
+        id: newMapId(), name, desc: cleanText(b.desc, 120), icon: cleanIcon(b.icon, '🗺'),
+        country, viewers: cleanViewers(b.viewers), createdAt: new Date().toISOString(),
+      };
+      if (copyFrom) await copyMapState(copyFrom, m.id);
+      list.push(m);
+      return m;
+    });
+    res.json({ ok: true, map: publicMap({ ...created, base: false }) });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    console.error('Map create error:', e.message);
+    res.status(500).json({ error: 'Не удалось создать карту' });
+  }
+});
+
+app.post('/maps/update', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const b = req.body || {};
+  const id = String(b.id || '');
+  const current = findMap(id);
+  if (!current) return res.status(404).json({ error: 'Карта не найдена' });
+  try {
+    const updated = await updateRegistry(async list => {
+      let entry = list.find(m => m.id === id);
+      if (!entry) { entry = { id }; list.push(entry); }   // первая правка исходной карты
+      if (b.name != null) {
+        const name = cleanText(b.name, 60);
+        if (!name) { const e = new Error('Название не может быть пустым'); e.status = 400; throw e; }
+        if (allMaps().some(m => m.id !== id && m.name.toLowerCase() === name.toLowerCase())) {
+          const e = new Error('Карта с таким названием уже есть'); e.status = 409; throw e;
+        }
+        entry.name = name;
+      }
+      if (b.desc != null) entry.desc = cleanText(b.desc, 120);
+      if (b.icon != null) entry.icon = cleanIcon(b.icon, current.icon || '🗺');
+      if (b.viewers != null) entry.viewers = cleanViewers(b.viewers);
+      // Страну исходных карт не трогаем: на ней держатся их города и справочники.
+      if (b.country != null && !BASE_IDS.has(id) && MAP_COUNTRIES.has(b.country)) entry.country = b.country;
+      return id;
+    });
+    res.json({ ok: true, map: publicMap(findMap(updated)) });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    console.error('Map update error:', e.message);
+    res.status(500).json({ error: 'Не удалось сохранить карту' });
+  }
+});
+
+app.post('/maps/delete', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const b = req.body || {};
+  const id = String(b.id || '');
+  const m = findMap(id);
+  if (!m) return res.status(404).json({ error: 'Карта не найдена' });
+  if (m.base) return res.status(400).json({ error: 'Исходные карты удалять нельзя' });
+  // Подтверждение названием — защита от удаления не той карты.
+  if (cleanText(b.confirm, 60).toLowerCase() !== m.name.toLowerCase()) {
+    return res.status(400).json({ error: 'Название для подтверждения не совпало' });
+  }
+  try {
+    await updateRegistry(async list => {
+      if (db) {
+        await db.query('DELETE FROM app_state WHERE key = $1', [id]);
+        await db.query('DELETE FROM photos WHERE map = $1', [id]);
+      } else {
+        try { fs.unlinkSync(stateFileFor(id)); } catch (_) {}
+        try {
+          for (const f of fs.readdirSync(PHOTO_DIR)) {
+            const fp = path.join(PHOTO_DIR, f);
+            try { if (JSON.parse(fs.readFileSync(fp, 'utf8')).map === id) fs.unlinkSync(fp); } catch (_) {}
+          }
+        } catch (_) {}
+      }
+      stateReadCache.delete(id);
+      clearLayerChunkCache(id);
+      const i = list.findIndex(x => x.id === id);
+      if (i >= 0) list.splice(i, 1);
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Map delete error:', e.message);
+    res.status(500).json({ error: 'Не удалось удалить карту' });
+  }
 });
 
 // Revision probe. Open clients poll this to learn that the owner published a
@@ -822,6 +1082,7 @@ initDb()
     console.error('Failed to connect to PostgreSQL, falling back to file storage:', e.message);
     db = null;
   })
+  .then(() => loadMapRegistry().catch(e => console.error('Map registry load error:', e.message)))
   .then(() => {
     server.listen(PORT, () => {
       console.log(`\nHeat Map state server running on port ${PORT}`);

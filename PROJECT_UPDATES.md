@@ -472,3 +472,32 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   new `.cbx.sm`.
 - Cache version `20261013a`.
 
+## 2026-10-22 — Maps are created and switched from the admin panel
+
+- **Registry instead of hardcoded maps.** The server keeps a map registry in
+  `app_state` (`maps`). Three base maps stay built in; new maps get an id
+  `m<time><rand>`, name, description, icon, country (UZ/KG) and `viewers` —
+  the existing user roles (Com Dep / Другая / KG) that may open the map. The
+  owner sees every map. Access checks on state, layers, chunks and photos go
+  through one predicate, `canAccessMap`.
+- **Routes:** `GET /maps`, `POST /maps` (optionally a full copy of another
+  map, manual-point photos duplicated under the new map), `POST /maps/update`,
+  `POST /maps/delete` (custom maps only, confirmed by typing the name; deletes
+  state and photos). Registry writes are serialized.
+- **Admin UI («Данные» → «Карты»):** list with country, who sees the map,
+  size, last save and photo count; create/edit form; open; delete.
+- **Switching:** the map name under the app title and the badge in the map
+  corner open a menu of all available maps. Switching waits for pending saves
+  to reach the server, then reloads into the chosen map. The login map picker
+  is built from the registry; a user with one map enters it directly.
+- **Memory:** parsed map states are now evicted 30 s after last use. Before,
+  every map read since restart stayed in RAM (~12 MB per Com Dep–sized map),
+  which would have capped the server at roughly 10–15 maps.
+- Compatible with the old server: without `/maps` the client falls back to the
+  three base maps.
+- Verified: 19 API checks against a local server (access by role, copy,
+  duplicate names, delete guards, write key, registry survives restart) and a
+  browser scenario (create with copy → opens, menu shows 4 maps, switch to KG
+  sets country, Com Dep user sees only its maps and no admin controls, delete).
+- Cache version `20261022a`. **Requires a Render redeploy.**
+
