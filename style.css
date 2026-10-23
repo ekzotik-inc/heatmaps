@@ -33,7 +33,7 @@
 html, body {
   margin: 0; height: 100%;
   background: var(--bg); color: var(--ink);
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: "Inter", sans-serif;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
@@ -702,7 +702,7 @@ input[type=range].full { width: 100%; }
 .pt-label {
   position: absolute; white-space: nowrap; box-sizing: border-box;
   height: 18px; padding: 0 6px 0 5px;
-  font: 600 11px/16px "Inter", system-ui, sans-serif; color: var(--ink);
+  font: 600 11px/16px "Inter", sans-serif; color: var(--ink);
   background: color-mix(in srgb, var(--card) 90%, transparent);
   border: 1px solid var(--line2); border-left: 3px solid var(--acc);
   border-radius: 6px; box-shadow: var(--shadow-card);
@@ -2221,7 +2221,8 @@ body.viewer .admin-only { display: none !important; }
 #tab-analysis .addr-step { padding: 11px 12px; border-radius: 14px; margin-bottom: 9px; border-color: var(--line2); }
 #tab-analysis .addr-step-label { text-transform: none; letter-spacing: 0; font: 700 12.5px "Inter"; color: var(--ink); margin-bottom: 8px; }
 #tab-analysis .addr-num { width: 20px; height: 20px; font-size: 10.5px; background: var(--ink); }
-.pick-list { display: grid; gap: 4px; }
+.pick-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+#tab-analysis .addr-step { min-width: 0; overflow: hidden; }
 .pick-row {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; cursor: pointer; text-align: left;
   border: 1px solid var(--line2); border-radius: 10px; background: var(--card); font-family: "Inter";
@@ -2346,3 +2347,62 @@ html, body { font-feature-settings: 'cv11', 'ss01'; -webkit-font-smoothing: anti
 }
 .mk-glyph:hover { color: var(--ink); border-color: var(--acc); }
 .mk-glyph.on { color: #fff; background: var(--acc); border-color: var(--acc); }
+
+/* ── ШРИФТ — ТОЛЬКО INTER (правило проекта, см. CLAUDE.md) ─────────────────
+   Любой текст интерфейса — Inter (github.com/rsms/inter). Правило сильнее
+   любых частных объявлений: формы, кнопки, подсказки Leaflet и MapLibre не
+   берут системный шрифт по умолчанию. */
+*, *::before, *::after,
+button, input, select, textarea, optgroup, option, kbd, code, pre,
+.leaflet-container, .leaflet-popup-content, .leaflet-tooltip, .maplibregl-map {
+  font-family: "Inter", sans-serif !important;
+}
+
+/* Адреска: длинные названия не растягивают карточку, пустая галочка видна. */
+.pick-row { min-width: 0; max-width: 100%; }
+.pick-chk { border-color: var(--dim); }
+.pick-row:hover .pick-chk { border-color: var(--acc); }
+
+/* ── «КАПЛЯ» ─────────────────────────────────────────────────────────── */
+[data-liquid] { position: relative; }
+[data-liquid] > :not(.liquid) { position: relative; z-index: 1; }
+.liquid {
+  position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; opacity: 0;
+  border-radius: 12px; background: var(--acc-l); transition: opacity .2s var(--ease);
+  will-change: transform, width, height;
+}
+.side-tabs > .liquid { border-radius: 13px; background: var(--acc-l); box-shadow: inset 0 0 0 1px var(--acc-l2); }
+.side-tabs .side-tab.active { background: transparent; }
+.city-scope-btns > .liquid { border-radius: 9px; background: var(--acc-l); box-shadow: inset 0 0 0 1.5px var(--acc); }
+.city-scope-btns .city-scope-btn.on { background: transparent; box-shadow: none; border-color: transparent; }
+.mk-shapes > .liquid { border-radius: 10px; background: var(--acc-l); box-shadow: 0 0 0 1.5px var(--acc); }
+.mk-shapes .mk-shape.on { background: transparent; box-shadow: none; border-color: transparent; }
+.mk-glyphs > .liquid { border-radius: 8px; background: var(--acc); box-shadow: 0 3px 10px rgba(18,173,193,.35); }
+.mk-glyphs .mk-glyph.on { background: transparent; border-color: transparent; color: #fff; }
+
+.drop-wrap { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; pointer-events: none; z-index: 0; }
+.drop-ripple {
+  position: absolute; border-radius: 50%; background: currentColor; opacity: 0; transform: scale(0);
+  animation: drop-ripple .62s cubic-bezier(.2,.8,.2,1) forwards;
+}
+@keyframes drop-ripple {
+  0%   { transform: scale(0);   opacity: .22; }
+  55%  { opacity: .12; }
+  100% { transform: scale(1);   opacity: 0; }
+}
+
+/* Переключатели: ползунок вытягивается при нажатии, как капля. */
+.cbx::after { transition: transform .32s cubic-bezier(.34,1.56,.64,1), width .2s var(--ease); }
+.cbx:active::after { width: 25px; }
+.cbx.on:active::after { transform: translateX(11px); }
+.cbx.sm:active::after { width: 18px; }
+.cbx.sm.on:active::after { transform: translateX(10px); }
+@media (max-width: 780px) {
+  .cbx:active::after { width: 27px; }
+  .cbx.on:active::after { transform: translateX(13px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .liquid { transition: none; }
+  .drop-ripple { display: none; }
+  .cbx::after { transition: none; }
+}

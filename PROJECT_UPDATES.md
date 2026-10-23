@@ -788,3 +788,20 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   shapes / 17 glyphs, legacy mapping.
 - Cache version `20261025a`.
 
+
+## 2026-10-25 — Inter only, droplet transitions, address layout
+
+- Owner: every text element uses only Inter (rsms/inter); now a project rule
+  in `CLAUDE.md`. A global `!important` rule covers form controls, Leaflet and
+  MapLibre labels; the boot screen and the canvas point labels use Inter too.
+- Droplet transitions: containers with `data-liquid` (side tabs, city scope,
+  marker shape/glyph pickers) get a `.liquid` blob that flows to the active
+  item, stretching on the way (WAAPI, 480 ms, overshoot easing). Buttons get a
+  ripple drop on press, checkboxes squish. All of it is off under
+  `prefers-reduced-motion`.
+- The account label on the map is removed.
+- Address program: long layer names no longer push rows past the card
+  (`minmax(0,1fr)` grid track, `min-width:0`).
+- Verified in a browser: 159 visible text nodes all in Inter, the blob lands
+  under the active tab, ripple on press, no address rows overflow.
+- Cache version `20261025b`.

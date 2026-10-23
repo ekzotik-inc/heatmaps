@@ -1516,10 +1516,10 @@ function downloadLayerTemplate(kind, layer) {
 /* Выбор метки: ряд форм (с текущим значком и цветом) и сетка значков. */
 function markerPickerHtml(shape, icon, color, color2) {
   const sh = markerShape(shape), ic = markerIcon(icon);
-  return `<div class="mk-shapes">${MARKER_SHAPES.map(x => `<button type="button" class="mk-shape${x.id === sh ? ' on' : ''}" data-mkshape="${x.id}" title="${esc(x.name)}" aria-label="Форма «${esc(x.name)}»" aria-pressed="${x.id === sh}">${pinSvg(ic, color, color2, 30, x.id).html}</button>`).join('')}</div>
+  return `<div class="mk-shapes" data-liquid="on">${MARKER_SHAPES.map(x => `<button type="button" class="mk-shape${x.id === sh ? ' on' : ''}" data-mkshape="${x.id}" title="${esc(x.name)}" aria-label="Форма «${esc(x.name)}»" aria-pressed="${x.id === sh}">${pinSvg(ic, color, color2, 30, x.id).html}</button>`).join('')}</div>
     ${[['iqos', 'IQOS и сигареты', ['none']], ['retail', 'Торговые точки', []]].map(([g, title, extra]) => `
       <div class="lc-lbl lc-lbl2">${title}</div>
-      <div class="mk-glyphs">${PIN_ICONS.filter(i => i.group === g).map(i => i.id).concat(extra).map(id => {
+      <div class="mk-glyphs" data-liquid="on">${PIN_ICONS.filter(i => i.group === g).map(i => i.id).concat(extra).map(id => {
         const name = id === 'none' ? 'Без значка' : PIN_ICON_MAP[id].name;
         return `<button type="button" class="mk-glyph${id === ic ? ' on' : ''}" data-mkicon="${id}" title="${esc(name)}" aria-label="Значок «${esc(name)}»" aria-pressed="${id === ic}">${glyphSvg(id, 17)}</button>`;
       }).join('')}</div>`).join('')}`;
@@ -1936,6 +1936,101 @@ function hoverMenu(o) {
   };
   return { bindPanel, pin, stop };
 }
+
+/* ── «КАПЛЯ»: перетекающий индикатор выбора и всплеск при нажатии ─────────
+   Контейнер с атрибутом data-liquid="<класс активного>" получает подложку,
+   которая при смене выбора не прыгает, а перетекает: вытягивается между
+   старым и новым местом, чуть сплющивается и мягко садится с отскоком.
+   Классы активных пунктов меняет обычный код — подложку двигает наблюдатель,
+   поэтому обработчики кликов трогать не нужно. */
+const REDUCED_MOTION = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+function liquidRect(container, item) {
+  const c = container.getBoundingClientRect(), r = item.getBoundingClientRect();
+  return { x: r.left - c.left + container.scrollLeft, y: r.top - c.top + container.scrollTop, w: r.width, h: r.height };
+}
+function liquidSync(container, animate) {
+  const cls = container.dataset.liquid;
+  const active = [...container.children].find(el => !el.classList.contains('liquid') && el.classList.contains(cls));
+  let blob = container.querySelector(':scope > .liquid');
+  if (!active) { if (blob) blob.style.opacity = '0'; container._liqPrev = null; return; }
+  const to = liquidRect(container, active);
+  if (!to.w || !to.h) { container._liqPrev = null; return; }      // контейнер скрыт
+  if (!blob) {
+    blob = document.createElement('span');
+    blob.className = 'liquid'; blob.setAttribute('aria-hidden', 'true');
+    container.prepend(blob);
+  }
+  const from = container._liqPrev;
+  blob.style.opacity = '1';
+  blob.style.transform = `translate(${to.x}px, ${to.y}px)`;
+  blob.style.width = to.w + 'px'; blob.style.height = to.h + 'px';
+  if (animate && from && !REDUCED_MOTION && (Math.abs(from.x - to.x) > 1 || Math.abs(from.y - to.y) > 1) && blob.animate) {
+    const sameRow = Math.abs(from.y - to.y) < 4;
+    const left = Math.min(from.x, to.x), right = Math.max(from.x + from.w, to.x + to.w);
+    const mid = sameRow
+      ? { x: left, y: to.y + to.h * .1, w: right - left, h: to.h * .8 }                     // капля тянется вдоль ряда
+      : { x: (from.x + to.x) / 2 - to.w * .1, y: (from.y + to.y) / 2, w: to.w * 1.2, h: to.h * .82 };
+    blob.animate([
+      { transform: `translate(${from.x}px, ${from.y}px)`, width: from.w + 'px', height: from.h + 'px' },
+      { transform: `translate(${mid.x}px, ${mid.y}px)`, width: mid.w + 'px', height: mid.h + 'px', offset: .42 },
+      { transform: `translate(${to.x}px, ${to.y}px)`, width: to.w + 'px', height: to.h + 'px' },
+    ], { duration: 480, easing: 'cubic-bezier(.34,1.45,.64,1)' });
+  }
+  container._liqPrev = to;
+}
+const _liqQueue = new Map();
+function liquidSchedule(container, animate) {
+  if (!container || !container.dataset || !container.dataset.liquid) return;
+  _liqQueue.set(container, (_liqQueue.get(container) || false) || animate);
+  if (_liqQueue.size === 1) requestAnimationFrame(() => {
+    const items = [..._liqQueue]; _liqQueue.clear();
+    items.forEach(([c, a]) => { if (c.isConnected) liquidSync(c, a); });
+  });
+}
+const _liqResize = typeof ResizeObserver !== 'undefined'
+  ? new ResizeObserver(entries => entries.forEach(en => liquidSchedule(en.target, false))) : null;
+function liquidRegister(root) {
+  const list = root.matches && root.matches('[data-liquid]') ? [root] : [];
+  if (root.querySelectorAll) list.push(...root.querySelectorAll('[data-liquid]'));
+  list.forEach(c => {
+    if (!c._liqObserved && _liqResize) { _liqResize.observe(c); c._liqObserved = true; }
+    liquidSchedule(c, false);
+  });
+}
+new MutationObserver(records => {
+  for (const r of records) {
+    const t = r.target;
+    if (t.closest && t.closest('#map')) continue;            // карта меняет классы постоянно
+    if (r.type === 'attributes') {
+      const p = t.parentElement;
+      if (p && p.dataset && p.dataset.liquid && !t.classList.contains('liquid')) liquidSchedule(p, true);
+    } else {
+      r.addedNodes.forEach(n => { if (n.nodeType === 1 && !n.classList.contains('liquid')) liquidRegister(n); });
+    }
+  }
+}).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+document.addEventListener('DOMContentLoaded', () => liquidRegister(document.body));
+if (document.readyState !== 'loading') liquidRegister(document.body);
+
+// Всплеск-капля от точки нажатия.
+const DROP_TARGETS = '.pick-row, .lc-ic, .create-btn, .addr-act, .vt, .city-option, .mk-shape, .mk-glyph, .side-tab, .map-menu-item, .map-menu-new, .pp2-preset, .lyr-act, .city-extra-btn, .zbtn, .cl-big, .modal-btn, .map-row, .city-filter-trigger, .lc-link, .pick-more, .rp-list-toggle, .btn';
+document.addEventListener('pointerdown', e => {
+  if (REDUCED_MOTION || e.button !== 0) return;
+  const el = e.target.closest && e.target.closest(DROP_TARGETS);
+  if (!el || el.disabled) return;
+  const r = el.getBoundingClientRect();
+  const d = Math.max(r.width, r.height) * 2.4;
+  if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+  let wrap = el.querySelector(':scope > .drop-wrap');
+  if (!wrap) { wrap = document.createElement('span'); wrap.className = 'drop-wrap'; wrap.setAttribute('aria-hidden', 'true'); el.appendChild(wrap); }
+  const drop = document.createElement('span');
+  drop.className = 'drop-ripple';
+  drop.style.width = drop.style.height = d + 'px';
+  drop.style.left = (e.clientX - r.left - d / 2) + 'px';
+  drop.style.top = (e.clientY - r.top - d / 2) + 'px';
+  wrap.appendChild(drop);
+  drop.addEventListener('animationend', () => drop.remove(), { once: true });
+}, { passive: true });
 
 // Всплывающие подсказки «ⓘ». Раньше это был CSS ::after: его обрезала
 // прокрутка боковой панели, до него нельзя было дотянуться курсором, а с
@@ -2690,7 +2785,7 @@ map.createPane('ptlabels');
 map.getPane('ptlabels').style.zIndex = 640;          // над маркерами (600), под всплывающими подсказками (650)
 map.getPane('ptlabels').style.pointerEvents = 'none';
 const lblBox = L.DomUtil.create('div', 'pt-labels', map.getPane('ptlabels'));
-const LABEL_FONT = '600 11px Inter, system-ui, sans-serif';
+const LABEL_FONT = '600 11px Inter, sans-serif';
 const LABEL_H = 18, LABEL_PAD = 15, LABEL_MAX = 28, LABEL_GAP = 2;
 const _lblCtx = document.createElement('canvas').getContext('2d');
 const _lblWidth = new Map();
@@ -6005,7 +6100,9 @@ async function fetchMaps() {
 function showRoleBadge() {
   const badge = document.getElementById('mode-badge');
   if (!badge) return;
-  badge.style.display = '';
+  // Подпись учётки на самой карте убрана по просьбе владельца: карта и роль
+  // видны в шапке боковой панели, переключатель карт — там же.
+  badge.style.display = 'none';
   const m = mapInfo(currentMap);
   const many = MAP_LIST.length > 1;
   badge.textContent = (isAdmin() ? '✏ Админ · ' : '👁 ') + m.name + (many ? ' ▾' : '');
