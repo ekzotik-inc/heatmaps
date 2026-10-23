@@ -27,6 +27,12 @@ let DATA = window.DATA || {
 /* Escape user-supplied text before inserting into innerHTML / Leaflet popups
    and tooltips. Layer names and point fields come from uploaded files and free
    text, so they must never be rendered as raw HTML (XSS guard). */
+// Названия слоёв и зон всегда с заглавной буквы (решение владельца): так они
+// выглядят одинаково в карточках, легенде, списках и выгрузках.
+function capFirst(v) {
+  const t = String(v == null ? '' : v).trim();
+  return t ? t.charAt(0).toLocaleUpperCase('ru') + t.slice(1) : t;
+}
 function esc(s) {
   return ('' + (s == null ? '' : s)).replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1085,7 +1091,7 @@ function updateLayerLegend() {
   const folded = legendFolded();
   const total = zones.reduce((a, z) => a + zoneArea(z.mp), 0);
   const zoneHtml = !zones.length ? '' :
-    `<div class="legend-sep" role="separator"><span>районы</span></div>` +
+    `<div class="legend-sep" role="separator"><span>Районы</span></div>` +
     zones.map(z => `<div class="legend-item legend-zone"><span class="legend-zdot" style="--c:${boundColor(z.color)}"></span>` +
       `<span class="legend-name" title="${esc(z.name)}">${esc(z.name)}</span><span class="legend-area">${fmtArea(zoneArea(z.mp))}</span></div>`).join('') +
     (zones.length > 1 ? `<div class="legend-item legend-total"><span class="legend-name">Всего, ${zones.length} ${plural(zones.length, 'район', 'района', 'районов')}</span><span class="legend-area">${fmtArea(total)}</span></div>` : '');
@@ -1369,14 +1375,27 @@ function renderRecs() {
 }
 
 /* ── SLIDER FILL HELPER ──────────────────────────────────────────────── */
+/* Закраска ползунка до центра кружка. `--f` — доля 0…1, CSS переводит её в
+   позицию с поправкой на ширину кружка: иначе у краёв полоса уходила за
+   кружок (на 17 % закрашено до 25 %). Ползунки обновляются сами — на любой
+   ввод и при появлении в DOM, — без этого новые ползунки стояли на 50 %. */
 function fillSlider(el) {
   if (!el) return;
-  const min = +el.min || 0, max = +el.max || 100, val = +el.value;
-  el.style.setProperty('--pct', ((val - min) / (max - min) * 100).toFixed(1) + '%');
+  const min = +el.min || 0, max = el.max === '' ? 100 : +el.max, val = +el.value;
+  const f = max > min ? Math.min(1, Math.max(0, (val - min) / (max - min))) : 0;
+  el.style.setProperty('--f', f.toFixed(4));
 }
-function fillAllSliders() {
-  document.querySelectorAll('input[type=range]').forEach(fillSlider);
+function fillAllSliders(root) {
+  (root || document).querySelectorAll('input[type=range]').forEach(fillSlider);
 }
+document.addEventListener('input', e => { if (e.target && e.target.type === 'range') fillSlider(e.target); }, true);
+new MutationObserver(muts => {
+  for (const m of muts) for (const n of m.addedNodes) {
+    if (n.nodeType !== 1) continue;
+    if (n.matches && n.matches('input[type=range]')) fillSlider(n);
+    else if (n.querySelector && n.querySelector('input[type=range]')) fillAllSliders(n);
+  }
+}).observe(document.documentElement, { childList: true, subtree: true });
 
 /* ── ДОСТУПНОСТЬ: кастомные тумблеры ──────────────────────────────────────
    `.cbx` — это <div>, поэтому по умолчанию он не получает фокус, не работает
@@ -1791,7 +1810,7 @@ function buildHeatUI() {
       let done = false;
       const commit = save => {
         if (done) return; done = true;
-        if (save) { const v = inp.value.trim(); if (v) d.name = v; }
+        if (save) { const v = capFirst(inp.value); if (v) d.name = v; }
         buildHeatUI(); buildAddrSrcSel(); buildRecBasisSel(); rebuildUpTarget(); updateLayerLegend(); if (save) saveState();
       };
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') commit(true); else if (e.key === 'Escape') commit(false); });
@@ -1859,7 +1878,7 @@ function openCreateLayer(kind) {
 }
 function closeCreateLayer() { document.getElementById('cl-modal').hidden = true; }
 function clCreate() {
-  const name = document.getElementById('cl-name').value.trim();
+  const name = capFirst(document.getElementById('cl-name').value);
   if (!name) { toast('Укажите название слоя', 'warn'); document.getElementById('cl-name').focus(); return; }
   const pending = document.getElementById('cl-field-inp').value.trim();
   if (pending) clAddField(pending);
@@ -3368,7 +3387,7 @@ function geojsonZones(gj) {
     if (!mp.length) return;
     const p = f.properties || {};
     const nm = [p.name_ru, p['name:ru'], p.name, p.NAME, p.Name, p.title].find(v => typeof v === 'string' && v.trim());
-    out.push({ name: (nm || `Зона ${i + 1}`).trim().slice(0, 60), mp });
+    out.push({ name: capFirst(nm || `Зона ${i + 1}`).slice(0, 60), mp });
   });
   return out;
 }
@@ -3583,7 +3602,7 @@ function buildBoundsUI() {
     let done = false;
     const commit = save => {
       if (done) return; done = true;
-      const v = inp.value.trim();
+      const v = capFirst(inp.value);
       if (save && v && v !== l.name) { l.name = v; boundsChanged(); } else buildBoundsUI();
     };
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') commit(true); else if (e.key === 'Escape') commit(false); });
@@ -3599,7 +3618,7 @@ function buildBoundsUI() {
     const act = el.dataset.bznew;
     if (act === 'cancel') { _bzCreating = false; buildBoundsUI(); return; }
     const nameEl = box.querySelector('#bz-new-name');
-    const name = (nameEl && nameEl.value.trim()) || `Граница ${boundLayers.length + 1}`;
+    const name = capFirst(nameEl && nameEl.value) || `Граница ${boundLayers.length + 1}`;
     const l = { id: 'b' + Date.now().toString(36), name: name.slice(0, 40), color: boundColor(_bzNewColor), visible: true, zones: [] };
     boundLayers.push(l);
     _bzCreating = false;
@@ -4160,7 +4179,7 @@ function createManualLayer(name) {
   const color = SWATCHES.find(c => !used.includes(c.toLowerCase())) || SWATCHES[customPtLayers.length % SWATCHES.length];
   const layer = {
     id: 'cpt_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-    name, color, manual: true, visible: true, shape: 'star', size: 34, opacity: 1,
+    name: capFirst(name), color, manual: true, visible: true, shape: 'star', size: 34, opacity: 1,
     radiusOn: false, radiusM: 1500, radiusColor: color, radiusOpacity: 0.15,
     recs: [], _group: null,
   };
@@ -4282,8 +4301,6 @@ function buildCustomPtUI() {
   box.innerHTML = customPtLayers.map(l => {
     const opacity = Math.min(1, Math.max(.2, Number.isFinite(+l.opacity) ? +l.opacity : 1));
     const size = Math.min(44, Math.max(20, Number.isFinite(+l.size) ? +l.size : 30));
-    const rPct = ((l.radiusM || 1500) - 200) / (5000 - 200) * 100;
-    const oPct = (l.radiusOpacity == null ? .15 : l.radiusOpacity) / .5 * 100;
     const n = l.recs.length;
     const fields = l.fields || [];
     const open = _cptOpen.has(l.id);
@@ -4323,8 +4340,8 @@ function buildCustomPtUI() {
           <span>Радиус охвата</span>
         </div>
         <div class="pt-radius-ctl lc-radius" data-cpradctl="${id}" style="${l.radiusOn ? '' : 'display:none'}">
-          <div class="lc-sl"><span>Радиус</span><input type="range" class="cpt-rad-r" data-cpradr="${id}" min="200" max="5000" step="100" value="${l.radiusM || 1500}" style="--pct:${rPct}%"/><b class="cpt-rad-rv">${fmtD(l.radiusM || 1500)}</b></div>
-          <div class="lc-sl"><span>Заливка</span><input type="range" class="green cpt-rad-o" data-cprado="${id}" min="0.03" max="0.5" step="0.01" value="${l.radiusOpacity == null ? .15 : l.radiusOpacity}" style="--pct:${oPct}%"/><b class="cpt-rad-ov">${Math.round((l.radiusOpacity == null ? .15 : l.radiusOpacity) * 100)}%</b></div>
+          <div class="lc-sl"><span>Радиус</span><input type="range" class="cpt-rad-r" data-cpradr="${id}" min="200" max="5000" step="100" value="${l.radiusM || 1500}"/><b class="cpt-rad-rv">${fmtD(l.radiusM || 1500)}</b></div>
+          <div class="lc-sl"><span>Заливка</span><input type="range" class="green cpt-rad-o" data-cprado="${id}" min="0.03" max="0.5" step="0.01" value="${l.radiusOpacity == null ? .15 : l.radiusOpacity}"/><b class="cpt-rad-ov">${Math.round((l.radiusOpacity == null ? .15 : l.radiusOpacity) * 100)}%</b></div>
           <div class="lc-sl"><span>Цвет радиуса</span><input type="color" class="cpt-rad-col" data-cpradcol="${id}" value="${safeColor(l.radiusColor || l.color)}"/><b></b></div>
         </div>
         ${fields.length ? `<div class="lc-fields">${fields.map(f => `<span>${esc(f)}</span>`).join('')}</div>` : ''}
@@ -4417,7 +4434,7 @@ function buildCustomPtUI() {
   box.querySelectorAll('[data-cpsize]').forEach(el => {
     el.addEventListener('input', () => {
       const l = customPtLayers.find(x => x.id === el.dataset.cpsize); if (!l) return;
-      l.size = +el.value; el.style.setProperty('--pct', ((l.size - 20) / 24) * 100 + '%');
+      l.size = +el.value;
       const v = el.parentElement.querySelector('.cpt-size-val'); if (v) v.textContent = l.size + ' px';
       renderCustomPoints(); saveState();
     });
@@ -4426,7 +4443,7 @@ function buildCustomPtUI() {
   box.querySelectorAll('[data-cpopacity]').forEach(el => {
     el.addEventListener('input', () => {
       const l = customPtLayers.find(x => x.id === el.dataset.cpopacity); if (!l) return;
-      l.opacity = +el.value; el.style.setProperty('--pct', ((l.opacity - .2) / .8) * 100 + '%');
+      l.opacity = +el.value;
       const v = el.parentElement.querySelector('.cpt-opacity-val'); if (v) v.textContent = Math.round(l.opacity * 100) + '%';
       renderCustomPoints(); saveState();
     });
@@ -4453,7 +4470,7 @@ function buildCustomPtUI() {
   box.querySelectorAll('[data-cpradr]').forEach(el => {
     el.addEventListener('input', () => {
       const l = customPtLayers.find(x => x.id === el.dataset.cpradr); if (!l) return;
-      l.radiusM = +el.value; el.style.setProperty('--pct', (l.radiusM - 200) / (5000 - 200) * 100 + '%');
+      l.radiusM = +el.value;
       const v = el.parentElement.querySelector('.cpt-rad-rv'); if (v) v.textContent = fmtD(l.radiusM);
       renderCustomPoints(); saveState();
     });
@@ -4462,7 +4479,7 @@ function buildCustomPtUI() {
   box.querySelectorAll('[data-cprado]').forEach(el => {
     el.addEventListener('input', () => {
       const l = customPtLayers.find(x => x.id === el.dataset.cprado); if (!l) return;
-      l.radiusOpacity = +el.value; el.style.setProperty('--pct', l.radiusOpacity / .5 * 100 + '%');
+      l.radiusOpacity = +el.value;
       const v = el.parentElement.querySelector('.cpt-rad-ov'); if (v) v.textContent = Math.round(l.radiusOpacity * 100) + '%';
       renderCustomPoints(); saveState();
     });
@@ -4486,7 +4503,7 @@ function buildCustomPtUI() {
       let done = false;
       const commit = save => {
         if (done) return; done = true;
-        if (save) { const v = inp.value.trim(); if (v) l.name = v; }
+        if (save) { const v = capFirst(inp.value); if (v) l.name = v; }
         buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); if (save) saveState();
       };
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') commit(true); else if (e.key === 'Escape') commit(false); });
@@ -4629,7 +4646,7 @@ function closeLayerModal() {
   document.getElementById('layer-modal-overlay').classList.remove('open');
 }
 function confirmLayerModal() {
-  const name  = document.getElementById('layer-modal-input').value.trim();
+  const name  = capFirst(document.getElementById('layer-modal-input').value);
   const color = document.getElementById('layer-modal-color').value;
   if (!name) { document.getElementById('layer-modal-input').focus(); return; }
   closeLayerModal();
@@ -6790,7 +6807,7 @@ function wireEvents() {
     $('cpt-modal-overlay').classList.remove('open');
   });
   $('cpt-modal-confirm').addEventListener('click', () => {
-    const name = $('cpt-modal-name').value.trim();
+    const name = capFirst($('cpt-modal-name').value);
     if (!name) { $('cpt-modal-name').focus(); return; }
     const color = $('cpt-modal-color').value;
     $('cpt-modal-overlay').classList.remove('open');
@@ -7427,6 +7444,7 @@ async function runUpdate() {
 
     setUpdateProgress(0.08, 'Обновляем карту', 'Применяем настройки слоёв…');
     applySnapshot(manifest);
+    applyViewerDefaults();
     renderCurrentState();
 
     const keys = eagerStateLayers();
@@ -7507,9 +7525,48 @@ function readLocalSnapshot() {
 function renderCurrentState() {
   buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
   renderHeat(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
+  fillAllSliders();   // syncControls ставит value без события input
+}
+/* Учётки без админ-прав всегда открывают карту с чистого листа (решение
+   владельца): все тепловые слои и слои точек выключены, «Точки» на вкладке
+   «Слои» включены — включил слой и сразу видишь его точки; адресная
+   программа сброшена; районы города включены с самой лёгкой заливкой,
+   выбор районов снят. Город, выбранный админом, сохраняется — на него карта
+   и приближается. Сохраняется это только у зрителя локально: на сервер
+   пишет одна роль admin. */
+function applyViewerDefaults() {
+  if (isAdmin()) return;
+  heatKeys.forEach(k => { if (DS[k]) DS[k].visible = false; });
+  customPtLayers.forEach(l => { l.visible = false; });
+  showPointsAll = true;
+  _soloKey = null; _preSolo = null; _cptSoloId = null; _cptPrevVisible = null;
+  addrSrcKeys = []; addrRefKeys = []; rtExclKeys = [];
+  rtRadius = 1000; rtRadiusOp = 'lte'; rtExclRadius = 150; rtExclOp = 'lt';
+  districtsOn = COUNTRY === 'uz';
+  distOpacity = .04;
+  boundSel = [];
+  bzInvalidate();
+}
+// Город, выбранный админом: рамка по его настоящим границам (если они есть),
+// иначе по центру. Без выбранного города — по видимым точкам, как раньше.
+function cityFrameBounds() {
+  const pts = [];
+  selectedCities.forEach(c => {
+    const rings = cityRings(c);
+    if (rings.length) rings.forEach(r => { pts.push([r.minLat, r.minLon], [r.maxLat, r.maxLon]); });
+    else if (CC[c]) pts.push(CC[c]);
+  });
+  return pts;
 }
 function fitInitialBounds() {
-  if (hasCityFilter()) return;
+  if (hasCityFilter()) {
+    const pts = cityFrameBounds();
+    if (!pts.length) return;
+    const opts = { duration: .8, paddingTopLeft: [24, 92], paddingBottomRight: [24, 24] };
+    if (pts.length === 1) map.flyTo(pts[0], 12, opts);
+    else map.flyToBounds(L.latLngBounds(pts), { ...opts, maxZoom: 13 });
+    return;
+  }
   const framePts = visiblePts();
   if (framePts.length) map.fitBounds(L.latLngBounds(framePts).pad(.05), { maxZoom: 16 });
   else if (CITIES[0] && CC[CITIES[0]]) map.setView(CC[CITIES[0]], 11);
@@ -7518,6 +7575,7 @@ async function applyStartupSnapshot(snapshot) {
   if (!snapshot) return false;
   _activeStateRevision = stateRevision(snapshot);
   applySnapshot(snapshot);
+  applyViewerDefaults();
   renderCurrentState();
   // The map becomes useful as soon as the visible layer and recommendation
   // basis are ready; hidden records wait for a deliberate user action.

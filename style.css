@@ -662,7 +662,10 @@ input[type=range] {
   -webkit-appearance: none; height: 4px;
   touch-action: pan-x; /* allow horizontal drag without triggering page scroll */
   border-radius: 3px; outline: none;
-  background: linear-gradient(90deg, var(--acc) var(--pct, 50%), #dde2ec var(--pct, 50%));
+  /* Закраска до центра кружка: 8.5px — половина кружка (17px), остальное
+     пропорционально доле --f (её ставит fillSlider). */
+  --fill: calc(8.5px + (100% - 17px) * var(--f, .5));
+  background: linear-gradient(90deg, var(--acc) var(--fill), #dde2ec var(--fill));
 }
 input[type=range]::-webkit-slider-thumb {
   -webkit-appearance: none; width: 17px; height: 17px;
@@ -673,7 +676,7 @@ input[type=range]::-webkit-slider-thumb {
 }
 input[type=range]::-webkit-slider-thumb:hover { box-shadow: 0 2px 8px rgba(40,55,90,.28), 0 0 0 5px var(--acc-l); transform: scale(1.05); }
 input[type=range].green {
-  background: linear-gradient(90deg, var(--rec) var(--pct, 50%), #dde2ec var(--pct, 50%));
+  background: linear-gradient(90deg, var(--rec) var(--fill), #dde2ec var(--fill));
 }
 input[type=range].green::-webkit-slider-thumb {
   background: var(--rec);
@@ -2532,3 +2535,25 @@ button, input, select, textarea, optgroup, option, kbd, code, pre,
 }
 .bz-export { width: 100%; margin-top: 6px; }
 .bz-status .bz-export { flex-basis: 100%; }
+
+/* ── ТИПОГРАФИКА: без капса, единый регистр ────────────────────────────
+   Владелец: заголовки не должны быть ни ЗАГЛАВНЫМИ, ни строчными — обычный
+   регистр предложения («Свои границы»). Заголовки разделов — 12px, 600,
+   приглушённый цвет; названия слоёв и зон — с заглавной буквы, полужирным
+   600, а не 700. */
+.map-menu-head, .tab-section-title, .sec, .legend-title, .pal-label, .rp-field > span,
+.auth-field label, .city-scope-label, .ci-sec, .pp2-h, .bz-sec, .settings-group-label {
+  text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 600;
+}
+.addr-step-label { text-transform: none; letter-spacing: 0; }
+.legend-sep { text-transform: none; letter-spacing: 0; font-size: 11px; font-weight: 500; }
+.lc-t { font-weight: 600; }
+.lc-t::first-letter, .legend-name::first-letter, .pick-nm::first-letter,
+.bz-zbtn span::first-letter, .bz-head b::first-letter { text-transform: uppercase; }
+
+/* Легенда: длинное название слоя обрезается многоточием внутри рамки,
+   а не уходит за её край (полное — во всплывающей подсказке). */
+.legend-body { grid-template-columns: minmax(0, 1fr); }
+.legend-item { min-width: 0; }
+.legend-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend-count, .legend-area, .legend-ramp, .legend-pin, .legend-dot, .legend-zdot { flex-shrink: 0; }

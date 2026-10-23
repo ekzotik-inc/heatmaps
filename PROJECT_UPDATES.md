@@ -878,3 +878,32 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   code/percent/own field, points with own field) re-parsed back, zone export
   sheets, new-layer fields, single-point layer flight.
 - Cache version `20261025d`.
+
+## 2026-10-25 — Viewer clean start, city zoom, typography, sliders, legend
+
+- Opening a map zooms to the city the admin selected: its real boundary
+  (Tashkent districts, `city-bounds.js`) or its centre. Before, a selected
+  city skipped the initial framing altogether.
+- Accounts other than admin always open the map clean
+  (`applyViewerDefaults()` after every state apply): all heat and point layers
+  off, «Точки» on in the layers tab, the address program reset (radius 1 km,
+  exclusion 150 m, no exclusions; the base and reference lists still default
+  to their first layer — the program needs at least one), the Tashkent
+  districts on with the lightest fill (4 %) and no district selected. The
+  admin's view is untouched.
+- Typography: no more all-caps section labels — sentence case at 12px/600
+  everywhere («Слои», «Свои границы», «Легенда», «Готовые наборы» …). Layer
+  and zone names always start with a capital letter (`capFirst()` on create
+  and rename, `::first-letter` for existing names) and use weight 600.
+- Sliders: the fill now ends exactly under the thumb centre (`--f` fraction,
+  CSS compensates for the 17px thumb). Several sliders — e.g. the boundary
+  fill — never got a fill value and showed 50 %; a global input listener and
+  a MutationObserver now keep every range input in sync.
+- Legend: long layer names are cut with an ellipsis inside the frame (full
+  name in the tooltip) instead of running past the border. The «Районы»
+  separator is capitalised too.
+- Verified in a browser: admin saves Samarkand + layers on; the viewer opens
+  at zoom 12 over Samarkand with every layer off, «Точки» on, address reset,
+  districts on at 4 %; all visible sliders filled by value; legend names
+  inside the frame; no uppercase-transformed text on the page.
+- Cache version `20261025e`.
