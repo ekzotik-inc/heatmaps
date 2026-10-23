@@ -551,3 +551,22 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   open, toggle both ways, state kept after rebuild and after reload.
 - Cache version `20261023c`.
 
+## 2026-10-23 — Paste photos from the clipboard into manual points
+
+- The manual point form accepts images from the clipboard two ways: Ctrl+V /
+  ⌘V anywhere in the open form (a paste carrying an image is taken as a
+  photo; a text paste into a field is left alone), and a «📋 Вставить из
+  буфера» button using the async Clipboard API, with clear fallbacks when the
+  browser lacks it or denies permission.
+- File picker, paste and button share `addRetailPhotos()`: the 3-photo limit,
+  write-key check and single upload at a time apply to all of them.
+- `compressImage()` paints a white background first, so transparent PNG
+  screenshots no longer turn black in JPEG.
+- Fixed in passing: `.rp-field input` stretched the custom colour swatch into
+  an empty full-width bar; the swatch is 30 px again and shows its colour.
+- Verified in a browser: synthetic image paste, real Ctrl+V and the button
+  with a real clipboard each added a photo; a text paste into the name field
+  was not intercepted; buttons hide at 3 photos; the transparent corner of a
+  pasted PNG is white on the server copy.
+- Cache version `20261023d`.
+

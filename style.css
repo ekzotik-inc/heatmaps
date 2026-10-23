@@ -1011,6 +1011,9 @@ body.geo-picking #map { cursor: crosshair; }
   font-family: "Manrope"; font-size: 12.5px;
 }
 .rp-field input:focus, .rp-field textarea:focus { border-color: var(--acc); background: var(--card); }
+/* Общий стиль полей растягивал выбор своего оттенка в пустую полосу на всю
+   ширину — цвета в ней видно не было. Возвращаем размер плашки-образца. */
+.rp-field input.sw-pick { width: 30px; height: 22px; padding: 0; border-radius: 7px; background: var(--card); flex: 0 0 auto; }
 .rp-geo {
   display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
   padding: 8px 12px; border-radius: 10px; border: 1px solid var(--acc); background: var(--acc-l);
@@ -1050,6 +1053,13 @@ body.geo-picking #map { cursor: crosshair; }
 }
 .rp-photo-add:hover:not(:disabled) { color: var(--acc); border-color: var(--acc); }
 .rp-photo-add:disabled { opacity: .6; cursor: default; }
+.rp-photo-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.rp-paste-hint { display: block; margin-top: 6px; font-size: 10.5px; color: var(--dim); line-height: 1.4; }
+.rp-paste-hint[hidden] { display: none; }
+.rp-paste-hint kbd {
+  font: 700 10px "Manrope"; padding: 0 4px; border-radius: 4px;
+  border: 1px solid var(--line2); background: var(--card); color: var(--mut);
+}
 .rp-actions { display: flex; align-items: center; gap: 8px; margin-top: 18px; }
 .rp-spacer { flex: 1; }
 .modal-btn.danger { background: rgba(232,98,95,.1); border: 1px solid rgba(232,98,95,.4); color: var(--danger); }

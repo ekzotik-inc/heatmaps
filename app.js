@@ -2303,6 +2303,10 @@ function compressImage(file) {
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext('2d');
+        // Скриншоты из буфера — PNG с прозрачностью; в JPEG прозрачное стало бы
+        // чёрным. Подкладываем белый фон.
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
         URL.revokeObjectURL(img.src);
         resolve({ data: canvas.toDataURL('image/jpeg', 0.82), w, h });
@@ -2523,7 +2527,12 @@ function renderRetailFormPhotos() {
       renderRetailFormPhotos();
     });
   });
-  addBtn.style.display = _rpPhotos.length >= RETAIL_MAX_PHOTOS ? 'none' : '';
+  const full = _rpPhotos.length >= RETAIL_MAX_PHOTOS;
+  addBtn.style.display = full ? 'none' : '';
+  const pasteBtn = rpField('rp-photo-paste');
+  if (pasteBtn) pasteBtn.style.display = full ? 'none' : '';
+  const pasteHint = rpField('rp-paste-hint');
+  if (pasteHint) pasteHint.hidden = full;
   rpField('rp-photo-hint').textContent = `${_rpPhotos.length} из ${RETAIL_MAX_PHOTOS}`;
   syncRetailKeyWarn();
 }
@@ -2538,9 +2547,74 @@ function syncRetailKeyWarn() {
   if (!warn) return;
   const missing = !SERVER_URL || !SERVER_KEY;
   warn.hidden = !missing;
-  if (addBtn) {
-    addBtn.disabled = missing;
-    addBtn.title = missing ? 'Сначала введите ключ записи' : '';
+  [addBtn, document.getElementById('rp-photo-paste')].forEach(btn => {
+    if (!btn) return;
+    btn.disabled = missing || _rpUploading;
+    btn.title = missing ? 'Сначала введите ключ записи' : '';
+  });
+}
+
+/* Добавление снимков в форму точки — один путь для файла, Ctrl+V и кнопки
+   «Вставить из буфера». */
+let _rpUploading = false;
+async function addRetailPhotos(files) {
+  const room = RETAIL_MAX_PHOTOS - _rpPhotos.length;
+  const images = files.filter(f => f && /^image\//.test(f.type));
+  if (!images.length) { toast('Это не изображение', 'warn'); return; }
+  if (room <= 0) { toast(`Уже ${RETAIL_MAX_PHOTOS} фото — удалите одно, чтобы добавить новое`, 'warn', 4000); return; }
+  if (!SERVER_URL || !SERVER_KEY) { syncRetailKeyWarn(); toast('Нет ключа записи — фото не загрузить', 'err'); return; }
+  if (_rpUploading) { toast('Подождите — предыдущее фото ещё загружается', 'info'); return; }
+  const batch = images.slice(0, room);
+  if (images.length > room) toast(`Добавлено ${room} из ${images.length}: больше ${RETAIL_MAX_PHOTOS} фото на точку нельзя`, 'warn', 4000);
+  _rpUploading = true;
+  const addBtn = document.getElementById('rp-photo-add');
+  if (addBtn) addBtn.textContent = 'Загрузка…';
+  syncRetailKeyWarn();
+  try {
+    for (const f of batch) {
+      try { _rpPhotos.push(await uploadPhoto(f)); }
+      catch (e) { toast('Фото не загружено: ' + e.message, 'err', 4500); }
+    }
+  } finally {
+    _rpUploading = false;
+    if (addBtn) addBtn.textContent = '+ Добавить фото';
+    renderRetailFormPhotos();
+  }
+}
+
+// Картинки из события вставки. Текст, вставляемый в поля формы, не трогаем.
+function clipboardImages(dt) {
+  if (!dt) return [];
+  const out = [];
+  for (const it of dt.items || []) {
+    if (it.kind === 'file' && /^image\//.test(it.type)) { const f = it.getAsFile(); if (f) out.push(f); }
+  }
+  if (!out.length) for (const f of dt.files || []) if (/^image\//.test(f.type)) out.push(f);
+  return out;
+}
+
+// Кнопка «Вставить из буфера» — для мыши и телефона. Браузер может спросить
+// разрешение на чтение буфера; если API нет (старый браузер), подсказываем Ctrl+V.
+async function pasteRetailPhotoFromButton() {
+  if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+    toast('Браузер не даёт прочитать буфер кнопкой — нажмите Ctrl+V в этой форме', 'warn', 4500);
+    return;
+  }
+  try {
+    const items = await navigator.clipboard.read();
+    const files = [];
+    for (const item of items) {
+      const type = item.types.find(t => /^image\//.test(t));
+      if (!type) continue;
+      const blob = await item.getType(type);
+      files.push(new File([blob], 'clipboard.' + (type.split('/')[1] || 'png'), { type }));
+    }
+    if (!files.length) { toast('В буфере нет изображения — скопируйте фото или сделайте скриншот', 'warn', 4000); return; }
+    addRetailPhotos(files);
+  } catch (e) {
+    toast(e && e.name === 'NotAllowedError'
+      ? 'Браузер запретил доступ к буферу — разрешите его или нажмите Ctrl+V в этой форме'
+      : 'Не удалось прочитать буфер — нажмите Ctrl+V в этой форме', 'warn', 5000);
   }
 }
 
@@ -2673,23 +2747,23 @@ function wireRetailUI() {
   const fileInp = document.getElementById('rp-photo-file');
   on('rp-photo-add', 'click', () => fileInp && fileInp.click());
   if (fileInp) {
-    fileInp.addEventListener('change', async () => {
-      const files = [...fileInp.files].slice(0, RETAIL_MAX_PHOTOS - _rpPhotos.length);
+    fileInp.addEventListener('change', () => {
+      const files = [...fileInp.files];
       fileInp.value = '';
-      if (!files.length) return;
-      const addBtn = document.getElementById('rp-photo-add');
-      if (addBtn) { addBtn.disabled = true; addBtn.textContent = 'Загрузка…'; }
-      for (const f of files) {
-        try {
-          _rpPhotos.push(await uploadPhoto(f));
-        } catch (e) {
-          toast('Фото не загружено: ' + e.message, 'err', 4500);
-        }
-      }
-      if (addBtn) { addBtn.disabled = false; addBtn.textContent = '+ Добавить фото'; }
-      renderRetailFormPhotos();
+      if (files.length) addRetailPhotos(files);
     });
   }
+  on('rp-photo-paste', 'click', pasteRetailPhotoFromButton);
+  // Ctrl+V / ⌘V при открытой форме точки: картинка из буфера уходит в фото.
+  // Если в буфере текст — это обычная вставка в поле, не мешаем.
+  document.addEventListener('paste', e => {
+    const modal = document.getElementById('rp-modal');
+    if (!modal || modal.hidden) return;
+    const files = clipboardImages(e.clipboardData);
+    if (!files.length) return;
+    e.preventDefault();
+    addRetailPhotos(files);
+  });
 
   on('rp-key-apply', 'click', () => {
     const inp = document.getElementById('rp-key-input');
