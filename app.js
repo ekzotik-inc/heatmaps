@@ -1522,6 +1522,7 @@ const UI_ICONS = {
   eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
   sheet: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/>',
 };
 function uiIcon(name, size = 15) {
@@ -3831,7 +3832,7 @@ function manualPopupHtml(layer, r) {
     ${r.comment ? `<div class="rp-comment">${esc(r.comment)}</div>` : ''}
     <span class="pp-tag rp-tag" style="background:${esc(r.color || layer.color)}22;color:var(--ink);border:1px solid ${esc(r.color || layer.color)}">${esc(layer.name)}</span>
     ${yandexLinkHtml(r.lat, r.lon)}
-    ${isAdmin() && layer.manual ? '<button type="button" class="rp-edit" data-rpedit="1">✎ Редактировать</button>' : ''}`;
+    ${isAdmin() && layer.manual ? `<button type="button" class="rp-edit" data-rpedit="1">${uiIcon('pencil', 13)} Редактировать</button>` : ''}`;
 }
 
 // Миниатюры дорисовываются после открытия карточки: до клика по точке байты
@@ -4348,12 +4349,12 @@ function buildCustomPtUI() {
         <div class="rp-list" id="rp-list-${id}"${rpListOpen(l) ? '' : ' hidden'}>${l.recs.map(r => `
           <div class="rp-item" data-rpgo="${id}|${esc(r.id || '')}">
             <span class="rp-item-dot" style="background:${safeColor(r.color || l.color)}" title="${r.color ? 'свой цвет' : 'цвет слоя'}"></span>
-            <span class="rp-item-ph">${(r.photos || []).length ? '📷' : '—'}</span>
+            <span class="rp-item-ph" title="${(r.photos || []).length ? 'Есть фото' : 'Без фото'}">${(r.photos || []).length ? uiIcon('camera', 14) : ''}</span>
             <div class="rp-item-main">
               <b>${esc(r.name || 'Без названия')}</b>
               <span>${esc(r.dms ? 'ДМС ' + r.dms : 'без ДМС-кода')}${r.sales != null && r.sales !== '' && isFinite(+r.sales) ? ' · ' + (+r.sales).toLocaleString('ru-RU') + ' продаж' : ''}</span>
             </div>
-            ${isAdmin() ? `<button type="button" class="rp-item-edit" data-rpedit="${id}|${esc(r.id || '')}" title="Редактировать">✎</button>` : ''}
+            ${isAdmin() ? `<button type="button" class="rp-item-edit" data-rpedit="${id}|${esc(r.id || '')}" title="Редактировать" aria-label="Редактировать точку">${uiIcon('pencil', 13)}</button>` : ''}
           </div>`).join('')}</div>` : ''}
     </div>`;
   }).join('');
@@ -6851,6 +6852,26 @@ const BUILTIN_MAPS = [
 ];
 const MAP_ROLES = ['comdep', 'other', 'kg'];
 const MAP_ICONS = ['🗺', '🗂', '🏙', '🏪', '📦', '🚚', '⭐', '🎯', '🇺🇿', '🇰🇬'];
+/* Значок карты хранится как раньше — строкой-эмодзи из MAP_ICONS (реестр на
+   сервере не меняется), а рисуется SVG-иконкой Lucide: эмодзи в интерфейсе
+   выглядят по-разному на каждой системе (чек-лист ui-ux-pro-max: «No emojis
+   as icons»). Флаги — подписью страны. */
+const MAP_ICON_SVG = {
+  '🗺': '<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/>',
+  '🗂': '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  '🏙': '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>',
+  '🏪': '<path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"/>',
+  '📦': '<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 8.7 5 8.7-5"/>',
+  '🚚': '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>',
+  '⭐': '<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/>',
+  '🎯': '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+};
+const MAP_ICON_FLAG = { '🇺🇿': 'UZ', '🇰🇬': 'KG' };
+function mapIconHtml(ic, size = 18) {
+  if (MAP_ICON_FLAG[ic]) return `<span class="map-flag" aria-hidden="true">${MAP_ICON_FLAG[ic]}</span>`;
+  const d = MAP_ICON_SVG[ic] || MAP_ICON_SVG['🗺'];
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+}
 let MAP_LIST = BUILTIN_MAPS.slice();
 let _mapsFromServer = false;
 
@@ -6882,14 +6903,14 @@ function showRoleBadge() {
   badge.style.display = 'none';
   const m = mapInfo(currentMap);
   const many = MAP_LIST.length > 1;
-  badge.textContent = (isAdmin() ? '✏ Админ · ' : '👁 ') + m.name + (many ? ' ▾' : '');
+  badge.textContent = (isAdmin() ? 'Админ · ' : '') + m.name + (many ? ' ▾' : '');
   badge.className = 'mode-badge ' + (isAdmin() ? 'mode-edit' : 'mode-view') + (many ? ' clickable' : '');
   badge.title = many ? 'Переключить карту' : '';
   badge.setAttribute('role', many ? 'button' : 'status');
   badge.tabIndex = many ? 0 : -1;
   const sw = document.getElementById('map-switch');
   if (sw) {
-    document.getElementById('map-switch-icon').textContent = m.icon || '🗺';
+    document.getElementById('map-switch-icon').innerHTML = mapIconHtml(m.icon, 14);
     document.getElementById('map-switch-name').textContent = m.name;
     sw.classList.toggle('single', !many);
     sw.disabled = !many;
@@ -6938,7 +6959,7 @@ function openMapMenu(anchor, focusItem = true) {
   }
   menu.innerHTML = `<div class="map-menu-head">Карты</div>` + MAP_LIST.map(m => `
     <button type="button" class="map-menu-item${m.id === currentMap ? ' on' : ''}" role="menuitem" data-mapgo="${esc(m.id)}">
-      <span class="mm-ic">${esc(m.icon || '🗺')}</span>
+      <span class="mm-ic">${mapIconHtml(m.icon)}</span>
       <span class="mm-body"><b>${esc(m.name)}</b>${m.desc ? `<small>${esc(m.desc)}</small>` : ''}</span>
       ${m.id === currentMap ? '<span class="mm-cur">открыта</span>' : ''}
     </button>`).join('') +
@@ -7036,14 +7057,14 @@ async function renderMapsAdmin() {
     ].filter(Boolean).join(' · ');
     const cur = m.id === currentMap;
     return `<div class="map-row${cur ? ' cur' : ''}">
-      <span class="map-row-ic">${esc(m.icon || '🗺')}</span>
+      <span class="map-row-ic">${mapIconHtml(m.icon, 20)}</span>
       <div class="map-row-main">
         <b>${esc(m.name)}${cur ? '<span class="map-row-tag">открыта</span>' : ''}${m.base ? '<span class="map-row-tag base">исходная</span>' : ''}</b>
         <small>${esc(meta)}</small>
       </div>
       <div class="map-row-acts">
         ${cur ? '' : `<button type="button" class="lyr-act" data-mapopen="${esc(m.id)}" title="Открыть карту">Открыть</button>`}
-        <button type="button" class="lyr-act" data-mapedit="${esc(m.id)}" title="Название, значок, доступ">✎</button>
+        <button type="button" class="lyr-act" data-mapedit="${esc(m.id)}" title="Название, значок, доступ" aria-label="Изменить карту">${uiIcon('pencil', 14)}</button>
         ${m.base ? '' : `<button type="button" class="lyr-act lyr-del" data-mapdel="${esc(m.id)}" title="Удалить карту">&times;</button>`}
       </div>
     </div>`;
@@ -7073,7 +7094,7 @@ function syncMapForm() {
   const icons = document.getElementById('mf-icons');
   if (icons && !icons.dataset.built) {
     icons.dataset.built = '1';
-    icons.innerHTML = MAP_ICONS.map(ic => `<button type="button" class="mf-icon" data-ic="${ic}" aria-label="Значок ${ic}">${ic}</button>`).join('');
+    icons.innerHTML = MAP_ICONS.map(ic => `<button type="button" class="mf-icon" data-ic="${ic}" aria-label="Значок карты">${mapIconHtml(ic)}</button>`).join('');
     icons.querySelectorAll('[data-ic]').forEach(b => b.addEventListener('click', () => setMapFormIcon(b.dataset.ic)));
   }
 }
@@ -7111,7 +7132,7 @@ function editMap(id) {
     i.disabled = m.base && i.value === m.id;
   });
   setMapFormIcon(m.icon || '🗺');
-  $('mf-title').textContent = '✎ ' + m.name;
+  $('mf-title').textContent = 'Изменить: ' + m.name;
   $('mf-submit').textContent = 'Сохранить изменения';
   $('mf-cancel').style.display = '';
   const g = $('map-form-group');
@@ -7214,7 +7235,7 @@ async function renderUsersAdmin() {
       ${open ? `<div class="user-pw-form">
         <div class="user-pw-row">
           <input type="password" class="mf-input" data-pw1 autocomplete="new-password" placeholder="Новый пароль, от ${min} символов" minlength="${min}" maxlength="128"/>
-          <button type="button" class="lyr-act" data-pwshow title="Показать пароль" aria-label="Показать пароль">👁</button>
+          <button type="button" class="lyr-act" data-pwshow title="Показать пароль" aria-label="Показать пароль">${uiIcon('eye', 14)}</button>
         </div>
         <input type="password" class="mf-input" data-pw2 autocomplete="new-password" placeholder="Повторите пароль" maxlength="128"/>
         <div class="user-pw-acts">
@@ -7676,7 +7697,7 @@ async function startApp() {
     if (!box) return;
     box.innerHTML = MAP_LIST.map(m => `
       <button class="mode-card map-card" data-map="${esc(m.id)}">
-        <div class="mode-icon">${esc(m.icon || '🗺')}</div>
+        <div class="mode-icon">${mapIconHtml(m.icon, 24)}</div>
         <div class="mode-body">
           <div class="mode-name">${esc(m.name)}</div>
           <div class="mode-desc">${esc(m.desc || (m.country === 'kg' ? 'Кыргызстан' : 'Узбекистан'))}</div>

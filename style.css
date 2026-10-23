@@ -10,15 +10,15 @@
   --line2:    #E9EDF4;   /* input borders */
   --ink:      #1C2434;   /* primary text */
   --mut:      #5B6A82;   /* secondary text */
-  --dim:      #9AA5B8;   /* captions / section headers */
+  --dim:      #647086;   /* captions / section headers — 5.0:1 на белом (было #9AA5B8, 2.5:1) */
   --acc:      #12ADC1;   /* teal accent */
-  --acc-d:    #0E96A8;   /* dark teal (text/icons) */
+  --acc-d:    #097382;   /* dark teal: текст, иконки и заливки с белым текстом — 5.6:1 */
   --acc-l:    #E1F5F8;   /* accent soft plate */
   --acc-l2:   #D2EFF4;   /* accent hover/active */
   --rec:      #14B87D;   /* success / recommendations */
-  --rec-d:    #0E9463;
+  --rec-d:    #0B7F55;   /* заливки с белым текстом — 5.0:1 */
   --rec-l:    #E3F7EF;
-  --rec-ink:  #0E9463;
+  --rec-ink:  #0A7A52;   /* зелёный текст — 5.4:1 */
   --danger:   #E9564B;
   --warn:     #F2A93B;
   --shadow:   0 10px 40px -12px rgba(30,45,80,.22);   /* panels */
@@ -970,7 +970,7 @@ input[type=range].full { width: 100%; }
 }
 .rp-list-toggle:hover { color: var(--acc-d); border-color: var(--acc); background: var(--acc-l); }
 .rp-list-toggle span { flex: 1; }
-.rp-list-toggle b { font-size: 10.5px; padding: 1px 7px; border-radius: 100px; background: var(--card2); color: var(--mut); border: 1px solid var(--line2); }
+.rp-list-toggle b { font-size: 11px; padding: 1px 7px; border-radius: 100px; background: var(--card2); color: var(--mut); border: 1px solid var(--line2); }
 .rp-list-toggle svg { flex: 0 0 auto; transition: transform .2s var(--ease); }
 .rp-list-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .rp-item {
@@ -2557,3 +2557,92 @@ button, input, select, textarea, optgroup, option, kbd, code, pre,
 .legend-item { min-width: 0; }
 .legend-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .legend-count, .legend-area, .legend-ramp, .legend-pin, .legend-dot, .legend-zdot { flex-shrink: 0; }
+
+/* ── ДИЗАЙН-СИСТЕМА v2 (скилл ui-ux-pro-max) ─────────────────────────────
+   Направление: «Минимализм / швейцарский стиль» для плотной аналитической
+   панели (design-system/heatmap/MASTER.md). Фирменный бирюзовый --acc —
+   для заливок без текста, линий, графики и фокуса; всё, где на акценте
+   стоит белый текст или акцент сам текст, — на --acc-d (контраст ≥ 4.5:1).
+   Шрифт — только Inter (правило проекта важнее рекомендации скилла). */
+
+/* Контраст: белый текст/иконка на акцентной заливке */
+.admin-head-ic, .map-row-tag, .zbtn-ruler.on, .city-filter-count, .city-option.on,
+.city-extra-btn.on, .cities button.on, .lyr-act.on, .rp-key-row button, .upd-apply,
+.upd-btn-main, .addr-num, .vt.on .vt-ic, .lc-link.on, .pp2-apply, .pick-row.on .pick-chk,
+.mk-glyph.on, .bdraw-btn.ok, .cl-big {
+  background-color: var(--acc-d); border-color: var(--acc-d);
+}
+.cl-big:not(:hover) { background-color: var(--acc-d); }
+.rec-basis button.on { background: var(--rec-d); border-color: var(--rec-d); }
+.mk-glyphs > .liquid, .bdraw-modes > .liquid { background: var(--acc-d); }
+/* Акцент как цвет текста — тёмный бирюзовый */
+.map-switch-ic, .map-switch-name, .lc-sl b, .city-scope-btn.on, .side-tab.active .tab-label,
+.side-tab.active, .user-av, .acc-badge, .lc-link:hover, .pick-more, .lnk { color: var(--acc-d); }
+
+/* Размер текста: ничего мельче 11px, подписи — 11.5–12px */
+.map-row-tag, .acc-badge, .legend-n, .legend-count, .legend-area, .tip-icon,
+.lc-link, .addr-num, .pick-n, .city-filter-count { font-size: 11px; }
+.addr-hint, .share-hint, .rp-item-main span, .sync-badge, #sync-label,
+.lc-n, .lc-foot, .ci-hint { font-size: 11.5px; }
+small, .vt-txt small { font-size: 11px; }
+.side-tab { font-size: 11px; font-weight: 600; letter-spacing: -.2px; padding-left: 0; padding-right: 0; }
+.share-btn.export { color: var(--acc-d); }
+.share-btn.import { color: var(--rec-ink); }
+.acc-badge { min-width: 17px; height: 17px; line-height: 17px; }
+
+/* Цели нажатия: иконки-кнопки 28px, переключатели 38×22, на сенсорных
+   экранах — 36px и 44×26 (WCAG 2.5.8 и чек-лист скилла). */
+.lc-ic { width: 28px; height: 28px; }
+.cbx.sm { width: 38px; height: 22px; }
+.cbx.sm::after { left: 3px; top: 3px; width: 16px; height: 16px; }
+.cbx.sm.on::after { transform: translateX(16px); }
+.cbx.sm:active::after { width: 20px; }
+.cbx.sm.on:active::after { transform: translateX(12px); }
+.map-switch { min-height: 28px; padding-top: 4px; padding-bottom: 4px; }
+.lyr-act, .rp-item-edit { min-width: 28px; min-height: 28px; display: inline-grid; place-items: center; }
+@media (pointer: coarse) {
+  .lc-ic { width: 36px; height: 36px; }
+  .cbx.sm { width: 44px; height: 26px; }
+  .cbx.sm::after { width: 20px; height: 20px; }
+  .cbx.sm.on::after { transform: translateX(18px); }
+  .lyr-act, .rp-item-edit, .bz-zone .lc-ic { min-width: 40px; min-height: 40px; }
+  .lc-tools { gap: 4px; }
+}
+
+/* Фокус с клавиатуры виден всегда — одним правилом для всего интерфейса */
+:where(button, a, input, select, textarea, summary, [role="switch"], [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--acc-d); outline-offset: 2px;
+}
+:where(input, select, textarea):focus-visible { outline-offset: 0; }
+
+/* Швейцарская сдержанность: тени тоньше, границы чётче, без лишних свечений */
+.lc, .addr-step, .vt, .bz-new, .pick-row, .bz-zbtn { box-shadow: none; }
+.lc { border: 1px solid var(--line2); }
+.lc:hover { border-color: var(--dim); }
+.tab-section-title, .sec, .bz-sec, .ci-sec, .pp2-h { color: var(--mut); }
+
+/* Значки вместо эмодзи */
+.ic-inline { display: inline-block; vertical-align: -2px; margin-right: 4px; }
+.map-switch-ic svg, .mm-ic svg, .map-row-ic svg, .mode-icon svg, .mf-icon svg { display: block; }
+.mode-icon { color: var(--acc-d); }
+.map-row-ic, .mm-ic { color: var(--mut); }
+.map-flag { display: inline-grid; place-items: center; min-width: 22px; height: 18px; padding: 0 4px; border-radius: 4px; border: 1px solid var(--line2); font: 700 10.5px "Inter"; color: var(--mut); }
+.rec-summary-icon { color: var(--acc-d); display: grid; place-items: center; }
+.rp-item-ph { color: var(--mut); display: inline-grid; place-items: center; min-width: 16px; }
+.rp-edit svg, .rp-item-edit svg, .lyr-act svg { vertical-align: -2px; }
+
+@media (max-width: 780px) {
+  .side-tab { font-size: 11px; letter-spacing: -.2px; }
+}
+
+/* Остаток аудита: значения ползунков, номера шагов, подписи, ссылки */
+/* Один акцент (швейцарский стиль): значения ползунков — основным цветом текста */
+.ctrl .val, .ctrl .val.blue { color: var(--ink); }
+.pick-row.on .pick-n { color: var(--mut); }
+#tab-analysis .addr-num, .admin-head p, .map-flag { font-size: 11px; }
+.map-row small, .map-row-sub, .user-row small { font-size: 11px; }
+.cbx.sm { width: 40px; height: 24px; }
+.cbx.sm::after { width: 18px; height: 18px; }
+.cbx.sm.on::after { transform: translateX(16px); }
+.lc-link { min-height: 26px; padding: 4px 10px; }
+.lnk { min-height: 28px; align-items: center; color: var(--acc-d); }

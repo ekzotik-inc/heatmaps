@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.1/maplibre-gl.css"/>
-  <link rel="stylesheet" href="style.css?v=20261025f"/>
+  <link rel="stylesheet" href="style.css?v=20261025g"/>
 </head>
 <body>
 
@@ -69,14 +69,14 @@
     <p class="auth-sub">У каждого отдела своя независимая карта</p>
     <div class="mode-cards" id="map-cards">
       <button class="mode-card map-card" data-map="comdep">
-        <div class="mode-icon">🗂</div>
+        <div class="mode-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></div>
         <div class="mode-body">
           <div class="mode-name">Com Dep</div>
           <div class="mode-desc">Карта коммерческого отдела</div>
         </div>
       </button>
       <button class="mode-card map-card" data-map="other">
-        <div class="mode-icon">🗺</div>
+        <div class="mode-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/></svg></div>
         <div class="mode-body">
           <div class="mode-name">Другая</div>
           <div class="mode-desc">Карта второго отдела</div>
@@ -104,7 +104,7 @@
       <div class="brand-text">
         <h1>Тепловая карта</h1>
         <button type="button" class="map-switch" id="map-switch" aria-haspopup="menu" aria-controls="map-menu" aria-expanded="false" title="Переключить карту">
-          <span class="map-switch-ic" id="map-switch-icon">🗺</span>
+          <span class="map-switch-ic" id="map-switch-icon"></span>
           <span class="map-switch-name" id="map-switch-name">Карта</span>
           <svg class="map-switch-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </button>
@@ -177,7 +177,7 @@
           Добавить точку вручную
         </button>
         <div style="text-align:center;margin-top:8px">
-          <a class="lnk" id="manual-export-all" style="display:none">⬇ Все ручные точки в Excel</a>
+          <a class="lnk" id="manual-export-all" style="display:none"><svg class="ic-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg> Все ручные точки в Excel</a>
         </div>
         <input type="file" id="cpt-file" accept=".csv,.xlsx,.xls" style="display:none"/>
       </div>
@@ -197,7 +197,7 @@
           <select id="rec-basis-sel" class="addr-sel"></select>
         </div>
         <div class="rec-summary">
-          <div class="rec-summary-icon">📍</div>
+          <div class="rec-summary-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div>
           <div class="rec-summary-body">
             <div class="big" id="rec-count">—</div>
             <div class="lbl" id="rec-lbl"></div>
@@ -220,7 +220,7 @@
         </div>
         <div class="rec-list" id="rec-list"></div>
         <button class="rec-toggle" id="rec-toggle" style="display:none"></button>
-        <button class="btn" id="rec-export" style="margin-top:8px">⬇ Экспорт рекомендаций (Excel)</button>
+        <button class="btn" id="rec-export" style="margin-top:8px"><svg class="ic-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg> Экспорт рекомендаций (Excel)</button>
 
       </div>
 
@@ -345,7 +345,7 @@
         <details class="adv-group">
           <summary>Загрузка данных по шаблону<span class="chev">›</span></summary>
           <div class="adv-body">
-            <a class="lnk" id="dl-tpl">⬇ Скачать шаблон (Excel)</a>
+            <a class="lnk" id="dl-tpl"><svg class="ic-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg> Скачать шаблон (Excel)</a>
             <div class="up-row">Слой для загрузки:&nbsp;<select id="up-target"></select></div>
             <div class="filebox" id="filebox">Выберите файл <b>CSV / XLSX</b></div>
             <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none"/>
@@ -369,7 +369,7 @@
         <details class="adv-group">
           <summary>База данных на сервере<span class="chev">›</span></summary>
           <div class="adv-body">
-            <button class="btn btn-retraffic" id="btn-save-dataset" style="width:100%">⬆ Сохранить базу на сервере</button>
+            <button class="btn btn-retraffic" id="btn-save-dataset" style="width:100%"><svg class="ic-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg> Сохранить базу на сервере</button>
             <div class="foot">Все базовые данные (точки, слои, районы) хранятся на сервере, а не в репозитории. Эта кнопка сохраняет текущие слои как новую базу для всех пользователей.</div>
           </div>
         </details>
@@ -522,7 +522,7 @@
   </div>
 
   <!-- Custom zoom controls (default Leaflet control disabled) -->
-  <div id="ruler-hint" class="ruler-hint" hidden>📏 Линейка: кликайте по карте, чтобы ставить точки · <b>Esc</b> — стереть</div>
+  <div id="ruler-hint" class="ruler-hint" hidden><svg class="ic-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></svg> Линейка: кликайте по карте, чтобы ставить точки · <b>Esc</b> — стереть</div>
   <div id="zoom-ctl">
     <button id="zoom-in" class="zbtn" title="Приблизить" aria-label="Приблизить">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="6" x2="12" y2="18"/><line x1="6" y1="12" x2="18" y2="12"/></svg>
@@ -565,9 +565,9 @@
       <h3 id="cl-done-title">Слой создан</h3>
       <ol class="cl-steps">
         <li><b>Скачайте шаблон</b> — в нём уже есть ваши колонки.
-          <button type="button" class="cl-big" id="cl-tpl">⬇ Скачать шаблон Excel</button></li>
+          <button type="button" class="cl-big" id="cl-tpl"><svg class="ic-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg> Скачать шаблон Excel</button></li>
         <li><b>Заполните и загрузите</b> — точки появятся на карте.
-          <button type="button" class="cl-big ghost" id="cl-upload">⬆ Загрузить заполненный файл</button></li>
+          <button type="button" class="cl-big ghost" id="cl-upload"><svg class="ic-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg> Загрузить заполненный файл</button></li>
       </ol>
       <div class="cl-actions"><button type="button" class="modal-btn primary" id="cl-done">Готово</button></div>
     </div>
@@ -658,7 +658,7 @@
         <div class="rp-photos" id="rp-photos"></div>
         <div class="rp-photo-btns">
           <button type="button" class="rp-photo-add" id="rp-photo-add">+ Добавить фото</button>
-          <button type="button" class="rp-photo-add" id="rp-photo-paste" title="Вставить картинку из буфера обмена">📋 Вставить из буфера</button>
+          <button type="button" class="rp-photo-add" id="rp-photo-paste" title="Вставить картинку из буфера обмена"><svg class="ic-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg> Вставить из буфера</button>
         </div>
         <small class="rp-paste-hint" id="rp-paste-hint">Или нажмите <kbd>Ctrl</kbd>+<kbd>V</kbd> в этой форме — скопированное фото или скриншот добавится сразу</small>
         <input type="file" id="rp-photo-file" accept="image/*" multiple style="display:none"/>
@@ -736,7 +736,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20261025f'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20261025g'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();
