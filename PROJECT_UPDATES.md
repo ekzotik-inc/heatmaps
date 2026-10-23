@@ -638,3 +638,12 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   Esc, «×», ruler button, Ctrl in an input ignored.
 - Cache version `20261024a`.
 
+## 2026-10-24 — City summary moved onto the map
+
+- The «Город» tab is gone. A «Город» button in the city bar (next to
+  «Районы») opens the same summary in a popover below it: on hover with the
+  safe triangle, pinned by click, Esc/outside click closes. It renders on
+  open, so it always reflects the current city selection. Opening the city
+  filter closes it and vice versa. Keyboard tab shortcuts are now 1–5.
+- Cache version `20261024b`.
+

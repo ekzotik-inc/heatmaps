@@ -1653,10 +1653,42 @@ document.addEventListener('pointerdown', e => {
 });
 window.addEventListener('scroll', () => { if (_tipFor) hideTip(); }, true);
 
+/* Сводка по городу — кнопка «Город» на карте вместо отдельной вкладки.
+   Наведение открывает (безопасный треугольник), клик закрепляет. */
+function setCityInfoPop(open) {
+  const pop = document.getElementById('city-pop');
+  const btn = document.getElementById('city-info-btn');
+  if (!pop || !btn) return;
+  if (open) { renderCityInfo(); setCityPopover(false); }
+  pop.hidden = !open;
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.classList.toggle('on', open);
+}
+function wireCityInfoPop() {
+  const btn = document.getElementById('city-info-btn');
+  const pop = document.getElementById('city-pop');
+  if (!btn || !pop || btn._wired) return;
+  btn._wired = true;
+  btn.addEventListener('click', () => setCityInfoPop(pop.hidden));
+  document.addEventListener('pointerdown', e => {
+    if (!pop.hidden && !e.target.closest('#city-info-wrap')) setCityInfoPop(false);
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !pop.hidden) setCityInfoPop(false); });
+  const hm = hoverMenu({
+    trigger: btn,
+    panel: () => pop,
+    isOpen: () => !pop.hidden,
+    open: () => setCityInfoPop(true),
+    close: () => setCityInfoPop(false),
+  });
+  if (hm) hm.bindPanel();
+}
+
 function setCityPopover(open, focusSearch = true) {
   const pop = document.getElementById('city-filter-popover');
   const trigger = document.getElementById('city-filter-trigger');
   if (!pop || !trigger) return;
+  if (open && !document.getElementById('city-pop')?.hidden) setCityInfoPop(false);
   pop.hidden = !open;
   trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
   document.getElementById('city-filter')?.classList.toggle('open', open);
@@ -1728,6 +1760,7 @@ function bindCityFilter() {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') setCityPopover(false);
   });
+  wireCityInfoPop();
   const hm = hoverMenu({
     trigger: document.getElementById('city-filter-trigger'),
     panel: () => document.getElementById('city-filter-popover'),
@@ -5416,8 +5449,8 @@ function wireEvents() {
     if (tag === 'input' || tag === 'select' || tag === 'textarea' || e.metaKey || e.ctrlKey || e.altKey) return;
     // Порядок как в нижней навигации — иначе «Город» недостижим с клавиатуры,
     // а «4» открывает не то, что подписано.
-    const tabs = ['tab-map', 'tab-points', 'tab-recs', 'tab-analysis', 'tab-city', 'tab-data'];
-    if (e.key >= '1' && e.key <= '6') {
+    const tabs = ['tab-map', 'tab-points', 'tab-recs', 'tab-analysis', 'tab-data'];
+    if (e.key >= '1' && e.key <= '5') {
       const t = document.querySelector(`.side-tab[data-tab="${tabs[+e.key - 1]}"]`);
       if (t && t.offsetParent !== null) t.click(); // skip if hidden (e.g. data tab for viewers)
     }
