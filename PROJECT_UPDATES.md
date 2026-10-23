@@ -647,3 +647,24 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   filter closes it and vice versa. Keyboard tab shortcuts are now 1–5.
 - Cache version `20261024b`.
 
+## 2026-10-24 — Admin panel: password management
+
+- The «Данные» tab is now «Админ» with an «Админ панель» header. It stays
+  hidden for every role except `admin` (CSS + keyboard shortcut skip), and all
+  its actions are enforced on the server.
+- New «Учётные записи» section: every login with its role and when its
+  password was last changed; «Сменить пароль» opens an inline form (show,
+  generate 12 characters, repeat, confirm). Works for the owner's own login.
+- Server: `GET /auth/users` (admin, no hashes) and `POST /auth/password`
+  (admin + write key). New scrypt hashes are stored in `app_state`
+  (`auth_overrides`) and override `AUTH_USERS_JSON`; loaded at start-up.
+  Tokens now carry `iat`; a password change revokes sessions issued before
+  it. Changing one's own password returns a fresh token and write key, so the
+  owner stays signed in.
+- Verified: 13 API checks (no hashes in the list, non-admin blocked, length
+  rules, unknown login, old session revoked, old password rejected, new
+  password works, own change keeps the session and the write key, overrides
+  survive restart) and a browser run (change Com Dep and own password from the
+  UI, generator, Com Dep sees no admin tab and «5» does not open it).
+- Cache version `20261024c`. Server changed — Render redeploys on push.
+

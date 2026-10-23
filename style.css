@@ -128,6 +128,30 @@ html, body {
 }
 .map-menu-new:hover { background: var(--acc-l2); }
 
+/* Админ панель */
+.admin-head { display: flex; align-items: center; gap: 11px; padding: 12px 13px; margin-bottom: 16px;
+  background: var(--acc-l); border: 1px solid var(--acc-l2); border-radius: 14px; }
+.admin-head-ic { width: 36px; height: 36px; border-radius: 11px; flex: 0 0 auto; display: grid; place-items: center;
+  background: var(--acc); color: #fff; }
+.admin-head h2 { margin: 0; font: 800 14px "Manrope"; color: var(--ink); }
+.admin-head p { margin: 2px 0 0; font-size: 10.5px; color: var(--mut); }
+.user-row { padding: 10px 11px; margin-bottom: 7px; background: var(--card); border: 1px solid var(--line2);
+  border-radius: 12px; box-shadow: var(--shadow-card); }
+.user-row.open { border-color: var(--acc); }
+.user-top { display: flex; align-items: center; gap: 10px; }
+.user-av { width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto; display: grid; place-items: center;
+  background: var(--card2); border: 1px solid var(--line2); font: 800 12px "Manrope"; color: var(--acc-d); }
+.user-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.user-main b { font-size: 12.5px; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+.user-main small { font-size: 10.5px; color: var(--mut); }
+.user-pw-btn { flex: 0 0 auto; padding: 6px 10px; }
+.user-pw-form { display: grid; gap: 7px; margin-top: 10px; }
+.user-pw-row { display: flex; gap: 6px; }
+.user-pw-row .lyr-act { flex: 0 0 auto; width: 38px; }
+.user-pw-acts { display: flex; gap: 6px; align-items: center; }
+.user-pw-acts .lyr-act { flex: 0 0 auto; padding: 9px 10px; }
+.user-pw-save { flex: 1; margin: 0; }
+
 /* Управление картами (вкладка «Данные») */
 .maps-head { display: flex; align-items: center; gap: 8px; }
 .maps-head .tab-section-title { flex: 1; }

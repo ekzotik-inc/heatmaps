@@ -5884,15 +5884,100 @@ async function deleteMap(id) {
   }
 }
 
+/* Учётные записи (админ-панель): список логинов и смена пароля любого из
+   них, включая свой. Хэши остаются на сервере. */
+const ROLE_NAMES = { admin: 'Владелец (админ)', comdep: 'Com Dep', other: 'Другая', kg: 'Кыргызстан' };
+let _pwOpen = null;
+function genPassword() {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const buf = new Uint32Array(12); crypto.getRandomValues(buf);
+  return Array.from(buf, n => abc[n % abc.length]).join('');
+}
+async function renderUsersAdmin() {
+  const box = document.getElementById('users-admin-list');
+  if (!box || !isAdmin()) return;
+  box.innerHTML = '<div class="maps-empty">Загружаем учётные записи…</div>';
+  let users = [], min = 8;
+  try {
+    const res = await authFetch(SERVER_URL + '/auth/users', { signal: AbortSignal.timeout(20000) });
+    if (res.status === 404) { box.innerHTML = '<div class="maps-empty">Сервер ещё старой версии — смена паролей заработает после передеплоя на Render.</div>'; return; }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json(); users = j.users || []; min = j.min || 8;
+  } catch (e) {
+    box.innerHTML = `<div class="maps-empty">Не удалось загрузить учётные записи: ${esc(e.message)}</div>`;
+    return;
+  }
+  box.innerHTML = users.map(u => {
+    const when = u.changedAt ? 'пароль изменён ' + new Date(u.changedAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'пароль из настроек сервера';
+    const me = u.username === currentUser;
+    const open = _pwOpen === u.username;
+    return `<div class="user-row${open ? ' open' : ''}" data-user="${esc(u.username)}">
+      <div class="user-top">
+        <span class="user-av">${esc(u.username.slice(0, 1).toUpperCase())}</span>
+        <div class="user-main"><b>${esc(u.username)}${me ? '<span class="map-row-tag">вы</span>' : ''}</b><small>${esc(ROLE_NAMES[u.role] || u.role)} · ${esc(when)}</small></div>
+        <button type="button" class="lyr-act user-pw-btn" data-pwtoggle="${esc(u.username)}">${open ? 'Отмена' : 'Сменить пароль'}</button>
+      </div>
+      ${open ? `<div class="user-pw-form">
+        <div class="user-pw-row">
+          <input type="password" class="mf-input" data-pw1 autocomplete="new-password" placeholder="Новый пароль, от ${min} символов" minlength="${min}" maxlength="128"/>
+          <button type="button" class="lyr-act" data-pwshow title="Показать пароль" aria-label="Показать пароль">👁</button>
+        </div>
+        <input type="password" class="mf-input" data-pw2 autocomplete="new-password" placeholder="Повторите пароль" maxlength="128"/>
+        <div class="user-pw-acts">
+          <button type="button" class="lyr-act" data-pwgen>Сгенерировать</button>
+          <button type="button" class="btn user-pw-save" data-pwsave="${esc(u.username)}">Сохранить пароль</button>
+        </div>
+      </div>` : ''}
+    </div>`;
+  }).join('') || '<div class="maps-empty">Учётных записей нет</div>';
+  box.querySelectorAll('[data-pwtoggle]').forEach(b => b.addEventListener('click', () => {
+    _pwOpen = _pwOpen === b.dataset.pwtoggle ? null : b.dataset.pwtoggle;
+    renderUsersAdmin().then(() => { const i = box.querySelector('[data-pw1]'); if (i) i.focus(); });
+  }));
+  const form = box.querySelector('.user-pw-form');
+  if (!form) return;
+  const p1 = form.querySelector('[data-pw1]'), p2 = form.querySelector('[data-pw2]');
+  form.querySelector('[data-pwshow]').addEventListener('click', () => {
+    const t = p1.type === 'password' ? 'text' : 'password'; p1.type = t; p2.type = t;
+  });
+  form.querySelector('[data-pwgen]').addEventListener('click', () => {
+    const v = genPassword(); p1.value = v; p2.value = v; p1.type = 'text'; p2.type = 'text';
+    toast('Пароль сгенерирован — скопируйте и передайте его владельцу логина', 'info', 4500);
+  });
+  const save = form.querySelector('[data-pwsave]');
+  const submit = async () => {
+    const username = save.dataset.pwsave;
+    if (p1.value.length < min) { toast(`Пароль должен быть не короче ${min} символов`, 'warn'); p1.focus(); return; }
+    if (p1.value !== p2.value) { toast('Пароли не совпадают', 'warn'); p2.focus(); return; }
+    const self = username === currentUser;
+    if (!confirm(self ? 'Сменить ваш пароль? Остальные ваши сессии (другие браузеры) будут завершены.'
+                      : `Сменить пароль «${username}»? Все открытые сессии этого логина будут завершены.`)) return;
+    save.disabled = true; save.textContent = 'Сохраняем…';
+    try {
+      const j = await mapsPost('/auth/password', { username, password: p1.value }, 30000);
+      if (j.self) { rememberSessionToken(j.token); applyWriteKey(j.writeKey); }
+      _pwOpen = null;
+      toast(`Пароль «${username}» изменён`, 'ok', 4000);
+      renderUsersAdmin();
+    } catch (e) {
+      toast(e.message, 'err', 5000);
+      save.disabled = false; save.textContent = 'Сохранить пароль';
+    }
+  };
+  save.addEventListener('click', submit);
+  p2.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+}
+
 function wireMapsAdmin() {
   const $ = id => document.getElementById(id);
   if (!$('maps-admin-list')) return;
   $('mf-submit').addEventListener('click', submitMapForm);
   $('mf-cancel').addEventListener('click', resetMapForm);
   $('maps-refresh').addEventListener('click', renderMapsAdmin);
+  const ur = $('users-refresh'); if (ur) ur.addEventListener('click', renderUsersAdmin);
   $('mf-name').addEventListener('keydown', e => { if (e.key === 'Enter') submitMapForm(); });
   resetMapForm();
-  if (isAdmin()) renderMapsAdmin();
+  if (isAdmin()) { renderMapsAdmin(); renderUsersAdmin(); }
 }
 
 // Viewers may freely tune the view (colours, layers, cities) but cannot

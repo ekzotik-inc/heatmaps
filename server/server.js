@@ -195,6 +195,7 @@ function createSession(user) {
   const payload = b64url(JSON.stringify({
     u: user.username,
     role: user.role,
+    iat: Date.now(),
     exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SEC,
   }));
   return payload + '.' + signSession(payload);
@@ -230,6 +231,9 @@ function verifySessionToken(token) {
     if (!data.u || !data.role || !Number.isFinite(data.exp) || data.exp <= Date.now() / 1000) return null;
     const user = AUTH_USERS.get(String(data.u).toLowerCase());
     if (!user || user.role !== data.role) return null;
+    // Смена пароля отзывает все сессии, выданные до неё.
+    const issuedAt = Number.isFinite(data.iat) ? data.iat : (data.exp - SESSION_TTL_SEC) * 1000;
+    if (user.changedAt && issuedAt < user.changedAt) return null;
     return { username: user.username, role: user.role };
   } catch (_) {
     return null;
@@ -761,6 +765,85 @@ app.get('/photo/:id', requireSession, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Пароли учётных записей. Исходные хэши лежат в AUTH_USERS_JSON (Render), но
+// владелец меняет пароли из админ-панели: новые хэши хранятся в app_state под
+// ключом `auth_overrides` и перекрывают значения из окружения. Смена пароля
+// отзывает все прежние сессии этого логина.
+// ---------------------------------------------------------------------------
+const AUTH_OVERRIDES_KEY = 'auth_overrides';
+const PASSWORD_MIN = 8, PASSWORD_MAX = 128;
+let authChain = Promise.resolve();
+
+function hashPassword(password) {
+  const N = 16384, R = 8, P = 1, KEYLEN = 32;
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(String(password), salt, KEYLEN, { N, r: R, p: P, maxmem: SCRYPT_MAXMEM }).toString('hex');
+  return `scrypt$${N}$${R}$${P}$${salt}$${hash}`;
+}
+async function loadAuthOverrides() {
+  const v = await readState(AUTH_OVERRIDES_KEY);
+  stateReadCache.delete(AUTH_OVERRIDES_KEY);
+  const users = (v && v.users) || {};
+  let applied = 0;
+  for (const [name, o] of Object.entries(users)) {
+    const u = AUTH_USERS.get(name);
+    if (!u || !o || !parsePasswordHash(o.passwordHash)) continue;
+    u.passwordHash = o.passwordHash;
+    u.changedAt = Number(o.changedAt) || 0;
+    applied += 1;
+  }
+  if (applied) console.log(`Password overrides applied: ${applied}`);
+}
+
+app.get('/auth/users', requireSession, requireAdmin, (req, res) => {
+  noStore(res);
+  const users = [...AUTH_USERS.values()]
+    .map(u => ({ username: u.username, role: u.role, changedAt: u.changedAt ? new Date(u.changedAt).toISOString() : '' }))
+    .sort((a, b) => (a.role === 'admin' ? -1 : 0) - (b.role === 'admin' ? -1 : 0) || a.username.localeCompare(b.username));
+  res.json({ users, min: PASSWORD_MIN });
+});
+
+app.post('/auth/password', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const b = req.body || {};
+  const username = String(b.username || '').trim().toLowerCase();
+  const password = String(b.password == null ? '' : b.password);
+  const user = AUTH_USERS.get(username);
+  if (!user) return res.status(404).json({ error: 'Учётная запись не найдена' });
+  if (password.length < PASSWORD_MIN) return res.status(400).json({ error: `Пароль короче ${PASSWORD_MIN} символов` });
+  if (password.length > PASSWORD_MAX) return res.status(400).json({ error: 'Пароль слишком длинный' });
+  if (password.trim() !== password) return res.status(400).json({ error: 'Пароль не должен начинаться или заканчиваться пробелом' });
+  try {
+    const passwordHash = hashPassword(password);
+    const changedAt = Date.now();
+    const run = authChain.then(async () => {
+      const cur = (await readState(AUTH_OVERRIDES_KEY)) || {};
+      const users = { ...(cur.users || {}) };
+      users[username] = { passwordHash, changedAt };
+      await writeState(AUTH_OVERRIDES_KEY, { users, _savedAt: new Date().toISOString() });
+      stateReadCache.delete(AUTH_OVERRIDES_KEY);
+    });
+    authChain = run.catch(() => {});
+    await run;
+    user.passwordHash = passwordHash;
+    user.changedAt = changedAt;
+    const out = { ok: true, username, changedAt: new Date(changedAt).toISOString(), self: username === req.user.username };
+    // Свой пароль: старая сессия отозвана — сразу выдаём новую, чтобы владелец
+    // не вылетел из админ-панели посреди работы.
+    if (out.self) {
+      const token = createSession(user);
+      setSessionCookie(req, res, token);
+      out.token = token;
+      out.writeKey = writeTokenFor(token);
+    }
+    res.json(out);
+  } catch (e) {
+    console.error('Password change error:', e.message);
+    res.status(500).json({ error: 'Не удалось сменить пароль' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Карты: список, создание, правка, удаление (последние три — только владелец).
 // ---------------------------------------------------------------------------
 async function mapStorageStats(ids) {
@@ -1083,6 +1166,7 @@ initDb()
     db = null;
   })
   .then(() => loadMapRegistry().catch(e => console.error('Map registry load error:', e.message)))
+  .then(() => loadAuthOverrides().catch(e => console.error('Auth overrides load error:', e.message)))
   .then(() => {
     server.listen(PORT, () => {
       console.log(`\nHeat Map state server running on port ${PORT}`);
