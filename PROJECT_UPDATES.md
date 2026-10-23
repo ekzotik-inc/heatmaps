@@ -697,3 +697,24 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   card shows fields + Yandex link, fields survive the server round trip.
 - Cache version `20261024d`.
 
+## 2026-10-24 — Points tab on the same principle
+
+- Point-layer cards use the same compact layout as heat layers: colour square
+  (colour window: presets give a gradient pin, own single colour or
+  gradient), name with a pencil, switch; count line with icons — template /
+  upload for file layers, «+» and Excel export for manual layers, delete,
+  settings. Settings: pin icon (16 glyphs), size, opacity, names on the map,
+  coverage radius, fields, «Только этот». The manual point list stays
+  collapsible under the card.
+- Markers are the new teardrop pins (`pinSvg`), gradient when the layer has
+  `color2`; a manual point with its own colour gets a solid pin. Label
+  placement uses the pin's real box as an obstacle.
+- «Создать слой» opens the same create window (columns: Название, Широта,
+  Долгота, Адрес, Часы работы, Код + own fields); «Добавить точку вручную»
+  stays. The «Названия точек» row became a full-width switch.
+- New per-layer fields `icon`, `color2`, `fields` are saved and fingerprinted.
+- Verified in a browser (9 checks): template columns and file name, upload
+  with code/address/own field, two pins on the map, icon change, preset
+  gradient pins, labels row, point card shows the own field, manual form.
+- Cache version `20261024e`.
+

@@ -2204,3 +2204,12 @@ body.viewer .admin-only { display: none !important; }
 .cl-big:hover { background: var(--acc-d); }
 .cl-big.ghost { background: var(--card); color: var(--acc-d); }
 .cl-big.ghost:hover { background: var(--acc-l); }
+
+.create-btn.ghost { margin-top: 8px; background: var(--card); color: var(--ink); border-color: var(--line2); box-shadow: var(--shadow-card); }
+.create-btn.ghost:hover { border-color: var(--acc); color: var(--acc-d); filter: none; }
+.create-btn.ghost svg { color: var(--acc); }
+.lc-opt { display: flex; align-items: center; gap: 9px; margin: 9px 0 0; font-size: 12px; color: var(--ink); }
+.lc-radius { margin: 6px 0 0 4px; padding-left: 10px; border-left: 2px solid var(--line2); }
+.lc-radius input[type=color] { width: 30px; height: 22px; }
+.lc .rp-list-toggle { margin: 8px 0 4px; }
+.pt-label-row.view-toggles { margin-bottom: 10px; background: none; border: 0; padding: 0; }

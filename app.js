@@ -1402,6 +1402,7 @@ const UI_ICONS = {
   chevron: '<path d="m6 9 6 6 6-6"/>',
   eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
 };
 function uiIcon(name, size = 15) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${UI_ICONS[name] || ''}</svg>`;
@@ -2625,17 +2626,12 @@ function renderCustomPoints() {
     l._shownCount = 0;
     l._shownRecs = [];
     if (!l.visible || !l.recs.length) return;
-    const shape = l.shape || 'teardrop';
+    const pinIcon = l.icon || DEFAULT_PIN_ICON;
     const markerSize = Math.min(44, Math.max(20, Number.isFinite(+l.size) ? +l.size : 30));
     const markerOpacity = Math.min(1, Math.max(.2, Number.isFinite(+l.opacity) ? +l.opacity : 1));
-    // У точки может быть свой цвет (`r.color`), иначе берётся цвет слоя.
-    // Иконки кэшируются по цвету: рисовать SVG заново на каждую точку дорого.
-    const iconCache = new Map();
-    const iconFor = color => {
-      const key = color || l.color;
-      if (!iconCache.has(key)) iconCache.set(key, shp(shape, key, markerSize));
-      return iconCache.get(key);
-    };
+    // У точки может быть свой цвет (`r.color`) — тогда метка сплошная этого
+    // цвета; иначе цвет (или градиент) слоя. SVG кэширует pinSvg.
+    const iconFor = color => color ? pinSvg(pinIcon, color, '', markerSize) : pinSvg(pinIcon, l.color, l.color2, markerSize);
     const recs = l.recs.filter(r => selectedPointMatches(r));
     l._shownCount = recs.length;   // столько же показывает легенда
     l._shownRecs = recs;           // для подписей — ровно то, что нарисовано
@@ -2733,7 +2729,7 @@ function renderPointLabels() {
   lblBox.style.display = '';
   if (!layers.length) {
     lblBox.innerHTML = '';
-    if (note) note.textContent = '';
+    if (note) note.textContent = 'Подписи рядом с метками — без наложений';
     return;
   }
   const size = map.getSize();
@@ -2768,12 +2764,13 @@ function renderPointLabels() {
   customPtLayers.forEach((l, li) => {
     if (!l.visible || !l._shownRecs || !l._shownRecs.length) return;
     const ms = Math.min(44, Math.max(20, Number.isFinite(+l.size) ? +l.size : 30));
-    const anc = shp(l.shape || 'teardrop', l.color || '#888', ms).anchor;
-    const inset = ms * .16;
+    const pin = pinSvg(l.icon || DEFAULT_PIN_ICON, l.color, l.color2, ms);
+    const anc = pin.anchor;
+    const inset = ms * .14;
     l._shownRecs.forEach(r => {
       const p = map.latLngToContainerPoint([r.lat, r.lon]);
       if (p.x < -pad || p.y < -pad || p.x > size.x + pad || p.y > size.y + pad) return;
-      const box = [p.x - anc[0] + inset, p.y - anc[1] + inset, ms - 2 * inset, ms - 2 * inset];
+      const box = [p.x - anc[0] + inset, p.y - anc[1] + inset * .5, ms - 2 * inset, pin.h - inset];
       put(box);
       if (l.labels && r.name) cands.push({ l, li, r, box });
     });
@@ -2959,6 +2956,8 @@ function syncLabelAllBtn() {
   const on = vis.length > 0 && vis.every(l => l.labels);
   btn.classList.toggle('on', on);
   btn.setAttribute('aria-checked', on ? 'true' : 'false');
+  const vt = document.getElementById('pt-labels-vt');
+  if (vt) vt.classList.toggle('on', on);
   const row = document.getElementById('pt-label-row');
   if (row) row.style.display = customPtLayers.length ? '' : 'none';
 }
@@ -3543,98 +3542,99 @@ function buildCustomPtUI() {
 
   syncLabelAllBtn();
   if (!customPtLayers.length) {
-    box.innerHTML = '<div class="cpt-empty">Добавьте слой и загрузите CSV/XLSX с колонками name, lat, lon (опц.: addr, hours, code)</div>';
+    box.innerHTML = `<div class="lc-empty">${isAdmin()
+      ? 'Слоёв точек пока нет. «Создать слой» — для точек из Excel, «Добавить точку вручную» — по одной с фото.'
+      : 'Слоёв точек пока нет — их добавляет владелец карты.'}</div>`;
     return;
   }
 
   box.innerHTML = customPtLayers.map(l => {
-    const shape = l.shape || 'teardrop';
     const opacity = Math.min(1, Math.max(.2, Number.isFinite(+l.opacity) ? +l.opacity : 1));
     const size = Math.min(44, Math.max(20, Number.isFinite(+l.size) ? +l.size : 30));
-    const opts = SHAPES.map(s => `<option value="${s[0]}"${s[0] === shape ? ' selected' : ''}>${s[1]}</option>`).join('');
     const rPct = ((l.radiusM || 1500) - 200) / (5000 - 200) * 100;
     const oPct = (l.radiusOpacity == null ? .15 : l.radiusOpacity) / .5 * 100;
+    const n = l.recs.length;
+    const fields = l.fields || [];
+    const open = _cptOpen.has(l.id);
+    const icon = l.icon || DEFAULT_PIN_ICON;
+    const id = esc(l.id);
     return `
-    <div class="lyr cpt-layer${_cptOpen.has(l.id) ? ' open' : ''}" data-cpid="${esc(l.id)}">
-      <div class="lyr-head cpt-head">
-        <span class="lyr-dot cpt-layer-dot" style="background:${esc(l.color)}"></span>
-        <div class="nm">${esc(l.name)}<small>${l.recs.length.toLocaleString('ru-RU')} точек</small></div>
-        <svg class="lyr-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        <div class="cbx${l.visible ? ' on' : ''}" data-cptoggle="${esc(l.id)}" aria-label="Показывать слой «${esc(l.name)}» на карте"></div>
+    <div class="lc cpt-layer${open ? ' open' : ''}${l.visible ? '' : ' off'}" data-cpid="${id}">
+      <div class="lc-row">
+        <button type="button" class="lc-sw" data-cppaint="${id}" aria-haspopup="dialog" aria-expanded="false" title="Цвет меток" aria-label="Цвет меток слоя «${esc(l.name)}»" style="background:${l.color2 ? `linear-gradient(135deg, ${safeColor(l.color)}, ${safeColor(l.color2)})` : safeColor(l.color)}"></button>
+        <div class="lc-name"><span class="lc-t" title="${esc(l.name)}">${esc(l.name)}</span><button type="button" class="lc-ic lc-ren" data-cptrename="${id}" title="Переименовать" aria-label="Переименовать слой «${esc(l.name)}»">${uiIcon('pencil', 13)}</button></div>
+        <div class="cbx sm${l.visible ? ' on' : ''}" data-cptoggle="${id}" role="switch" tabindex="0" aria-checked="${l.visible}" aria-label="Показывать слой «${esc(l.name)}» на карте"></div>
       </div>
-      <div class="lyr-body cpt-body">
-        <div class="pal-label">Цвет маркеров</div>
-        <div class="sw-row">${SWATCHES.map(c =>
-          `<button type="button" class="sw${c.toLowerCase() === String(l.color).toLowerCase() ? ' on' : ''}" data-cpsw="${esc(l.id)}" data-sw="${c}" style="background:${c}" title="${c}" aria-label="Цвет ${c}"></button>`).join('')}
-          <input type="color" class="sw-pick cpt-color" value="${esc(l.color)}" data-cpcol="${esc(l.id)}" title="Свой оттенок"/>
+      <div class="lc-sub">
+        <span class="lc-n" data-cpmore="${id}">${n.toLocaleString('ru-RU')} ${plural(n, 'точка', 'точки', 'точек')}${l.manual ? ' · вручную' : ''}${fields.length ? ' · ' + fields.length + ' ' + plural(fields.length, 'поле', 'поля', 'полей') : ''}</span>
+        <div class="lc-tools">
+          ${l.manual
+            ? `<button type="button" class="lc-ic admin-only" data-cptaddpt="${id}" title="Добавить точку вручную" aria-label="Добавить точку">${uiIcon('plus')}</button>
+               ${n ? `<button type="button" class="lc-ic" data-rpexport="${id}" title="Выгрузить точки слоя в Excel" aria-label="Выгрузить в Excel">${uiIcon('download')}</button>` : ''}`
+            : `<button type="button" class="lc-ic admin-only" data-cpttpl="${id}" title="Скачать шаблон Excel для этого слоя" aria-label="Скачать шаблон">${uiIcon('download')}</button>
+               <button type="button" class="lc-ic admin-only" data-cptup="${id}" title="Загрузить или обновить точки из файла" aria-label="Загрузить данные">${uiIcon('upload')}</button>`}
+          <button type="button" class="lc-ic lc-del admin-only" data-cpdel="${id}" title="Удалить слой" aria-label="Удалить слой">${uiIcon('trash')}</button>
+          <button type="button" class="lc-ic lc-more" data-cpmore="${id}" title="Настройки слоя" aria-label="Настройки слоя" aria-expanded="${open}">${uiIcon('chevron')}</button>
         </div>
-        <div class="lyr-ctl">
-          <div class="grp" style="flex:1">Иконка <select class="cpt-shape" data-cpshape="${esc(l.id)}" style="flex:1;min-width:0">${opts}</select></div>
+      </div>
+      <div class="lc-body">
+        <div class="lc-lbl">Метка на карте</div>
+        <div class="lc-icons">${PIN_ICONS.map(ic => `<button type="button" class="lc-pin${icon === ic.id ? ' on' : ''}" data-cpicon="${id}" data-icon="${ic.id}" title="${esc(ic.name)}" aria-label="Метка «${esc(ic.name)}»">${pinSvg(ic.id, l.color, l.color2, 20).html}</button>`).join('')}</div>
+        <div class="lc-sl"><span>Размер</span><input type="range" class="cpt-size" data-cpsize="${id}" min="20" max="44" step="1" value="${size}"/><b class="cpt-size-val">${size} px</b></div>
+        <div class="lc-sl"><span>Прозрачность</span><input type="range" class="cpt-opacity" data-cpopacity="${id}" min="0.2" max="1" step="0.05" value="${opacity}"/><b class="cpt-opacity-val">${Math.round(opacity * 100)}%</b></div>
+        <div class="lc-opt">
+          <div class="cbx sm cpt-lbl-cbx${l.labels ? ' on' : ''}" data-cplbl="${id}" role="switch" tabindex="0" aria-checked="${l.labels ? 'true' : 'false'}" aria-label="Названия точек слоя «${esc(l.name)}» на карте"></div>
+          <span>Названия на карте</span>
         </div>
-        <div class="lyr-ctl">
-          <div class="grp" style="flex:1">Размер <input type="range" class="cpt-size" data-cpsize="${esc(l.id)}" min="20" max="44" step="1" value="${size}" style="flex:1"/><span class="sl-val cpt-size-val">${size}px</span></div>
-          <div class="grp" style="flex:1">Прозр. <input type="range" class="cpt-opacity" data-cpopacity="${esc(l.id)}" min="0.2" max="1" step="0.05" value="${opacity}" style="flex:1"/><span class="sl-val cpt-opacity-val">${Math.round(opacity * 100)}%</span></div>
+        <div class="lc-opt">
+          <div class="cbx sm green cpt-rad-cbx${l.radiusOn ? ' on' : ''}" data-cprad="${id}" role="switch" tabindex="0" aria-checked="${l.radiusOn ? 'true' : 'false'}" aria-label="Радиус охвата для «${esc(l.name)}»"></div>
+          <span>Радиус охвата</span>
         </div>
-        <div class="pt-label-block">
-          <div class="lyr-top" style="margin-top:10px;padding:0">
-            <div class="cbx sm cpt-lbl-cbx${l.labels ? ' on' : ''}" data-cplbl="${esc(l.id)}" role="switch" aria-checked="${l.labels ? 'true' : 'false'}" aria-label="Названия точек слоя «${esc(l.name)}» на карте"></div>
-            <div class="nm" style="font-size:11.5px;color:var(--mut)">Названия на карте</div>
-          </div>
+        <div class="pt-radius-ctl lc-radius" data-cpradctl="${id}" style="${l.radiusOn ? '' : 'display:none'}">
+          <div class="lc-sl"><span>Радиус</span><input type="range" class="cpt-rad-r" data-cpradr="${id}" min="200" max="5000" step="100" value="${l.radiusM || 1500}" style="--pct:${rPct}%"/><b class="cpt-rad-rv">${fmtD(l.radiusM || 1500)}</b></div>
+          <div class="lc-sl"><span>Заливка</span><input type="range" class="green cpt-rad-o" data-cprado="${id}" min="0.03" max="0.5" step="0.01" value="${l.radiusOpacity == null ? .15 : l.radiusOpacity}" style="--pct:${oPct}%"/><b class="cpt-rad-ov">${Math.round((l.radiusOpacity == null ? .15 : l.radiusOpacity) * 100)}%</b></div>
+          <div class="lc-sl"><span>Цвет радиуса</span><input type="color" class="cpt-rad-col" data-cpradcol="${id}" value="${safeColor(l.radiusColor || l.color)}"/><b></b></div>
         </div>
-        <div class="pt-radius-block">
-          <div class="lyr-top" style="margin-top:10px;padding:0">
-            <div class="cbx sm green cpt-rad-cbx${l.radiusOn ? ' on' : ''}" data-cprad="${esc(l.id)}" aria-label="Радиус охвата для «${esc(l.name)}»"></div>
-            <div class="nm" style="font-size:11.5px;color:var(--mut)">Радиус охвата</div>
-          </div>
-          <div class="pt-radius-ctl" data-cpradctl="${esc(l.id)}" style="${l.radiusOn ? '' : 'display:none'}">
-            <div class="grp full"><span>Радиус</span>
-              <input type="range" class="full cpt-rad-r" data-cpradr="${esc(l.id)}" min="200" max="5000" step="100" value="${l.radiusM || 1500}" style="--pct:${rPct}%"/>
-              <span class="sl-val cpt-rad-rv">${fmtD(l.radiusM || 1500)}</span></div>
-            <div class="grp full" style="margin-top:7px"><span>Заливка</span>
-              <input type="range" class="full green cpt-rad-o" data-cprado="${esc(l.id)}" min="0.03" max="0.5" step="0.01" value="${l.radiusOpacity == null ? .15 : l.radiusOpacity}" style="--pct:${oPct}%"/>
-              <span class="sl-val cpt-rad-ov">${Math.round((l.radiusOpacity == null ? .15 : l.radiusOpacity) * 100)}%</span></div>
-            <div class="grp" style="margin-top:7px">Цвет радиуса <input type="color" class="cpt-rad-col" data-cpradcol="${esc(l.id)}" value="${esc(l.radiusColor || l.color)}"/></div>
-          </div>
+        ${fields.length ? `<div class="lc-fields">${fields.map(f => `<span>${esc(f)}</span>`).join('')}</div>` : ''}
+        <div class="lc-foot"><span></span>
+          <button type="button" class="lc-link${_cptSoloId === l.id ? ' on' : ''}" data-cptsolo="${id}">${uiIcon('eye', 13)} ${_cptSoloId === l.id ? 'Показать все' : 'Только этот'}</button>
         </div>
-        <div class="lyr-meta">Объём слоя: ${l.recs.length.toLocaleString('ru-RU')} точек${
-          l.manual && l.recs.length ? `<a class="lnk rp-export" data-rpexport="${esc(l.id)}" role="button" tabindex="0">⬇ Excel</a>` : ''}</div>
-        ${l.manual && l.recs.length ? `<button type="button" class="rp-list-toggle" data-rplist="${esc(l.id)}" aria-expanded="${rpListOpen(l) ? 'true' : 'false'}" aria-controls="rp-list-${esc(l.id)}">
-          <span>${rpListOpen(l) ? 'Скрыть список точек' : 'Показать список точек'}</span><b>${l.recs.length.toLocaleString('ru-RU')}</b>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      ${l.manual && n ? `<button type="button" class="rp-list-toggle" data-rplist="${id}" aria-expanded="${rpListOpen(l) ? 'true' : 'false'}" aria-controls="rp-list-${id}">
+          <span>${rpListOpen(l) ? 'Скрыть список точек' : 'Показать список точек'}</span><b>${n.toLocaleString('ru-RU')}</b>
+          ${uiIcon('chevron', 13)}
         </button>
-        <div class="rp-list" id="rp-list-${esc(l.id)}"${rpListOpen(l) ? '' : ' hidden'}>${l.recs.map(r => `
-          <div class="rp-item" data-rpgo="${esc(l.id)}|${esc(r.id || '')}">
-            <span class="rp-item-dot" style="background:${esc(r.color || l.color)}" title="${r.color ? 'свой цвет' : 'цвет слоя'}"></span>
+        <div class="rp-list" id="rp-list-${id}"${rpListOpen(l) ? '' : ' hidden'}>${l.recs.map(r => `
+          <div class="rp-item" data-rpgo="${id}|${esc(r.id || '')}">
+            <span class="rp-item-dot" style="background:${safeColor(r.color || l.color)}" title="${r.color ? 'свой цвет' : 'цвет слоя'}"></span>
             <span class="rp-item-ph">${(r.photos || []).length ? '📷' : '—'}</span>
             <div class="rp-item-main">
               <b>${esc(r.name || 'Без названия')}</b>
               <span>${esc(r.dms ? 'ДМС ' + r.dms : 'без ДМС-кода')}${r.sales != null && r.sales !== '' && isFinite(+r.sales) ? ' · ' + (+r.sales).toLocaleString('ru-RU') + ' продаж' : ''}</span>
             </div>
-            ${isAdmin() ? `<button type="button" class="rp-item-edit" data-rpedit="${esc(l.id)}|${esc(r.id || '')}" title="Редактировать">✎</button>` : ''}
+            ${isAdmin() ? `<button type="button" class="rp-item-edit" data-rpedit="${id}|${esc(r.id || '')}" title="Редактировать">✎</button>` : ''}
           </div>`).join('')}</div>` : ''}
-        <div class="lyr-actions">
-          <button class="lyr-act cpt-rename" data-cptrename="${esc(l.id)}" title="Переименовать слой">✎ Имя</button>
-          <button class="lyr-act cpt-solo${_cptSoloId === l.id ? ' on' : ''}" data-cptsolo="${esc(l.id)}" title="Показать только этот слой">◉ Соло</button>
-          ${l.manual
-            ? `<button class="lyr-act cpt-addpt" data-cptaddpt="${esc(l.id)}" title="Добавить точку вручную">+ Точка</button>`
-            : `<button class="lyr-act cpt-upload" data-cptup="${esc(l.id)}" title="Перезалить файл в этот слой">⬆ Данные</button>`}
-          <button class="lyr-act lyr-del cpt-del" data-cpdel="${esc(l.id)}" title="Удалить слой">&times;</button>
-        </div>
-      </div>
     </div>`;
   }).join('');
 
-  // Accordion header and visibility switch use the same interaction model as heat cards.
-  box.querySelectorAll('.cpt-head').forEach(head => {
-    head.addEventListener('click', e => {
-      if (e.target.closest('.cbx')) return;
-      const card = head.closest('.cpt-layer');
+  // Настройки слоя раскрываются стрелкой или кликом по числу точек.
+  box.querySelectorAll('[data-cpmore]').forEach(el => {
+    el.addEventListener('click', () => {
+      const card = el.closest('.cpt-layer');
       const id = card && card.dataset.cpid;
       if (!id) return;
       const open = card.classList.toggle('open');
+      const more = card.querySelector('.lc-more'); if (more) more.setAttribute('aria-expanded', String(open));
       if (open) _cptOpen.add(id); else _cptOpen.delete(id);
     });
   });
+  box.querySelectorAll('[data-cpttpl]').forEach(el => el.addEventListener('click', () => {
+    const l = customPtLayers.find(x => x.id === el.dataset.cpttpl); if (l) downloadLayerTemplate('pt', l);
+  }));
+  // Переключатели с клавиатуры — как кликом.
+  box.querySelectorAll('.cbx[role="switch"]').forEach(el => el.addEventListener('keydown', e => {
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); el.click(); }
+  }));
 
   box.querySelectorAll('[data-cptoggle]').forEach(el => {
     el.addEventListener('click', () => {
@@ -3650,42 +3650,33 @@ function buildCustomPtUI() {
     });
   });
 
-  box.querySelectorAll('[data-cpshape]').forEach(el => {
-    el.addEventListener('change', () => {
-      const l = customPtLayers.find(x => x.id === el.dataset.cpshape); if (!l) return;
-      l.shape = el.value; renderCustomPoints(); saveState();
+  box.querySelectorAll('[data-cpicon]').forEach(el => {
+    el.addEventListener('click', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cpicon); if (!l) return;
+      l.icon = el.dataset.icon;
+      el.closest('.lc-icons').querySelectorAll('.lc-pin').forEach(b => b.classList.toggle('on', b === el));
+      renderCustomPoints(); saveState();
     });
   });
 
-  // Цвет слоя точек: при перетаскивании пипетки перерисовываем только маркеры,
-  // а зависимые списки обновляем по завершении — иначе карточка пересобиралась
-  // на каждое движение и выбор цвета обрывался.
-  const paintCptColor = (l, value, card) => {
-    l.color = value;
-    if (card) {
-      card.querySelectorAll('[data-cpsw]').forEach(s =>
-        s.classList.toggle('on', s.dataset.sw.toLowerCase() === value.toLowerCase()));
-      const pick = card.querySelector('.sw-pick');
-      if (pick && pick.value.toLowerCase() !== value.toLowerCase()) pick.value = value;
-      const dot = card.querySelector('.cpt-layer-dot');
-      if (dot) dot.style.background = value;
-    }
-    renderCustomPoints();
-  };
-  box.querySelectorAll('[data-cpsw]').forEach(el => {
-    el.addEventListener('click', () => {
-      const l = customPtLayers.find(x => x.id === el.dataset.cpsw); if (!l) return;
-      paintCptColor(l, el.dataset.sw, el.closest('.cpt-layer'));
-      buildAddrSrcSel(); buildRtExclUI(); saveState();
-    });
-  });
-  box.querySelectorAll('[data-cpcol]').forEach(el => {
-    el.addEventListener('input', () => {
-      const l = customPtLayers.find(x => x.id === el.dataset.cpcol); if (!l) return;
-      paintCptColor(l, el.value, el.closest('.cpt-layer'));
-    });
-    el.addEventListener('change', () => {
-      buildAddrSrcSel(); buildRtExclUI(); saveState();
+  // Цвет меток: готовый градиент, один цвет или свой градиент. Во время
+  // перетаскивания пипетки перерисовываем только маркеры.
+  box.querySelectorAll('[data-cppaint]').forEach(sw => {
+    sw.addEventListener('click', () => {
+      const l = customPtLayers.find(x => x.id === sw.dataset.cppaint); if (!l) return;
+      openPaintPop(sw, { ramp: l.color2 ? 'custom2' : 'custom', color: l.color, color2: l.color2 }, (p, live) => {
+        if (p.ramp === 'custom' || p.ramp === 'custom2') {
+          l.color = p.color; l.color2 = p.ramp === 'custom2' ? p.color2 : '';
+        } else {
+          const g = HEAT_RAMPS[p.ramp] || heatGrad(l.color);
+          l.color = g[0.55]; l.color2 = g[1.0];
+        }
+        sw.style.background = l.color2 ? `linear-gradient(135deg, ${safeColor(l.color)}, ${safeColor(l.color2)})` : safeColor(l.color);
+        const card = sw.closest('.cpt-layer');
+        if (card) card.querySelectorAll('.lc-pin').forEach(b => { b.innerHTML = pinSvg(b.dataset.icon, l.color, l.color2, 20).html; });
+        renderCustomPoints();
+        if (!live) { buildAddrSrcSel(); buildRtExclUI(); saveState(); }
+      });
     });
   });
 
@@ -3693,7 +3684,7 @@ function buildCustomPtUI() {
     el.addEventListener('input', () => {
       const l = customPtLayers.find(x => x.id === el.dataset.cpsize); if (!l) return;
       l.size = +el.value; el.style.setProperty('--pct', ((l.size - 20) / 24) * 100 + '%');
-      const v = el.parentElement.querySelector('.cpt-size-val'); if (v) v.textContent = l.size + 'px';
+      const v = el.parentElement.querySelector('.cpt-size-val'); if (v) v.textContent = l.size + ' px';
       renderCustomPoints(); saveState();
     });
   });
@@ -3719,7 +3710,7 @@ function buildCustomPtUI() {
   box.querySelectorAll('[data-cprad]').forEach(el => {
     el.addEventListener('click', () => {
       const l = customPtLayers.find(x => x.id === el.dataset.cprad); if (!l) return;
-      l.radiusOn = !l.radiusOn; el.classList.toggle('on', l.radiusOn);
+      l.radiusOn = !l.radiusOn; el.classList.toggle('on', l.radiusOn); el.setAttribute('aria-checked', String(l.radiusOn));
       const ctl = box.querySelector(`[data-cpradctl="${l.id}"]`); if (ctl) ctl.style.display = l.radiusOn ? '' : 'none';
       renderCustomPoints(); saveState();
     });
@@ -3754,10 +3745,9 @@ function buildCustomPtUI() {
     el.addEventListener('click', () => {
       const l = customPtLayers.find(x => x.id === el.dataset.cptrename); if (!l) return;
       const card = el.closest('.cpt-layer');
-      const nmEl = card && card.querySelector('.cpt-head .nm'); if (!nmEl) return;
+      const nmEl = card && card.querySelector('.lc-name'); if (!nmEl) return;
       const inp = document.createElement('input');
-      inp.type = 'text'; inp.value = l.name; inp.maxLength = 40;
-      inp.style.cssText = 'flex:1;min-width:0;font-family:Manrope;font-size:13px;font-weight:700;color:var(--ink);background:var(--card2);border:1.5px solid var(--acc);border-radius:8px;padding:5px 8px;outline:none';
+      inp.type = 'text'; inp.value = l.name; inp.maxLength = 40; inp.className = 'lc-rename';
       nmEl.replaceWith(inp); inp.focus(); inp.select();
       let done = false;
       const commit = save => {
@@ -4198,7 +4188,7 @@ function buildStateSnapshot() {
     addrSrcKeys, addrRefKeys, rtRadius, rtRadiusOp, rtExclRadius, rtExclOp, rtExclKeys,
     // recs ручных слоёв несут карточку и идентификаторы фото — байты снимков
     // живут на сервере и в состояние не попадают.
-    customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, manual: !!l.manual, visible: l.visible, shape: l.shape, size: l.size, opacity: l.opacity, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, labels: !!l.labels, recs: l.recs })),
+    customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, color2: l.color2 || '', icon: l.icon || '', fields: l.fields || [], manual: !!l.manual, visible: l.visible, shape: l.shape, size: l.size, opacity: l.opacity, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, labels: !!l.labels, recs: l.recs })),
   };
 }
 
@@ -5389,6 +5379,7 @@ function stateFingerprint(snapshot) {
   ]);
   const custom = (snapshot.customPtLayers || []).map(layer => [
     layer.id, layer.name, layer.color, layer.visible, layer.shape, layer.manual,
+    layer.color2 || '', layer.icon || '', JSON.stringify(layer.fields || []),
     layer.size, layer.opacity, !!layer.labels,
     layer.radiusOn, layer.radiusM, layer.radiusColor, layer.radiusOpacity,
     Array.isArray(layer.recs) ? layer.recs.length : 0,
@@ -5874,6 +5865,9 @@ function wireEvents() {
   // Custom point layers — modal
   // Одна кнопка на все слои: включает подписи всем видимым слоям, если хоть
   // у одного они выключены, иначе выключает всем.
+  // Вся строка «Названия точек» работает как переключатель.
+  $('pt-labels-vt').addEventListener('click', e => { if (!e.target.closest('#pt-labels-all')) $('pt-labels-all').click(); });
+  $('pt-labels-all').addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); $('pt-labels-all').click(); } });
   $('pt-labels-all').addEventListener('click', () => {
     const vis = customPtLayers.filter(l => l.visible);
     if (!vis.length) { toast('Включите хотя бы один слой точек', 'warn'); return; }
@@ -5882,12 +5876,7 @@ function wireEvents() {
     buildCustomPtUI(); scheduleLabels(); saveState();
   });
 
-  $('add-custom-pt-btn').addEventListener('click', () => {
-    $('cpt-modal-name').value = '';
-    $('cpt-modal-color').value = '#E84393';
-    $('cpt-modal-overlay').classList.add('open');
-    setTimeout(() => $('cpt-modal-name').focus(), 150);
-  });
+  $('add-custom-pt-btn').addEventListener('click', () => openCreateLayer('pt'));
   $('cpt-modal-cancel').addEventListener('click', () => {
     $('cpt-modal-overlay').classList.remove('open');
   });
@@ -5919,6 +5908,7 @@ function wireEvents() {
       const recs = toCustomPtRecs(rows);
       if (!recs.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
       l.recs = recs;
+      l.fields = mergeFields(l.fields, recs._fields);
       buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); renderCustomPoints();
       reenrichAll();   // добавились наши точки — пересчитать покрытие и рекомендации
       renderCityInfo(); saveState();
