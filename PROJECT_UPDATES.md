@@ -570,3 +570,29 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   pasted PNG is white on the server copy.
 - Cache version `20261023d`.
 
+## 2026-10-23 — Hover menus with a safe triangle
+
+- No menu in the app opened on hover, so a safe triangle had nothing to
+  protect. On mouse devices (`(hover: hover) and (pointer: fine)`) the city
+  filter, the map switcher (title and map-corner badge) and the «ⓘ» hints now
+  open on hover after a short intent delay (160 ms; 80 ms for hints).
+- `hoverMenu()` keeps the menu open while the pointer is on the trigger, on
+  the menu, or inside the triangle from the point where it left the trigger to
+  the near edge of the menu. Leaving the triangle closes after 260 ms; resting
+  inside it closes after 420 ms. A click on the trigger, a click or keypress
+  in the menu, or focus inside it pins the menu — then it closes only as
+  before (outside click, Esc). Menus opened by click are not touched; touch
+  devices keep click behaviour.
+- Hover-opening does not move focus (no autofocus of the city search, no
+  focus on the current map item) so it does not steal focus or pin itself.
+- «ⓘ» hints moved from CSS `::after` to one body-level tooltip: no longer
+  clipped by the sidebar scroll, reachable with the cursor, selectable,
+  keyboard-focusable (Tab), Esc closes, tap toggles on phones.
+- Modals (point form, new layer) and accordion cards open on click and are
+  unchanged.
+- Verified in a browser with real mouse paths: 18 checks — hover opens, focus
+  stays, diagonal to the far edge keeps both menus open, click pins, outside
+  click and Esc close, moving away closes, resting in the gap closes, hints
+  reachable by cursor and by Tab.
+- Cache version `20261023e`.
+

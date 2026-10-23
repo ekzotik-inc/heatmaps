@@ -1484,14 +1484,167 @@ function focusCityView(pulse = true) {
 
 let cityFilterBound = false;
 
-function setCityPopover(open) {
+/* ── БЕЗОПАСНЫЙ ТРЕУГОЛЬНИК: меню и подсказки по наведению ───────────────
+   На компьютере с мышью меню открывается наведением (после короткой паузы,
+   чтобы не всплывать от случайного пролёта курсора). Пока курсор едет от
+   кнопки к меню, он проходит над «ничьим» местом — без защиты меню бы
+   закрылось. Защита — треугольник: вершина в точке, где курсор покинул
+   кнопку, основание — ближняя к ней сторона меню. Пока курсор внутри
+   треугольника и движется, меню открыто; застыл в нём или вышел — меню
+   закрывается после короткой паузы.
+   Клик по кнопке, клик или ввод внутри меню «закрепляют» его: дальше оно
+   закрывается только как раньше — кликом снаружи или Esc. Меню, открытые
+   кликом, этот механизм не трогает. На сенсорных экранах всё по-старому. */
+const HOVER_CAPABLE = !!(window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches);
+function triArea(a, b, c) { return (a.x - c.x) * (b.y - c.y) - (b.x - c.x) * (a.y - c.y); }
+function pointInTri(p, a, b, c) {
+  const d1 = triArea(p, a, b), d2 = triArea(p, b, c), d3 = triArea(p, c, a);
+  return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+}
+function pointInRect(p, r, pad = 0) {
+  return p.x >= r.left - pad && p.x <= r.right + pad && p.y >= r.top - pad && p.y <= r.bottom + pad;
+}
+// Основание треугольника — сторона меню, обращённая к вершине; чуть шире
+// меню, чтобы край не «обрезал» траекторию.
+function safeTriangle(apex, r, pad = 8) {
+  if (apex.y <= r.top)    return [apex, { x: r.left - pad, y: r.top },    { x: r.right + pad, y: r.top }];
+  if (apex.y >= r.bottom) return [apex, { x: r.left - pad, y: r.bottom }, { x: r.right + pad, y: r.bottom }];
+  if (apex.x <= r.left)   return [apex, { x: r.left, y: r.top - pad },    { x: r.left, y: r.bottom + pad }];
+  return [apex, { x: r.right, y: r.top - pad }, { x: r.right, y: r.bottom + pad }];
+}
+function hoverMenu(o) {
+  const trigger = o.trigger;
+  if (!HOVER_CAPABLE || !trigger) return null;
+  const openDelay = o.openDelay ?? 160, closeDelay = o.closeDelay ?? 260, stallMs = o.stallMs ?? 420;
+  let openT = 0, closeT = 0, stallT = 0, managed = false, pinned = false, apex = null, lastIn = null;
+  const clearClose = () => { clearTimeout(closeT); closeT = 0; clearTimeout(stallT); stallT = 0; };
+  const stop = () => { managed = false; pinned = false; apex = null; lastIn = null; clearClose(); document.removeEventListener('pointermove', onMove, true); };
+  const closeNow = () => { if (managed && !pinned && o.isOpen()) o.close(); stop(); };
+  const closeSoon = ms => { if (!closeT) closeT = setTimeout(() => { closeT = 0; closeNow(); }, ms); };
+  function onMove(e) {
+    if (e.pointerType && e.pointerType !== 'mouse') return;
+    if (!managed || pinned || !o.isOpen()) { stop(); return; }
+    const panel = o.panel();
+    if (!panel) return;
+    const p = { x: e.clientX, y: e.clientY };
+    const pr = panel.getBoundingClientRect();
+    if (pointInRect(p, trigger.getBoundingClientRect(), 1)) { lastIn = p; apex = null; clearClose(); return; }
+    if (pointInRect(p, pr, 1)) { lastIn = null; apex = null; clearClose(); return; }
+    // Вне кнопки и меню. Вышли из кнопки — проверяем треугольник к меню.
+    if (!apex && lastIn) apex = lastIn;
+    lastIn = null;
+    if (apex && pointInTri(p, ...safeTriangle(apex, pr))) {
+      clearTimeout(closeT); closeT = 0;
+      clearTimeout(stallT); stallT = setTimeout(closeNow, stallMs);   // застыл по пути — закрываем
+      return;
+    }
+    apex = null;
+    clearTimeout(stallT); stallT = 0;
+    closeSoon(closeDelay);
+  }
+  const pin = () => { if (managed) { pinned = true; clearClose(); } };
+  trigger.addEventListener('pointerenter', e => {
+    if (e.pointerType !== 'mouse' || o.isOpen() || (o.canOpen && !o.canOpen())) return;
+    clearTimeout(openT);
+    openT = setTimeout(async () => {
+      openT = 0;
+      if (o.isOpen()) return;
+      managed = true; pinned = false; apex = null; lastIn = null;
+      document.addEventListener('pointermove', onMove, true);
+      await o.open();
+    }, openDelay);
+  });
+  trigger.addEventListener('pointerleave', () => { clearTimeout(openT); openT = 0; });
+  // Клик по кнопке открытого наведением меню закрепляет его, а не закрывает.
+  trigger.addEventListener('click', e => {
+    if (managed && !pinned && o.isOpen()) { e.preventDefault(); e.stopImmediatePropagation(); pin(); }
+    else if (!o.isOpen()) stop();   // откроется кликом — это не наше меню
+  }, true);
+  const bindPanel = () => {
+    const panel = o.panel();
+    if (!panel || panel._hmHoverBound) return;
+    panel._hmHoverBound = true;
+    panel.addEventListener('pointerdown', () => pin(), true);
+    panel.addEventListener('focusin', () => pin());
+    panel.addEventListener('keydown', () => pin(), true);
+  };
+  return { bindPanel, pin, stop };
+}
+
+// Всплывающие подсказки «ⓘ». Раньше это был CSS ::after: его обрезала
+// прокрутка боковой панели, до него нельзя было дотянуться курсором, а с
+// клавиатуры и на телефоне он не открывался вовсе.
+let _tipFor = null;
+function tipBox() {
+  let el = document.getElementById('hm-tip');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'hm-tip'; el.className = 'hm-tip'; el.setAttribute('role', 'tooltip'); el.hidden = true;
+    document.body.appendChild(el);
+  }
+  return el;
+}
+function showTip(icon) {
+  const el = tipBox();
+  el.textContent = icon.dataset.tip || '';
+  el.hidden = false;
+  _tipFor = icon;
+  icon.setAttribute('aria-describedby', 'hm-tip');
+  icon.setAttribute('aria-expanded', 'true');
+  const r = icon.getBoundingClientRect();
+  const w = el.offsetWidth, h = el.offsetHeight;
+  const left = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 8));
+  const above = r.top - h - 8;
+  el.style.left = left + 'px';
+  el.style.top = (above >= 8 ? above : r.bottom + 8) + 'px';
+  el.classList.toggle('below', above < 8);
+}
+function hideTip() {
+  const el = document.getElementById('hm-tip');
+  if (el) el.hidden = true;
+  if (_tipFor) { _tipFor.removeAttribute('aria-describedby'); _tipFor.setAttribute('aria-expanded', 'false'); }
+  _tipFor = null;
+}
+function wireTips(root = document) {
+  root.querySelectorAll('.tip-icon[data-tip]').forEach(icon => {
+    if (icon._tipWired) return;
+    icon._tipWired = true;
+    icon.tabIndex = 0;
+    icon.setAttribute('role', 'button');
+    icon.setAttribute('aria-label', 'Подсказка');
+    icon.setAttribute('aria-expanded', 'false');
+    const hm = hoverMenu({
+      trigger: icon, openDelay: 80, closeDelay: 200,
+      panel: () => (_tipFor === icon ? tipBox() : null),
+      isOpen: () => _tipFor === icon && !tipBox().hidden,
+      open: () => showTip(icon),
+      close: hideTip,
+    });
+    if (hm) hm.bindPanel();
+    icon.addEventListener('click', e => {
+      e.preventDefault(); e.stopPropagation();
+      if (_tipFor === icon) hideTip(); else showTip(icon);
+    });
+    icon.addEventListener('focus', () => showTip(icon));
+    icon.addEventListener('blur', () => { if (_tipFor === icon) hideTip(); });
+    icon.addEventListener('keydown', e => { if (e.key === 'Escape') hideTip(); });
+  });
+}
+document.addEventListener('pointerdown', e => {
+  if (_tipFor && !e.target.closest('.tip-icon') && !e.target.closest('#hm-tip')) hideTip();
+});
+window.addEventListener('scroll', () => { if (_tipFor) hideTip(); }, true);
+
+function setCityPopover(open, focusSearch = true) {
   const pop = document.getElementById('city-filter-popover');
   const trigger = document.getElementById('city-filter-trigger');
   if (!pop || !trigger) return;
   pop.hidden = !open;
   trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
   document.getElementById('city-filter')?.classList.toggle('open', open);
-  if (open) window.setTimeout(() => document.getElementById('city-filter-search')?.focus(), 0);
+  // При открытии наведением фокус в поиск не ставим: это закрепило бы меню
+  // и увело фокус у пользователя, который просто провёл мышью.
+  if (open && focusSearch) window.setTimeout(() => document.getElementById('city-filter-search')?.focus(), 0);
 }
 
 function updateCityFilterSummary() {
@@ -1557,6 +1710,14 @@ function bindCityFilter() {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') setCityPopover(false);
   });
+  const hm = hoverMenu({
+    trigger: document.getElementById('city-filter-trigger'),
+    panel: () => document.getElementById('city-filter-popover'),
+    isOpen: () => !document.getElementById('city-filter-popover')?.hidden,
+    open: () => setCityPopover(true, false),
+    close: () => setCityPopover(false),
+  });
+  if (hm) hm.bindPanel();
 }
 
 function buildCityUI() {
@@ -5242,7 +5403,7 @@ function closeMapMenu() {
   if (menu) menu.hidden = true;
   document.querySelectorAll('[aria-controls="map-menu"]').forEach(el => el.setAttribute('aria-expanded', 'false'));
 }
-function openMapMenu(anchor) {
+function openMapMenu(anchor, focusItem = true) {
   let menu = document.getElementById('map-menu');
   if (!menu) {
     menu = document.createElement('div');
@@ -5275,19 +5436,31 @@ function openMapMenu(anchor) {
   menu.style.top = (below + h < window.innerHeight - 8 ? below : Math.max(8, r.top - h - 8)) + 'px';
   anchor.setAttribute('aria-expanded', 'true');
   const cur = menu.querySelector('.map-menu-item.on') || menu.querySelector('.map-menu-item');
-  if (cur) cur.focus();
+  if (cur && focusItem) cur.focus();
 }
-async function toggleMapMenu(anchor) {
+async function toggleMapMenu(anchor, focusItem = true) {
   const menu = document.getElementById('map-menu');
   if (menu && !menu.hidden) { closeMapMenu(); return; }
   await fetchMaps();          // свежий список: карту могли только что создать
   showRoleBadge();
-  if (MAP_LIST.length > 1 || isAdmin()) openMapMenu(anchor);
+  if (MAP_LIST.length > 1 || isAdmin()) openMapMenu(anchor, focusItem);
 }
 function wireMapSwitch() {
   const sw = document.getElementById('map-switch');
   if (sw) sw.addEventListener('click', () => toggleMapMenu(sw));
   const badge = document.getElementById('mode-badge');
+  // Наведение на название карты или на значок в углу открывает тот же список.
+  [sw, badge].forEach(trigger => {
+    if (!trigger) return;
+    const hm = hoverMenu({
+      trigger,
+      canOpen: () => !trigger.disabled && (trigger !== badge || badge.classList.contains('clickable')),
+      panel: () => document.getElementById('map-menu'),
+      isOpen: () => { const m = document.getElementById('map-menu'); return !!m && !m.hidden; },
+      open: async () => { await toggleMapMenu(trigger, false); if (hm) hm.bindPanel(); },
+      close: closeMapMenu,
+    });
+  });
   if (badge) {
     badge.setAttribute('aria-controls', 'map-menu');
     badge.addEventListener('click', () => { if (badge.classList.contains('clickable')) toggleMapMenu(badge); });
@@ -5786,6 +5959,7 @@ async function startApp() {
   }
   wireEvents();
   wireMapsAdmin();
+  wireTips();
   stateReady = true;
   setTimeout(() => { if (map && map.invalidateSize) map.invalidateSize(); }, 60);
 

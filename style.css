@@ -1808,24 +1808,21 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
   position: relative; margin-left: 3px;
   line-height: 1; vertical-align: middle;
 }
-.tip-icon::after {
-  content: attr(data-tip);
-  position: absolute; bottom: calc(100% + 7px); left: 50%;
-  transform: translateX(-50%);
-  background: var(--ink); color: #eef1f8;
-  border-radius: 9px;
-  padding: 7px 11px; font-size: 10.5px; font-family: "Manrope";
-  line-height: 1.5; white-space: normal; width: 180px;
-  box-shadow: var(--shadow);
-  pointer-events: none; opacity: 0;
-  transition: opacity .15s, transform .15s;
-  transform: translateX(-50%) translateY(4px);
-  z-index: 9000;
+.tip-icon:hover, .tip-icon:focus-visible, .tip-icon[aria-expanded="true"] { color: var(--acc-d); }
+.tip-icon:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 50%; }
+/* Подсказка живёт в body: её не обрезает прокрутка панели, до неё можно
+   дотянуться курсором (безопасный треугольник) и выделить текст. */
+.hm-tip {
+  position: fixed; z-index: 10060; max-width: 240px;
+  background: var(--ink); color: #eef1f8; border-radius: 9px;
+  padding: 7px 11px; font: 500 10.5px/1.5 "Manrope";
+  box-shadow: var(--shadow); animation: hm-tip-in .14s var(--ease);
 }
-.tip-icon:hover::after {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
+.hm-tip[hidden] { display: none; }
+@keyframes hm-tip-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.hm-tip.below { animation-name: hm-tip-in-below; }
+@keyframes hm-tip-in-below { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .hm-tip { animation: none; } }
 
 /* ── CITY INFO TAB (сводка по городу) ────────────────────────────────── */
 .ci-hint {
