@@ -128,15 +128,18 @@ const DEFAULT_SHAPE = 'map-pin';
 // слои не потеряли выбор.
 const LEGACY_ICON = {
   'shopping-cart': 'grocery-or-supermarket', 'shopping-bag': 'department-store', coffee: 'cafe',
-  utensils: 'restaurant', fuel: 'gas-station', pill: 'pharmacy', 'building-2': 'real-estate-agency',
-  warehouse: 'storage', truck: 'moving-company', package: 'post-office', house: 'lodging',
-  landmark: 'bank', flag: 'point-of-interest', 'circle-dot': 'circle',
+  utensils: 'restaurant', fuel: 'gas-station', house: 'lodging', 'circle-dot': 'none', 'map-pin': 'none', circle: 'none',
+};
+// Формы прежних наборов → ближайшая классическая.
+const LEGACY_SHAPE = {
+  square: 'square-rounded', 'square-pin': 'square-rounded', diamond: 'square-rounded', hex: 'square-rounded',
+  ring: 'circle', beacon: 'circle', triangle: 'map-pin', shield: 'map-pin', route: 'map-pin', teardrop: 'map-pin', pin: 'map-pin',
 };
 function markerIcon(id) {
   if (id === 'none') return 'none';
   return PIN_ICON_MAP[id] ? id : (LEGACY_ICON[id] || DEFAULT_PIN_ICON);
 }
-function markerShape(id) { return MARKER_SHAPE_MAP[id] ? id : DEFAULT_SHAPE; }
+function markerShape(id) { return MARKER_SHAPE_MAP[id] ? id : (LEGACY_SHAPE[id] || DEFAULT_SHAPE); }
 // CSS-градиент палитры — используется в чипах выбора, превью и легенде.
 function rampCss(grad, from = 'transparent') {
   const stops = Object.keys(grad).map(Number).sort((a, b) => a - b)
@@ -693,7 +696,8 @@ function pinSvg(iconId, color, color2, size, shapeId) {
   const html = `<svg class="pin2" width="${size}" height="${size}" viewBox="-25 -49 50 50" aria-hidden="true">${defs}` +
     `<path d="${sh.d}" fill="${color2 ? `url(#${gid})` : color}" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/>` +
     glyphMarkup(icId, 0, sh.cy, sh.is, '#fff') + `</svg>`;
-  const out = { html, w: size, h: size, anchor: [size / 2, Math.round(size * 49 / 50)] };
+  // Капля привязана нижней точкой, круг/квадрат/звезда — центром (ay = -24).
+  const out = { html, w: size, h: size, anchor: [size / 2, Math.round(size * (49 + (sh.ay || 0)) / 50)] };
   _pinSvgCache.set(key, out);
   return out;
 }
@@ -711,6 +715,7 @@ function drawCanvasPin(ctx, x, y, size, color, color2, iconId, shapeId) {
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(s, s);
+  ctx.translate(0, -(sh.ay || 0));
   let fill = safeColor(color);
   if (color2) { const g = ctx.createLinearGradient(0, -48, 0, 0); g.addColorStop(0, fill); g.addColorStop(1, safeColor(color2)); fill = g; }
   ctx.shadowColor = 'rgba(15,23,42,.32)'; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1.5;
@@ -746,7 +751,9 @@ const PinMarker = L.CircleMarker.extend({
   },
   _containsPoint(p) {
     const s = this.options.size, pt = this._point;
-    return p.x >= pt.x - s * .48 && p.x <= pt.x + s * .48 && p.y >= pt.y - s && p.y <= pt.y + 1;
+    const sh = MARKER_SHAPE_MAP[markerShape(this.options.shape)];
+    const bottom = pt.y - (sh && sh.ay ? sh.ay : 0) * s / 50;   // нижний край формы
+    return p.x >= pt.x - s * .48 && p.x <= pt.x + s * .48 && p.y >= bottom - s && p.y <= bottom + 1;
   },
 });
 
@@ -1510,11 +1517,12 @@ function downloadLayerTemplate(kind, layer) {
 function markerPickerHtml(shape, icon, color, color2) {
   const sh = markerShape(shape), ic = markerIcon(icon);
   return `<div class="mk-shapes">${MARKER_SHAPES.map(x => `<button type="button" class="mk-shape${x.id === sh ? ' on' : ''}" data-mkshape="${x.id}" title="${esc(x.name)}" aria-label="Форма «${esc(x.name)}»" aria-pressed="${x.id === sh}">${pinSvg(ic, color, color2, 30, x.id).html}</button>`).join('')}</div>
-    <div class="lc-lbl lc-lbl2">Значок</div>
-    <div class="mk-glyphs">${['none'].concat(PIN_ICONS.map(i => i.id)).map(id => {
-      const name = id === 'none' ? 'Без значка' : PIN_ICON_MAP[id].name;
-      return `<button type="button" class="mk-glyph${id === ic ? ' on' : ''}" data-mkicon="${id}" title="${esc(name)}" aria-label="Значок «${esc(name)}»" aria-pressed="${id === ic}">${glyphSvg(id, 17)}</button>`;
-    }).join('')}</div>`;
+    ${[['iqos', 'IQOS и сигареты', ['none']], ['retail', 'Торговые точки', []]].map(([g, title, extra]) => `
+      <div class="lc-lbl lc-lbl2">${title}</div>
+      <div class="mk-glyphs">${PIN_ICONS.filter(i => i.group === g).map(i => i.id).concat(extra).map(id => {
+        const name = id === 'none' ? 'Без значка' : PIN_ICON_MAP[id].name;
+        return `<button type="button" class="mk-glyph${id === ic ? ' on' : ''}" data-mkicon="${id}" title="${esc(name)}" aria-label="Значок «${esc(name)}»" aria-pressed="${id === ic}">${glyphSvg(id, 17)}</button>`;
+      }).join('')}</div>`).join('')}`;
 }
 function refreshMarkerPicker(card, shape, icon, color, color2) {
   const sh = markerShape(shape), ic = markerIcon(icon);

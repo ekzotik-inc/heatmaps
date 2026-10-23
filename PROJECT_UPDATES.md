@@ -769,3 +769,22 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   legacy mapping; the layers and points regression runs pass.
 - Cache version `20261024h`.
 
+## 2026-10-25 — Markers trimmed to the business
+
+- Owner: glyphs only for IQOS/cigarettes and kinds of trade points, plus a few
+  classic shapes; everything else removed.
+- Shapes: Капля (Map Icons pin, anchored at its tip), Квадрат, Круг, Звезда
+  (anchored at their centre — new `ay` field). Shield, route and square pin
+  are gone.
+- Glyphs, in two groups in the picker:
+  - «IQOS и сигареты»: IQOS (device with stick), Стик, Пачка — drawn for the
+    project in the Lucide line style; Сигареты (Lucide); «Без значка».
+  - «Торговые точки»: Киоск (Lucide), Магазин, Минимаркет, Супермаркет, ТЦ,
+    Универмаг, Алкомаркет, АЗС, Кафе, Ресторан, Бар, Клуб, Отель (Map Icons).
+- Removed shapes/glyphs map to the nearest remaining ones, so saved layers
+  keep working. `marker-icons.js` shrank from 35 KB to 9.5 KB.
+- Verified in a browser: all four shapes with IQOS/stick/cigarette/pack/
+  gas-station glyphs on the map, picker groups, star + IQOS selection, 4
+  shapes / 17 glyphs, legacy mapping.
+- Cache version `20261025a`.
+

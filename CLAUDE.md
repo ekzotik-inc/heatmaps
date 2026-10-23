@@ -108,12 +108,15 @@ _pinchZoom/_resize` ещё существуют с тем же смыслом.
     (`recExtras`) → `slimRecs` → сервер `compactLayerChunk` (словарь `x`,
     `row[7]`) → `expandLayerChunk` → карточки (`extraRowsHtml`). Новое поле
     записи — пройти все звенья, иначе оно пропадёт на ленивой загрузке.
-13. **Метки — форма + значок из Map Icons** (`marker-icons.js`, MIT / SIL OFL;
-    «Табак» — из Lucide): `pinSvg(icon, color, color2, size, shape)` для DOM и
-    `PinMarker`/`drawCanvasPin()` для canvas. Старые значения `icon`/`shape`
-    переводятся `markerIcon()`/`markerShape()`. Цвета из состояния — через
-    `safeColor()`: они попадают в SVG и стили. Новый файл со скриптом —
-    поднимать его `?v=` в `index.html`.
+13. **Метки — классическая форма + значок по теме** (`marker-icons.js`):
+    формы — капля, квадрат, круг, звезда; значки — только IQOS/сигареты и виды
+    торговых точек (решение владельца: «всё остальное не нужно»). Источники:
+    Map Icons (MIT / SIL OFL), Lucide (ISC), IQOS/стик/пачка нарисованы для
+    проекта. `pinSvg(icon, color, color2, size, shape)` — DOM,
+    `PinMarker`/`drawCanvasPin()` — canvas; `ay` формы — точка привязки (капля
+    — низ, остальные — центр). Старые `icon`/`shape` переводятся
+    `markerIcon()`/`markerShape()`. Цвета — через `safeColor()`. Правишь
+    `marker-icons.js` — поднимай его `?v=`.
 
 ## Сервер
 
