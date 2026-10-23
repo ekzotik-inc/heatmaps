@@ -308,6 +308,31 @@ html, body {
 .zbtn.disabled { color: var(--dim); opacity: .45; pointer-events: none; }
 .zbtn-fit { color: var(--acc); }
 .zbtn-fit:active { transform: scale(.92); }
+.zbtn-ruler.on { background: var(--acc); color: #fff; border-color: var(--acc); }
+
+/* ── ЛИНЕЙКА ─────────────────────────────────────────────────────────── */
+#map.ruler-mode, #map.ruler-mode .leaflet-interactive { cursor: crosshair !important; }
+.ruler-hint {
+  position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 1150;
+  padding: 7px 14px; border-radius: 100px; background: var(--ink); color: #eef1f8;
+  font: 600 12px "Manrope"; box-shadow: var(--shadow); pointer-events: none; white-space: nowrap;
+}
+.ruler-hint[hidden] { display: none; }
+.ruler-hint b { color: #fff; }
+.ruler-label { width: auto !important; height: auto !important; }
+.ruler-label > span, .ruler-label .ruler-total {
+  display: inline-block; white-space: nowrap; padding: 2px 7px; border-radius: 7px;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line2);
+  font: 700 11px/16px "Manrope"; box-shadow: var(--shadow-card);
+}
+.ruler-label.last { display: inline-flex !important; align-items: center; gap: 3px; }
+.ruler-label.last .ruler-total { background: var(--acc-d); color: #fff; border-color: var(--acc-d); font-size: 12px; }
+.ruler-label.live > span { background: var(--ink); color: #fff; border-color: var(--ink); }
+.ruler-x {
+  width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line2);
+  background: var(--card); color: var(--mut); cursor: pointer; font-size: 13px; line-height: 1; padding: 0;
+}
+.ruler-x:hover { color: var(--danger); border-color: var(--danger); }
 
 @media (max-width: 780px) {
   #zoom-ctl { right: 12px; }

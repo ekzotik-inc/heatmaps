@@ -620,3 +620,21 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   only when dirty, links present with correct coordinates and `noopener`.
 - Cache version `20261023f`.
 
+## 2026-10-24 — Ruler (hold Ctrl)
+
+- Holding Ctrl turns the cursor into a ruler: clicks put points, each vertex
+  shows the running distance, the last one the total (м / км), and a dashed
+  line follows the cursor with the live distance. Releasing Ctrl keeps the
+  measurement; the next Ctrl+click starts a new one; Esc or «×» on the total
+  clears it. A ruler button under the zoom buttons does the same without Ctrl
+  (touchpads, phones); pressing it again turns it off. Mac Ctrl+click (a
+  context-menu event) is handled too.
+- Clicks are taken on the map container in the capture phase, so points land
+  on top of markers, districts or coverage circles without opening them;
+  drags (>5 px) are not points. Ctrl inside inputs (Ctrl+C/V), with the point
+  form open or while picking a point location does not start the ruler.
+- Verified in a browser: Tashkent → Samarkand 268,1 км (map.distance), three
+  points total 685,8 км, live segment, release keeps, new measurement,
+  Esc, «×», ruler button, Ctrl in an input ignored.
+- Cache version `20261024a`.
+

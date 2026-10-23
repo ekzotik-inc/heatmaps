@@ -2438,6 +2438,138 @@ function renderPointLabels() {
 map.on('zoomstart', () => { if (labelLayers().length) lblBox.style.display = 'none'; });
 map.on('moveend zoomend resize', scheduleLabels);
 
+/* ── ЛИНЕЙКА ──────────────────────────────────────────────────────────────
+   Зажали Ctrl — в руке линейка: клики по карте ставят точки, у каждой точки
+   подписано расстояние от начала, у последней — итог; от последней точки к
+   курсору тянется пунктир с текущим расстоянием. Отпустили Ctrl — замер
+   остаётся на карте; следующий Ctrl+клик начинает новый. Esc или «×» на
+   итоге — стереть. Кнопка-линейка у зума включает тот же режим без Ctrl
+   (для тачпада и телефона), повторное нажатие — выключает.
+   На Mac Ctrl+клик браузер превращает в правый клик — его тоже ловим. */
+const ruler = {
+  held: false, sticky: false, pts: [], fresh: true,
+  group: L.layerGroup().addTo(map), live: null, liveTip: null,
+};
+function fmtKm(m) {
+  if (!isFinite(m)) return '—';
+  return m < 1000 ? Math.round(m) + ' м'
+    : (m / 1000).toLocaleString('ru-RU', { maximumFractionDigits: m < 10000 ? 2 : 1 }) + ' км';
+}
+function rulerActive() { return ruler.held || ruler.sticky; }
+function rulerTotal(pts) {
+  let t = 0;
+  for (let i = 1; i < pts.length; i++) t += map.distance(pts[i - 1], pts[i]);
+  return t;
+}
+function rulerClear() {
+  ruler.pts = []; ruler.fresh = true;
+  ruler.group.clearLayers();
+  ruler.live = null; ruler.liveTip = null;
+}
+function rulerDraw() {
+  ruler.group.clearLayers();
+  ruler.live = null; ruler.liveTip = null;
+  const pts = ruler.pts;
+  if (!pts.length) return;
+  if (pts.length > 1) {
+    L.polyline(pts, { color: '#ffffff', weight: 6, opacity: .9, interactive: false }).addTo(ruler.group);
+    L.polyline(pts, { color: getComputedStyle(document.documentElement).getPropertyValue('--acc').trim() || '#12ADC1', weight: 3, dashArray: '8 6', interactive: false }).addTo(ruler.group);
+  }
+  let run = 0;
+  pts.forEach((p, i) => {
+    if (i) run += map.distance(pts[i - 1], p);
+    const last = i === pts.length - 1;
+    L.circleMarker(p, { radius: 5, weight: 2, color: '#fff', fillColor: '#0E96A8', fillOpacity: 1, interactive: false }).addTo(ruler.group);
+    if (i === 0 && !last) return;
+    const html = last
+      ? `<span class="ruler-total">${i ? fmtKm(run) : 'Начало'}</span><button type="button" class="ruler-x" aria-label="Стереть замер">×</button>`
+      : `<span>${fmtKm(run)}</span>`;
+    const m = L.marker(p, {
+      icon: L.divIcon({ className: 'ruler-label' + (last ? ' last' : ''), html, iconSize: null, iconAnchor: [-8, 12] }),
+      interactive: last, keyboard: false, zIndexOffset: 3000,
+    }).addTo(ruler.group);
+    if (last) {
+      m.on('click', e => {
+        if (e.originalEvent && e.originalEvent.target.closest('.ruler-x')) { L.DomEvent.stop(e); rulerClear(); }
+      });
+    }
+  });
+}
+function rulerAdd(latlng) {
+  if (ruler.fresh) { ruler.pts = []; ruler.fresh = false; }
+  ruler.pts.push(latlng);
+  rulerDraw();
+}
+function rulerLive(latlng) {
+  if (!rulerActive() || ruler.fresh || !ruler.pts.length) return;
+  const last = ruler.pts[ruler.pts.length - 1];
+  const d = rulerTotal(ruler.pts) + map.distance(last, latlng);
+  if (!ruler.live) {
+    ruler.live = L.polyline([last, latlng], { color: '#0E96A8', weight: 2, dashArray: '3 6', opacity: .9, interactive: false }).addTo(ruler.group);
+    ruler.liveTip = L.marker(latlng, { icon: L.divIcon({ className: 'ruler-label live', html: '', iconSize: null, iconAnchor: [-12, 22] }), interactive: false, keyboard: false }).addTo(ruler.group);
+  }
+  ruler.live.setLatLngs([last, latlng]);
+  ruler.liveTip.setLatLng(latlng);
+  const el = ruler.liveTip.getElement();
+  if (el) el.innerHTML = `<span>${fmtKm(d)}</span>`;
+}
+function rulerSync() {
+  const on = rulerActive();
+  map.getContainer().classList.toggle('ruler-mode', on);
+  const btn = document.getElementById('ruler-btn');
+  if (btn) { btn.classList.toggle('on', on); btn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+  const hint = document.getElementById('ruler-hint');
+  if (hint) hint.hidden = !on;
+  if (!on) {
+    // Отпустили — пунктир к курсору убираем, замер оставляем.
+    if (ruler.live) { ruler.group.removeLayer(ruler.live); ruler.group.removeLayer(ruler.liveTip); ruler.live = null; ruler.liveTip = null; }
+    ruler.fresh = true;
+  }
+}
+function rulerBlocked() {
+  const a = document.activeElement;
+  if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) return true;
+  const rp = document.getElementById('rp-modal');
+  if (rp && !rp.hidden) return true;
+  return typeof _rpPickingGeo !== 'undefined' && _rpPickingGeo;
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Control' && !e.repeat && !ruler.held && !rulerBlocked()) { ruler.held = true; rulerSync(); }
+  else if (e.key === 'Escape' && (ruler.pts.length || ruler.sticky)) { rulerClear(); ruler.sticky = false; rulerSync(); }
+  // Ctrl+C, Ctrl+V и прочие сочетания — не линейка.
+  else if (ruler.held && e.key !== 'Control') { ruler.held = false; rulerSync(); }
+});
+document.addEventListener('keyup', e => { if (e.key === 'Control' && ruler.held) { ruler.held = false; rulerSync(); } });
+window.addEventListener('blur', () => { if (ruler.held) { ruler.held = false; rulerSync(); } });
+// Клики ловим на контейнере карты в фазе перехвата: точка ставится поверх
+// чего угодно — маркера, района, круга охвата, — и не открывает их карточки.
+// Перетаскивание карты (сдвиг больше 5 px) точкой не считается.
+let _rulerDown = null;
+const _mapEl = map.getContainer();
+_mapEl.addEventListener('pointerdown', e => { _rulerDown = { x: e.clientX, y: e.clientY }; }, true);
+function rulerTakeClick(e, viaContextMenu) {
+  if (!rulerActive() || rulerBlocked()) return;
+  if (!viaContextMenu && !(ruler.sticky || e.ctrlKey)) return;
+  if (e.target.closest('.ruler-x') || e.target.closest('.leaflet-control-container') || e.target.closest('.leaflet-popup')) return;
+  if (_rulerDown && Math.hypot(e.clientX - _rulerDown.x, e.clientY - _rulerDown.y) > 5) return;
+  e.preventDefault(); e.stopPropagation();
+  rulerAdd(map.mouseEventToLatLng(e));
+}
+_mapEl.addEventListener('click', e => rulerTakeClick(e, false), true);
+// Mac: Ctrl+клик приходит как правый клик.
+_mapEl.addEventListener('contextmenu', e => { if (e.ctrlKey && ruler.held) rulerTakeClick(e, true); }, true);
+map.on('mousemove', e => rulerLive(e.latlng));
+map.on('zoomend', () => { if (ruler.pts.length) rulerDraw(); });
+(function wireRulerBtn() {
+  const btn = document.getElementById('ruler-btn');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    ruler.sticky = !ruler.sticky;
+    if (ruler.sticky) ruler.fresh = true;
+    rulerSync();
+  });
+})();
+
 function syncLabelAllBtn() {
   const btn = document.getElementById('pt-labels-all');
   if (!btn) return;
