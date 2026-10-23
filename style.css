@@ -900,6 +900,18 @@ input[type=range].full { width: 100%; }
 .add-layer-btn.manual-add { margin-top: 8px; border-color: rgba(18,173,193,.4); color: var(--acc-d); }
 
 .rp-list { display: flex; flex-direction: column; gap: 6px; }
+.rp-list[hidden] { display: none; }
+.rp-list-toggle {
+  width: 100%; display: flex; align-items: center; gap: 8px; margin: 8px 0;
+  padding: 8px 11px; border-radius: 10px; cursor: pointer;
+  background: var(--card); border: 1px solid var(--line2); color: var(--mut);
+  font: 700 11.5px "Manrope"; text-align: left; transition: .16s var(--ease);
+}
+.rp-list-toggle:hover { color: var(--acc-d); border-color: var(--acc); background: var(--acc-l); }
+.rp-list-toggle span { flex: 1; }
+.rp-list-toggle b { font-size: 10.5px; padding: 1px 7px; border-radius: 100px; background: var(--card2); color: var(--mut); border: 1px solid var(--line2); }
+.rp-list-toggle svg { flex: 0 0 auto; transition: transform .2s var(--ease); }
+.rp-list-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .rp-item {
   display: flex; align-items: center; gap: 9px; cursor: pointer;
   padding: 8px 10px; border-radius: 10px;

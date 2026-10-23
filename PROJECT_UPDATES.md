@@ -540,3 +540,14 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   saved in state.
 - Cache version `20261023b`.
 
+## 2026-10-23 — Collapsible point list in manual layers
+
+- A manual layer card now has «Показать / Скрыть список точек» with the point
+  count. Without a user choice, lists up to 5 points are open and longer ones
+  are collapsed; an explicit choice is remembered per layer in this browser
+  (`localStorage` `hm_rplist`, a per-viewer convenience, not map state).
+- Collapsing happens in place and survives card rebuilds.
+- Verified in a browser: 35-point list collapsed by default, 3-point list
+  open, toggle both ways, state kept after rebuild and after reload.
+- Cache version `20261023c`.
+

@@ -1231,6 +1231,20 @@ function toggleCustomPtSolo(id) {
 /* ── UI BUILDERS ─────────────────────────────────────────────────────── */
 const _lyrOpen = new Set();
 const _cptOpen = new Set();   // keys of layer cards whose settings are expanded
+// Свёрнут ли список точек в карточке ручного слоя. Явный выбор пользователя
+// помним в этом браузере; без выбора короткий список открыт, длинный свёрнут.
+const RP_LIST_AUTO_OPEN = 5;
+const _rpListChoice = (() => {
+  try { return new Map(Object.entries(JSON.parse(localStorage.getItem('hm_rplist') || '{}'))); }
+  catch (_) { return new Map(); }
+})();
+function rpListOpen(l) {
+  return _rpListChoice.has(l.id) ? !!_rpListChoice.get(l.id) : l.recs.length <= RP_LIST_AUTO_OPEN;
+}
+function setRpListOpen(id, open) {
+  _rpListChoice.set(id, open);
+  try { localStorage.setItem('hm_rplist', JSON.stringify(Object.fromEntries(_rpListChoice))); } catch (_) {}
+}
 
 function buildHeatUI() {
   const el = document.getElementById('heat-list');
@@ -2781,7 +2795,11 @@ function buildCustomPtUI() {
         </div>
         <div class="lyr-meta">Объём слоя: ${l.recs.length.toLocaleString('ru-RU')} точек${
           l.manual && l.recs.length ? `<a class="lnk rp-export" data-rpexport="${esc(l.id)}" role="button" tabindex="0">⬇ Excel</a>` : ''}</div>
-        ${l.manual && l.recs.length ? `<div class="rp-list">${l.recs.map(r => `
+        ${l.manual && l.recs.length ? `<button type="button" class="rp-list-toggle" data-rplist="${esc(l.id)}" aria-expanded="${rpListOpen(l) ? 'true' : 'false'}" aria-controls="rp-list-${esc(l.id)}">
+          <span>${rpListOpen(l) ? 'Скрыть список точек' : 'Показать список точек'}</span><b>${l.recs.length.toLocaleString('ru-RU')}</b>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="rp-list" id="rp-list-${esc(l.id)}"${rpListOpen(l) ? '' : ' hidden'}>${l.recs.map(r => `
           <div class="rp-item" data-rpgo="${esc(l.id)}|${esc(r.id || '')}">
             <span class="rp-item-dot" style="background:${esc(r.color || l.color)}" title="${r.color ? 'свой цвет' : 'цвет слоя'}"></span>
             <span class="rp-item-ph">${(r.photos || []).length ? '📷' : '—'}</span>
@@ -2964,6 +2982,19 @@ function buildCustomPtUI() {
   box.querySelectorAll('[data-cptaddpt]').forEach(el => {
     el.addEventListener('click', () => openRetailForm(el.dataset.cptaddpt, null));
   });
+  // Список точек сворачивается на месте, без перестройки карточек.
+  box.querySelectorAll('[data-rplist]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const l = customPtLayers.find(x => x.id === btn.dataset.rplist); if (!l) return;
+      const open = !rpListOpen(l);
+      setRpListOpen(l.id, open);
+      const list = document.getElementById('rp-list-' + l.id);
+      if (list) list.hidden = !open;
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      btn.querySelector('span').textContent = open ? 'Скрыть список точек' : 'Показать список точек';
+    });
+  });
+
   box.querySelectorAll('[data-rpexport]').forEach(el => {
     const run = () => exportManualPts(el.dataset.rpexport);
     el.addEventListener('click', run);
