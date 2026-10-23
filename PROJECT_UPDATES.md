@@ -907,3 +907,20 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   districts on at 4 %; all visible sliders filled by value; legend names
   inside the frame; no uppercase-transformed text on the page.
 - Cache version `20261025e`.
+
+## 2026-10-25 — «Границы» moved to the bottom navigation
+
+- Owner: the boundaries control should not sit above the map. It is now a
+  tab in the bottom navigation right after «Точки» (`#tab-bounds`, keyboard
+  shortcut 3); the button and popover above the map are gone, the city bar
+  keeps the city filter and «Город».
+- The tab badge shows how many zones are selected. Drawing a zone on a phone
+  slides the side panel away to free the map and brings the «Границы» tab
+  back afterwards; on desktop the tab stays open while drawing.
+- Six tabs fit at 360–390px: tighter tab padding on phones, labels are not
+  truncated.
+- Verified in a browser at 1300, 390 and 360px: tab order Карта · Точки ·
+  Границы · Рекомен. · Адреска · Админ, districts listed, rectangle drawn from
+  the tab, badge = 1 after selecting a district; the boundary, export,
+  persistence, viewer and GeoJSON suites pass.
+- Cache version `20261025f`.

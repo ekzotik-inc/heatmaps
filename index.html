@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.1/maplibre-gl.css"/>
-  <link rel="stylesheet" href="style.css?v=20261025e"/>
+  <link rel="stylesheet" href="style.css?v=20261025f"/>
 </head>
 <body>
 
@@ -180,6 +180,12 @@
           <a class="lnk" id="manual-export-all" style="display:none">⬇ Все ручные точки в Excel</a>
         </div>
         <input type="file" id="cpt-file" accept=".csv,.xlsx,.xls" style="display:none"/>
+      </div>
+
+      <!-- TAB: ГРАНИЦЫ — районы города и свои зоны, отбор точек -->
+      <div class="tab-panel" id="tab-bounds">
+        <p class="tab-section-title">Границы</p>
+        <div id="bounds-ui"></div>
       </div>
 
       <!-- TAB: АНАЛИЗ -->
@@ -386,6 +392,13 @@
         </div>
         <span class="tab-label">Точки</span>
       </button>
+      <button class="side-tab" data-tab="tab-bounds" id="bounds-tab" title="Районы города и свои границы: выбор зон и отбор точек">
+        <div class="tab-icon-wrap">
+          <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 20.5 7v10L12 21.5 3.5 17V7z"/><path d="M12 2.5v19M3.5 7 12 12l8.5-5" opacity=".45"/></svg></span>
+          <span class="acc-badge" id="acc-badge-bz"></span>
+        </div>
+        <span class="tab-label">Границы</span>
+      </button>
       <button class="side-tab" data-tab="tab-recs">
         <div class="tab-icon-wrap">
           <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/></svg></span>
@@ -439,14 +452,6 @@
       </div>
     </div>
     <div class="city-bar-sep"></div>
-    <div class="city-info-wrap" id="bounds-wrap">
-      <button id="districts-toggle" class="city-extra-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="bounds-pop" title="Районы города и свои границы: выбор зон и отбор точек">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 20.5 7v10L12 21.5 3.5 17V7z"/><path d="M12 2.5v19M3.5 7 12 12l8.5-5" opacity=".45"/></svg>Границы
-      </button>
-      <div id="bounds-pop" class="city-pop bounds-pop" role="dialog" aria-label="Границы" hidden>
-        <div id="bounds-ui"></div>
-      </div>
-    </div>
     <div class="city-info-wrap" id="city-info-wrap">
       <button id="city-info-btn" class="city-extra-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="city-pop" title="Сводка по выбранному городу">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg>Город
@@ -731,7 +736,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20261025e'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20261025f'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();

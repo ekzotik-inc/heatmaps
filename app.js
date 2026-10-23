@@ -618,7 +618,7 @@ function coreIcon(z) {
 }
 
 /* ── ГРАНИЦЫ: районы города и свои зоны ──────────────────────────────────
-   Кнопка «Границы» над картой. Два вида слоёв:
+   Вкладка «Границы» в нижней навигации (после «Точек»). Два вида слоёв:
    - «Районы города» — полигоны районов Ташкента из `/data` (districtsOn);
    - свои границы — слои владельца, в каждом одна или несколько зон,
      нарисованных на карте или загруженных из GeoJSON.
@@ -773,8 +773,7 @@ function boundsChanged(save = true, rebuildUI = true) {
   renderHeat(); renderCustomPoints(); renderRecs();
   if (rebuildUI) buildBoundsUI(); else syncBoundsStatus();
   updateLayerLegend();   // блок «районы» в легенде — площади выбранных
-  const btn = document.getElementById('districts-toggle');
-  if (btn) btn.classList.toggle('on', boundZones().length > 0);
+  syncBoundsBadge();
   if (save) saveState();
 }
 // Состояние приходит с сервера/из файла — проверяем форму и числа. Чего нет
@@ -2243,7 +2242,7 @@ function setCityInfoPop(open) {
   const pop = document.getElementById('city-pop');
   const btn = document.getElementById('city-info-btn');
   if (!pop || !btn) return;
-  if (open) { renderCityInfo(); setCityPopover(false); setBoundsPop(false); }
+  if (open) { renderCityInfo(); setCityPopover(false); }
   pop.hidden = !open;
   btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   btn.classList.toggle('on', open);
@@ -2273,7 +2272,6 @@ function setCityPopover(open, focusSearch = true) {
   const trigger = document.getElementById('city-filter-trigger');
   if (!pop || !trigger) return;
   if (open && !document.getElementById('city-pop')?.hidden) setCityInfoPop(false);
-  if (open) setBoundsPop(false);
   pop.hidden = !open;
   trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
   document.getElementById('city-filter')?.classList.toggle('open', open);
@@ -3419,17 +3417,32 @@ function importGeojsonInto(layerId, file) {
   rd.readAsText(file);
 }
 
-// Панель «Границы» над картой.
+// Вкладка «Границы» в нижней навигации (после «Точек»).
 const _bzOpen = new Set();
 let _bzCreating = false, _bzNewColor = '';
+// Боковая панель на телефоне — выдвижная: при рисовании зоны она убирается,
+// чтобы освободить карту, а после — возвращается на вкладку «Границы».
+function setSideDrawer(open) {
+  const side = document.getElementById('side'), backdrop = document.getElementById('side-backdrop');
+  if (!side) return;
+  side.classList.toggle('open', open);
+  if (backdrop) backdrop.classList.toggle('show', open);
+  document.body.classList.toggle('side-open', open);
+}
 function setBoundsPop(open) {
-  const pop = document.getElementById('bounds-pop');
-  const btn = document.getElementById('districts-toggle');
-  if (!pop || !btn) return;
-  if (open) { buildBoundsUI(); setCityPopover(false); setCityInfoPop(false); }
-  else _bzCreating = false;
-  pop.hidden = !open;
-  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  const mobile = window.innerWidth <= 780;
+  if (!open) { _bzCreating = false; if (mobile) setSideDrawer(false); return; }
+  const tab = document.getElementById('bounds-tab');
+  if (tab && !tab.classList.contains('active')) tab.click();
+  else buildBoundsUI();
+  if (mobile) setSideDrawer(true);
+}
+// Число выбранных зон — на значке вкладки, как число слоёв у «Карты».
+function syncBoundsBadge() {
+  const badge = document.getElementById('acc-badge-bz');
+  if (!badge) return;
+  const n = activeBoundZones().length;
+  badge.textContent = n ? String(n) : '';
 }
 function zonesWord(n) { return `${n} ${plural(n, 'зона', 'зоны', 'зон')}`; }
 function buildBoundsUI() {
@@ -3445,7 +3458,7 @@ function buildBoundsUI() {
     </div>`;
   const allSel = keys => keys.length && keys.every(k => sel.has(k));
   const pickAll = (id, keys) => keys.length ? `<button type="button" class="lc-link" data-bzall="${esc(id)}">${allSel(keys) ? 'Снять выбор' : 'Выбрать все'}</button>` : '<span></span>';
-  let html = `<div class="bz-head"><b>Границы</b><span>Клик по зоне на карте — выбрать, можно несколько</span></div>`;
+  let html = `<div class="bz-head"><span>Клик по району или зоне на карте — выбрать, можно несколько. Выбранные видны в легенде с площадью.</span></div>`;
 
   if (dists.length) {
     const keys = dists.map(f => 'city:' + f.ru);
@@ -3676,27 +3689,6 @@ function pickGeojson(layerId) {
   inp.type = 'file'; inp.accept = '.geojson,.json,application/geo+json,application/json';
   inp.addEventListener('change', () => { if (inp.files && inp.files[0]) importGeojsonInto(layerId, inp.files[0]); });
   inp.click();
-}
-function wireBoundsPop() {
-  const btn = document.getElementById('districts-toggle');
-  const pop = document.getElementById('bounds-pop');
-  if (!btn || !pop || btn._wired) return;
-  btn._wired = true;
-  btn.addEventListener('click', () => setBoundsPop(pop.hidden));
-  // Клики по карте панель не закрывают: в ней видно, как меняется выбор зон.
-  document.addEventListener('pointerdown', e => {
-    if (!pop.hidden && !e.target.closest('#bounds-wrap') && !e.target.closest('#map') && !e.target.closest('.paint-pop')) setBoundsPop(false);
-  });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !pop.hidden && !bdraw.on) setBoundsPop(false); });
-  const hm = hoverMenu({
-    trigger: btn,
-    panel: () => pop,
-    isOpen: () => !pop.hidden,
-    open: () => setBoundsPop(true),
-    close: () => setBoundsPop(false),
-    canOpen: () => !bdraw.on,
-  });
-  if (hm) hm.bindPanel();
 }
 
 function syncLabelAllBtn() {
@@ -6503,7 +6495,7 @@ function syncControls() {
   $('heat-blend').value    = heatBlend;
   $('rec-show').classList.toggle('on', recShow);
   buildRecBasisSel();
-  const distBtn = $('districts-toggle'); if (distBtn) distBtn.classList.toggle('on', boundZones().length > 0);
+  syncBoundsBadge();
   $('s-rt-radius').value  = rtRadius;     $('v-rt-radius').textContent = fmtD(rtRadius);
   $('op-rt-radius').value = rtRadiusOp;
   $('s-rt-excl').value    = rtExclRadius; $('v-rt-excl').textContent   = fmtD(rtExclRadius);
@@ -6690,8 +6682,6 @@ function wireEvents() {
     pushDataset(saveDsBtn);
   });
 
-  // «Границы» над картой: районы города и свои зоны.
-  wireBoundsPop();
 
   // Custom zoom controls
   const zc = $('zoom-ctl');
@@ -6740,22 +6730,18 @@ function wireEvents() {
   // Mobile burger + backdrop
   const sideEl = $('side'), backdrop = $('side-backdrop');
   const isMobile = () => window.innerWidth <= 780;
-  const setSide = open => {
-    sideEl.classList.toggle('open', open);
-    backdrop.classList.toggle('show', open);
-    document.body.classList.toggle('side-open', open); // prevent body scroll behind drawer
-  };
+  const setSide = setSideDrawer;   // body.side-open — не прокручивать страницу под панелью
   $('burger').addEventListener('click', () => setSide(!sideEl.classList.contains('open')));
   backdrop.addEventListener('click', () => setSide(false));
-  // Keyboard shortcuts: Esc closes drawer; 1-4 switch tabs (when not typing)
+  // Keyboard shortcuts: Esc closes drawer; 1-6 switch tabs (when not typing)
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && isMobile()) { setSide(false); return; }
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'select' || tag === 'textarea' || e.metaKey || e.ctrlKey || e.altKey) return;
     // Порядок как в нижней навигации — иначе «Город» недостижим с клавиатуры,
     // а «4» открывает не то, что подписано.
-    const tabs = ['tab-map', 'tab-points', 'tab-recs', 'tab-analysis', 'tab-data'];
-    if (e.key >= '1' && e.key <= '5') {
+    const tabs = ['tab-map', 'tab-points', 'tab-bounds', 'tab-recs', 'tab-analysis', 'tab-data'];
+    if (e.key >= '1' && e.key <= '6') {
       const t = document.querySelector(`.side-tab[data-tab="${tabs[+e.key - 1]}"]`);
       if (t && t.offsetParent !== null) t.click(); // skip if hidden (e.g. data tab for viewers)
     }
@@ -6782,6 +6768,8 @@ function wireEvents() {
       tab.classList.add('active');
       const panel = document.getElementById(tab.dataset.tab);
       if (panel) panel.classList.add('active');
+      // Районы города приезжают с `/data` позже первой отрисовки — собираем при открытии.
+      if (tab.dataset.tab === 'tab-bounds') buildBoundsUI();
       // On mobile: don't auto-close — let user see the panel they just opened
     });
   });
@@ -7525,6 +7513,7 @@ function readLocalSnapshot() {
 function renderCurrentState() {
   buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
   renderHeat(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
+  buildBoundsUI(); syncBoundsBadge();
   fillAllSliders();   // syncControls ставит value без события input
 }
 /* Учётки без админ-прав всегда открывают карту с чистого листа (решение

@@ -1570,11 +1570,13 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
   .tab-panel { padding: 12px 12px 20px; }
 
   /* Tabs: bigger touch targets */
-  .side-tab { padding: 12px 4px 14px; font-size: 10px; }
+  /* Шесть вкладок на 360–390px: подписи помещаются целиком */
+  .side-tabs { gap: 1px; padding: 8px 4px 10px; }
+  .side-tab { padding: 12px 0 14px; font-size: 9.5px; letter-spacing: -.1px; }
   .side-tab .tab-icon svg { width: 21px; height: 21px; }
 
   /* Section titles: readable size */
-  .tab-section-title { font-size: 11px; }
+  .tab-section-title { font-size: 12px; }
 
   /* Sliders: full width on mobile (was 92px hardcoded) */
   .lyr-ctl input[type=range] { width: 100%; }
@@ -2429,8 +2431,6 @@ button, input, select, textarea, optgroup, option, kbd, code, pre,
 /* ── ГРАНИЦЫ: районы города и свои зоны ──────────────────────────────── */
 /* Клик по району давал чёрную рамку фокуса браузера — у путей Leaflet она не нужна. */
 #map .leaflet-interactive:focus, #map path:focus { outline: none; }
-.bounds-pop { width: min(370px, calc(100vw - 32px)); }
-#districts-toggle[aria-expanded="true"]:not(.on) { color: var(--acc); border-color: var(--acc); }
 .bz-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
 .bz-head b { font-size: 14px; font-weight: 700; color: var(--ink); }
 .bz-head span { font-size: 11.5px; color: var(--mut); }
