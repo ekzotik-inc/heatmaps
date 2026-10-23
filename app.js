@@ -1211,7 +1211,7 @@ function buildHeatUI() {
   const el = document.getElementById('heat-list');
   el.innerHTML = '';
   if (!heatKeys.length) {
-    el.innerHTML = '<div class="cpt-empty">Слоёв пока нет. Нажмите «Загрузить слой» и выберите CSV/XLSX с колонками name, lat, lon, value. В value можно писать проценты — «0,356%».</div>';
+    el.innerHTML = '<div class="cpt-empty">Слоёв пока нет. Нажмите «Загрузить слой» и выберите CSV/XLSX с колонками name, lat, lon, value (по желанию code, addr). В value можно писать проценты — «0,356%».</div>';
   }
   heatKeys.forEach(k => {
     const d = DS[k];
@@ -2975,13 +2975,7 @@ function toCustomPtRecs(rows) {
     const la = parseFloat(('' + pick(r, ['lat', 'широт'])).replace(',', '.'));
     const lo = parseFloat(('' + pick(r, ['lon', 'lng', 'долгот'])).replace(',', '.'));
     if (!isFinite(la) || !isFinite(lo)) continue;
-    out.push({
-      name: '' + (pick(r, ['name', 'назв', 'точк', 'title']) || ''),
-      addr: '' + (pick(r, ['addr', 'address', 'адрес']) || ''),
-      code: '' + (pick(r, ['code', 'код', 'id']) || ''),
-      hours: '' + (pick(r, ['hours', 'часы', 'время', 'график']) || ''),
-      lat: la, lon: lo,
-    });
+    out.push({ ...recTextFields(r), lat: la, lon: lo });
   }
   return out;
 }
@@ -3112,6 +3106,41 @@ function pick(o, keys) {
   return undefined;
 }
 
+// Колонка по ключевым словам: сначала точное совпадение заголовка, потом
+// вхождение (для слов от трёх букв), ключи — по приоритету. `skip` — колонки,
+// уже занятые другим полем: «Код точки» не должен стать названием из-за «точк».
+function pickKey(o, keys, skip) {
+  const cols = Object.keys(o).filter(k => !(skip && skip.includes(k)));
+  const low = cols.map(k => ('' + k).toLowerCase().trim());
+  for (const w of keys) { const i = low.indexOf(w); if (i >= 0) return cols[i]; }
+  for (const w of keys) {
+    if (w.length < 3) continue;
+    const i = low.findIndex(k => k.includes(w));
+    if (i >= 0) return cols[i];
+  }
+  return undefined;
+}
+const COL_CODE  = ['code', 'код', 'id', 'dms', 'дмс', 'sap'];
+const COL_NAME  = ['name', 'назв', 'наимен', 'точк', 'title'];
+const COL_ADDR  = ['addr', 'address', 'адрес'];
+const COL_HOURS = ['hours', 'часы', 'время', 'график'];
+// Текстовые поля точки из строки файла: код, название, адрес, часы.
+function recTextFields(r) {
+  const used = [];
+  const take = keys => {
+    const k = pickKey(r, keys, used);
+    if (k === undefined) return '';
+    used.push(k);
+    const v = r[k];
+    return v == null ? '' : String(v).trim();
+  };
+  const code = take(COL_CODE);
+  const addr = take(COL_ADDR);
+  const hours = take(COL_HOURS);
+  const name = take(COL_NAME);
+  return { name, addr, code, hours };
+}
+
 function toRecs(rows) {
   const out = [];
   let percent = false;
@@ -3125,8 +3154,15 @@ function toRecs(rows) {
     if (/%/.test(text)) percent = true;
     let v = parseFloat(text.replace('%', '').replace(/\s/g, '').replace(',', '.'));
     if (!isFinite(v) || v <= 0) v = 1;
-    const nm = pick(r, ['name', 'назв', 'точк']) || '';
-    if (isFinite(la) && isFinite(lo)) out.push({ name: '' + nm, fil: cityOf(la, lo), lat: la, lon: lo, vol: v });
+    if (!isFinite(la) || !isFinite(lo)) continue;
+    // Код, адрес и часы раньше отбрасывались здесь — и пропадали из карточки
+    // точки и из выгрузок, хотя дальше по цепочке их всё поддерживает.
+    const t = recTextFields(r);
+    const rec = { name: t.name, fil: cityOf(la, lo), lat: la, lon: lo, vol: v };
+    if (t.addr) rec.addr = t.addr;
+    if (t.code) rec.code = t.code;
+    if (t.hours) rec.hours = t.hours;
+    out.push(rec);
   }
   // Флаг читают места, где слой создаётся или перезаливается из файла.
   Object.defineProperty(out, '_percent', { value: percent, enumerable: false });
@@ -4714,11 +4750,12 @@ function wireEvents() {
   const TEMPLATES = {
     heat: {
       // Третья строка показывает, что value можно писать процентом.
-      rows: [['name', 'lat', 'lon', 'value'],
-             ['Пример ТТ', 41.311100, 69.279700, 12.5],
-             ['Пример ТТ 2', 41.299000, 69.240000, 8],
-             ['Пример в процентах', 41.290000, 69.230000, '0,356%']],
-      cols: [22, 12, 12, 14], file: 'shablon_sloy_heatmap.xlsx',
+      // code / addr необязательны — попадают в карточку точки и в выгрузки.
+      rows: [['name', 'lat', 'lon', 'value', 'code', 'addr'],
+             ['Пример ТТ', 41.311100, 69.279700, 12.5, 'TT-0001', 'г.Ташкент, ул. Пример 1'],
+             ['Пример ТТ 2', 41.299000, 69.240000, 8, 'TT-0002', ''],
+             ['Пример в процентах', 41.290000, 69.230000, '0,356%', '', '']],
+      cols: [22, 12, 12, 14, 12, 30], file: 'shablon_sloy_heatmap.xlsx',
     },
     cpt: {
       rows: [['name', 'lat', 'lon', 'addr', 'hours', 'code'],

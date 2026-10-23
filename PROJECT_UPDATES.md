@@ -501,3 +501,21 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   sets country, Com Dep user sees only its maps and no admin controls, delete).
 - Cache version `20261022a`. **Requires a Render redeploy.**
 
+## 2026-10-23 — Heat-layer codes and addresses survive the upload
+
+- **Symptom:** a layer uploaded with trade-point codes exported an empty «Код»
+  column in the address program.
+- **Cause:** `toRecs()` (heat-layer file parser) kept only name, coordinates
+  and value. `code`, `addr` and `hours` were dropped at parse time, although
+  `slimRecs`, the server's compact chunks, `expandLayerChunk`, the point card
+  and the exports all carry them.
+- **Fix:** heat layers and point layers share `recTextFields()`. Columns are
+  matched by keyword priority (exact header first, then substring for words of
+  3+ letters) and a column taken by one field is skipped for the next, so
+  «Код точки» no longer becomes the name via «точк». Recognised code headers:
+  code, код, id, dms, дмс, sap.
+- The heat-layer template now has `code` and `addr` columns.
+- Layers uploaded before this fix have no codes stored — they must be
+  re-uploaded (layer card → «⬆ Данные»).
+- Cache version `20261023a`.
+
