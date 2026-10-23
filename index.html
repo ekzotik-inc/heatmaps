@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.1/maplibre-gl.css"/>
-  <link rel="stylesheet" href="style.css?v=20261024e"/>
+  <link rel="stylesheet" href="style.css?v=20261024f"/>
 </head>
 <body>
 
@@ -220,11 +220,14 @@
 
       <!-- TAB: АДРЕСНАЯ ПРОГРАММА -->
       <div class="tab-panel" id="tab-analysis">
-        <p class="tab-section-title">Адресная программа</p>
+        <div class="addr-intro">
+          <b>Адресная программа</b>
+          <span>Отберите точки рынка по расстоянию до наших и выгрузите список в Excel. Три шага сверху вниз.</span>
+        </div>
 
         <!-- Step 1: Source -->
         <div class="addr-step">
-          <div class="addr-step-label"><span class="addr-num">1</span> Что анализируем?
+          <div class="addr-step-label"><span class="addr-num">1</span> Что анализируем
             <span class="tip-icon" data-tip="Можно отметить несколько слоёв — их точки объединяются в один список. Точки с одинаковыми координатами не задваиваются.">ⓘ</span></div>
           <div id="addr-src-list"></div>
         </div>
@@ -248,7 +251,7 @@
 
         <!-- Step 3: Exclusions -->
         <div class="addr-step" id="addr-excl-block">
-          <div class="addr-step-label"><span class="addr-num">3</span> Исключить точки, которые уже рядом с
+          <div class="addr-step-label"><span class="addr-num">3</span> Исключить, если рядом уже есть
             <span class="tip-icon" data-tip="Из адресной программы убираются кандидаты, рядом с которыми уже есть точка отмеченных слоёв. Совпадение по колонке code исключает адрес независимо от расстояния.">ⓘ</span></div>
           <div id="rt-excl-list"></div>
           <div class="addr-dist-row" style="margin-top:8px">
@@ -267,8 +270,8 @@
 
         <!-- Actions -->
         <div class="addr-actions">
-          <button class="btn addr-btn-map" id="btn-addr-preview">👁 На карте</button>
-          <button class="btn addr-btn-xls btn-retraffic" id="btn-retraffic-export">⬇ Excel</button>
+          <button class="addr-act ghost" id="btn-addr-preview" type="button">Показать на карте</button>
+          <button class="addr-act" id="btn-retraffic-export" type="button"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg> Скачать Excel</button>
         </div>
       </div>
 
@@ -696,7 +699,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20261024e'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20261024f'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();

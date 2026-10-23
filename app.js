@@ -661,20 +661,7 @@ function renderIncome() {
 }
 
 /* ── POINT MARKERS ───────────────────────────────────────────────────── */
-const SHAPES = [
-  ['teardrop', 'Капля'], ['hex', 'Гексагон'], ['beacon', 'Маяк'], ['shield', 'Щит'],
-  ['pin', 'Булавка'], ['circle', 'Круг'], ['square', 'Квадрат'],
-  ['diamond', 'Ромб'], ['triangle', 'Треугольник'], ['star', 'Звезда'], ['ring', 'Кольцо'],
-];
 
-function starPath(h, s) {
-  let p = '';
-  for (let i = 0; i < 10; i++) {
-    const r = i % 2 ? s * 0.16 : s * 0.36, a = -Math.PI / 2 + i * Math.PI / 5;
-    p += (i ? ' L' : 'M') + (h + r * Math.cos(a)).toFixed(1) + ' ' + (h + r * Math.sin(a)).toFixed(1);
-  }
-  return p + ' Z';
-}
 
 /* Метка-капля: SVG для DOM-маркеров (слои точек) и canvas для ярлыков
    тепловых слоёв, где точек бывает до тысячи с лишним. */
@@ -742,62 +729,6 @@ const PinMarker = L.CircleMarker.extend({
   },
 });
 
-function shp(shape, color, s) {
-  const h = s / 2, sw = Math.max(2, s * 0.085), gid = 'g' + color.replace('#', '') + shape;
-  const defs = `<defs><radialGradient id="${gid}" cx="36%" cy="30%">
-    <stop offset="0%"   stop-color="${lighten(color, .5)}"/>
-    <stop offset="62%"  stop-color="${color}"/>
-    <stop offset="100%" stop-color="${darken(color, .14)}"/>
-  </radialGradient></defs>`;
-  const st = `stroke="#fff" stroke-width="${sw}" stroke-linejoin="round"`;
-  const f  = `fill="url(#${gid})"`;
-  let body, anchor = [h, h];
-  switch (shape) {
-    case 'square':
-      body = `<rect x="${s*.2}" y="${s*.2}" width="${s*.6}" height="${s*.6}" rx="${s*.15}" ${f} ${st}/>`;
-      break;
-    case 'diamond':
-      body = `<rect x="${s*.24}" y="${s*.24}" width="${s*.52}" height="${s*.52}" rx="${s*.1}" transform="rotate(45 ${h} ${h})" ${f} ${st}/>`;
-      break;
-    case 'triangle':
-      body = `<polygon points="${h},${s*.18} ${s*.84},${s*.8} ${s*.16},${s*.8}" ${f} ${st}/>`;
-      break;
-    case 'star':
-      body = `<path d="${starPath(h, s)}" ${f} ${st}/>`;
-      break;
-    case 'ring':
-      body = `<circle cx="${h}" cy="${h}" r="${s*.3}" fill="none" stroke="${color}" stroke-width="${s*.17}"/>
-              <circle cx="${h}" cy="${h}" r="${s*.38}" fill="none" stroke="#fff" stroke-width="${s*.05}"/>`;
-      break;
-    case 'pin':
-      body   = `<path d="M ${h} ${s*.94} C ${s*.16} ${s*.56},${s*.18} ${s*.14},${h} ${s*.14} C ${s*.82} ${s*.14},${s*.84} ${s*.56},${h} ${s*.94} Z" ${f} ${st}/><circle cx="${h}" cy="${s*.38}" r="${s*.12}" fill="#fff" opacity=".92"/>`;
-      anchor = [h, s * .94];
-      break;
-    case 'teardrop':
-      body   = `<path d="M ${h} ${s*.95} C ${s*.18} ${s*.6},${s*.2} ${s*.1},${h} ${s*.1} C ${s*.8} ${s*.1},${s*.82} ${s*.6},${h} ${s*.95} Z" ${f} ${st}/><circle cx="${h}" cy="${s*.39}" r="${s*.135}" fill="#fff"/>`;
-      anchor = [h, s * .95];
-      break;
-    case 'hex': {
-      const hp = [];
-      for (let i = 0; i < 6; i++) {
-        const a = -Math.PI / 2 + i * Math.PI / 3;
-        hp.push((h + s * .37 * Math.cos(a)).toFixed(1) + ',' + (h + s * .37 * Math.sin(a)).toFixed(1));
-      }
-      body = `<polygon points="${hp.join(' ')}" ${f} ${st}/><circle cx="${h}" cy="${h}" r="${s*.13}" fill="#fff" opacity=".92"/>`;
-      break;
-    }
-    case 'shield':
-      body   = `<path d="M ${h} ${s*.14} L ${s*.79} ${s*.27} L ${s*.79} ${s*.54} C ${s*.79} ${s*.75},${h} ${s*.88},${h} ${s*.88} C ${h} ${s*.88},${s*.21} ${s*.75},${s*.21} ${s*.54} L ${s*.21} ${s*.27} Z" ${f} ${st}/><circle cx="${h}" cy="${s*.46}" r="${s*.1}" fill="#fff" opacity=".9"/>`;
-      anchor = [h, s * .88];
-      break;
-    case 'beacon':
-      body = `<circle cx="${h}" cy="${h}" r="${s*.35}" ${f} ${st}/><circle cx="${h}" cy="${h}" r="${s*.145}" fill="#fff"/>`;
-      break;
-    default:
-      body = `<circle cx="${h}" cy="${h}" r="${s*.32}" ${f} ${st}/><circle cx="${h*.82}" cy="${h*.78}" r="${s*.08}" fill="#fff" opacity=".5"/>`;
-  }
-  return { html: `<svg class="pt-pin" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}">${defs}${body}</svg>`, anchor };
-}
 
 /* ── HEAT LAYERS ─────────────────────────────────────────────────────── */
 function applyHeatCanvas(d) {
@@ -4460,6 +4391,50 @@ function rtExclLayerKeys() {
   const ck = customPtLayers.filter(l => l.recs.length).map(l => '__cpt__' + l.id);
   return [...hk, ...ck];
 }
+/* Компактный список слоёв для шагов адрески: видно 3 слоя (отмеченные —
+   первыми), остальные раскрываются кнопкой «Ещё N». Строка — квадратик-галка,
+   цвет слоя, название и число точек. */
+const PICK_VISIBLE = 3;
+const _pickOpen = new Set();
+function pickLayerMeta(k) {
+  if (k.startsWith('__cpt__')) {
+    const l = customPtLayers.find(x => x.id === k.slice(7));
+    return l ? { name: l.name, sw: l.color2 ? `linear-gradient(135deg, ${safeColor(l.color)}, ${safeColor(l.color2)})` : safeColor(l.color), n: l.recs.length, kind: 'Точки' } : null;
+  }
+  const d = DS[k];
+  return d ? { name: d.name || k, sw: paintSwatchCss(d), n: layerRecordCount(d), kind: 'Слой' } : null;
+}
+function pickListHtml(listId, keys, selected, attr, ariaVerb) {
+  const ordered = keys.filter(k => selected.includes(k)).concat(keys.filter(k => !selected.includes(k)));
+  const open = _pickOpen.has(listId);
+  const limit = Math.max(PICK_VISIBLE, selected.length);
+  const rows = ordered.map((k, i) => {
+    const m = pickLayerMeta(k); if (!m) return '';
+    const on = selected.includes(k);
+    const hidden = !open && i >= limit;
+    return `<button type="button" class="pick-row${on ? ' on' : ''}" ${attr}="${esc(k)}" aria-pressed="${on}"${hidden ? ' hidden' : ''} title="${esc(ariaVerb)} «${esc(m.name)}»">
+      <span class="pick-chk" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+      <span class="pick-sw" style="background:${m.sw}"></span>
+      <span class="pick-nm">${esc(m.name)}</span>
+      <span class="pick-n">${m.n.toLocaleString('ru-RU')}</span>
+    </button>`;
+  }).join('');
+  const rest = ordered.length - limit;
+  const more = rest > 0
+    ? `<button type="button" class="pick-more" data-pickmore="${esc(listId)}" aria-expanded="${open}">${open ? 'Свернуть' : `Ещё ${rest} ${plural(rest, 'слой', 'слоя', 'слоёв')}`}${uiIcon('chevron', 13)}</button>`
+    : '';
+  return `<div class="pick-list">${rows}</div>${more}`;
+}
+function wirePickMore(box, listId) {
+  const b = box.querySelector('[data-pickmore]');
+  if (!b) return;
+  b.addEventListener('click', () => {
+    const open = !_pickOpen.has(listId);
+    if (open) _pickOpen.add(listId); else _pickOpen.delete(listId);
+    if (listId === 'src') buildAddrSrcSel(); else if (listId === 'ref') buildAddrRefSel(); else buildRtExclUI();
+  });
+}
+
 function rtExclLayerName(k) {
   if (DS[k]) return DS[k].name || k;
   const cpt = customPtLayers.find(l => '__cpt__' + l.id === k);
@@ -4484,16 +4459,15 @@ function buildRtExclUI() {
     syncExclHint();
     return;
   }
-  box.innerHTML = keys.map(k =>
-    `<label class="chk rt-excl-item"><div class="cbx${rtExclKeys.includes(k) ? ' on' : ''}" data-rtx="${esc(k)}" aria-label="Исключать точки рядом со слоем «${esc(rtExclLayerName(k))}»"></div><span>${esc(rtExclLayerName(k))}</span></label>`
-  ).join('');
-  a11ySwitches();
+  box.innerHTML = pickListHtml('excl', keys, rtExclKeys, 'data-rtx', 'Исключать точки рядом со слоем');
+  wirePickMore(box, 'excl');
   box.querySelectorAll('[data-rtx]').forEach(cb => {
     cb.addEventListener('click', () => {
       const k = cb.dataset.rtx;
       if (rtExclKeys.includes(k)) rtExclKeys = rtExclKeys.filter(x => x !== k);
       else rtExclKeys.push(k);
-      cb.classList.toggle('on');
+      cb.classList.toggle('on', rtExclKeys.includes(k));
+      cb.setAttribute('aria-pressed', String(rtExclKeys.includes(k)));
       syncExclHint();
       saveState();
     });
@@ -4511,7 +4485,9 @@ const cmpDist = (d, thresh, op) =>
 let addrPreview = null;
 function syncAddrPreviewBtn() {
   const btn = document.getElementById('btn-addr-preview');
-  if (btn) btn.textContent = addrPreview ? '🚫 Убрать с карты' : '👁 На карте';
+  if (!btn) return;
+  btn.innerHTML = addrPreview ? `${uiIcon('x', 15)} Убрать с карты` : `${uiIcon('eye', 15)} Показать на карте`;
+  btn.classList.toggle('on', !!addrPreview);
 }
 function clearAddrPreview() {
   addrLayer.clearLayers();
@@ -4566,10 +4542,8 @@ function buildAddrSrcSel() {
   if (!opts.length) {
     box.innerHTML = '<div class="rt-excl-empty">Нет слоёв — загрузите на вкладке «Карта» или «Точки».</div>';
   } else {
-    box.innerHTML = opts.map(o =>
-      `<label class="chk rt-excl-item"><div class="cbx${addrSrcKeys.includes(o.key) ? ' on' : ''}" data-addrsrc="${esc(o.key)}" aria-label="Использовать слой «${esc(o.name)}» как основу"></div><span>${esc(o.name)}</span></label>`
-    ).join('');
-    a11ySwitches();
+    box.innerHTML = pickListHtml('src', opts.map(o => o.key), addrSrcKeys, 'data-addrsrc', 'Анализировать слой');
+    wirePickMore(box, 'src');
     box.querySelectorAll('[data-addrsrc]').forEach(cb => {
       cb.addEventListener('click', () => {
         const k = cb.dataset.addrsrc;
@@ -4634,10 +4608,8 @@ function buildAddrRefSel() {
     box.innerHTML = '<div class="rt-excl-empty">Нет точек — загрузите их на вкладке «Точки».</div>';
     return;
   }
-  box.innerHTML = opts.map(o =>
-    `<label class="chk rt-excl-item"><div class="cbx${addrRefKeys.includes(o.key) ? ' on' : ''}" data-addrref="${esc(o.key)}" aria-label="Считать расстояние до слоя «${esc(o.name)}»"></div><span>${esc(o.name)}</span></label>`
-  ).join('');
-  a11ySwitches();
+  box.innerHTML = pickListHtml('ref', opts.map(o => o.key), addrRefKeys, 'data-addrref', 'Считать расстояние до слоя');
+  wirePickMore(box, 'ref');
   box.querySelectorAll('[data-addrref]').forEach(cb => {
     cb.addEventListener('click', () => {
       const k = cb.dataset.addrref;

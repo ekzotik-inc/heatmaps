@@ -2213,3 +2213,47 @@ body.viewer .admin-only { display: none !important; }
 .lc-radius input[type=color] { width: 30px; height: 22px; }
 .lc .rp-list-toggle { margin: 8px 0 4px; }
 .pt-label-row.view-toggles { margin-bottom: 10px; background: none; border: 0; padding: 0; }
+
+/* ── АДРЕСКА: компактные шаги ─────────────────────────────────────────── */
+.addr-intro { display: grid; gap: 3px; margin: 0 0 12px; }
+.addr-intro b { font: 800 15px "Manrope"; color: var(--ink); letter-spacing: -.2px; }
+.addr-intro span { font-size: 11.5px; color: var(--mut); line-height: 1.45; }
+#tab-analysis .addr-step { padding: 11px 12px; border-radius: 14px; margin-bottom: 9px; border-color: var(--line2); }
+#tab-analysis .addr-step-label { text-transform: none; letter-spacing: 0; font: 700 12.5px "Manrope"; color: var(--ink); margin-bottom: 8px; }
+#tab-analysis .addr-num { width: 20px; height: 20px; font-size: 10.5px; background: var(--ink); }
+.pick-list { display: grid; gap: 4px; }
+.pick-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; cursor: pointer; text-align: left;
+  border: 1px solid var(--line2); border-radius: 10px; background: var(--card); font-family: "Manrope";
+  transition: border-color .14s var(--ease), background .14s var(--ease);
+}
+.pick-row[hidden] { display: none; }
+.pick-row:hover { border-color: var(--acc); }
+.pick-row:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+.pick-row.on { background: var(--acc-l); border-color: var(--acc-l2); }
+.pick-chk {
+  width: 18px; height: 18px; border-radius: 6px; flex: 0 0 auto; display: grid; place-items: center;
+  border: 1.5px solid var(--line2); background: var(--card); color: transparent; transition: .14s var(--ease);
+}
+.pick-row.on .pick-chk { background: var(--acc); border-color: var(--acc); color: #fff; }
+.pick-sw { width: 14px; height: 14px; border-radius: 4px; flex: 0 0 auto; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+.pick-nm { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-n { flex: 0 0 auto; font-size: 10.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.pick-more {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; padding: 3px 4px; border: 0; background: none;
+  font: 700 11.5px "Manrope"; color: var(--acc-d); cursor: pointer;
+}
+.pick-more svg { transition: transform .2s var(--ease); }
+.pick-more[aria-expanded="true"] svg { transform: rotate(180deg); }
+.pick-more:hover { color: var(--ink); }
+#tab-analysis .addr-dist-row { margin: 10px 0 4px; }
+.addr-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+.addr-act {
+  display: flex; align-items: center; justify-content: center; gap: 7px; padding: 11px 10px; border-radius: 12px; cursor: pointer;
+  background: var(--ink); color: #fff; border: 1px solid var(--ink); font: 700 12.5px "Manrope"; box-shadow: var(--shadow-sm);
+  transition: transform .14s var(--ease), filter .14s var(--ease);
+}
+.addr-act:hover { transform: translateY(-1px); filter: brightness(1.18); }
+.addr-act.ghost { background: var(--card); color: var(--ink); border-color: var(--line2); box-shadow: var(--shadow-card); }
+.addr-act.ghost:hover { filter: none; border-color: var(--acc); color: var(--acc-d); }
+.addr-act.ghost.on { border-color: var(--danger); color: var(--danger); }

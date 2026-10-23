@@ -718,3 +718,18 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   gradient pins, labels row, point card shows the own field, manual form.
 - Cache version `20261024e`.
 
+## 2026-10-24 — Address program: compact steps
+
+- All three steps use one compact list (`pickListHtml`): a row per layer —
+  check square, layer colour, name, point count. Only 3 rows are shown,
+  selected layers first; «Ещё N слоёв» expands the rest, «Свернуть» folds
+  it back with the selected rows still visible.
+- Plain-language intro, sentence-case step titles with dark number badges,
+  step 3 shortened to «Исключить, если рядом уже есть». Action buttons
+  «Показать на карте» / «Скачать Excel» with icons.
+- Removed dead marker code (`shp`, `SHAPES`, `starPath`) — all markers are
+  pins now.
+- Verified in a browser on 7 layers: 3 visible + «Ещё 4 слоя», expand shows
+  7, selection works, collapsed list keeps selected rows, step 2 likewise.
+- Cache version `20261024f`.
+
