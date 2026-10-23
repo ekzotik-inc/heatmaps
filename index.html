@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.1/maplibre-gl.css"/>
-  <link rel="stylesheet" href="style.css?v=20261023a"/>
+  <link rel="stylesheet" href="style.css?v=20261023b"/>
 </head>
 <body>
 
@@ -430,8 +430,8 @@
         <label class="city-filter-search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="city-filter-search" type="search" placeholder="Найти город…" autocomplete="off"/></label>
         <div class="cities" id="seg-city" role="group" aria-label="Города"></div>
         <div class="city-scope" id="tshk-scope" hidden>
-          <span class="city-scope-label">Охват Ташкента</span>
-          <div class="city-scope-btns" role="group" aria-label="Охват Ташкента">
+          <span class="city-scope-label">Охват города</span>
+          <div class="city-scope-btns" role="group" aria-label="Охват города">
             <button type="button" data-tshk="region" class="city-scope-btn">Город + область</button>
             <button type="button" data-tshk="city" class="city-scope-btn">Только город</button>
           </div>
@@ -625,6 +625,8 @@
      плагин встраивает его слоем Leaflet, остальная карта не меняется. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.1/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
+<!-- Границы городов для режима «Только город» (OSM, ODbL) -->
+<script src="city-bounds.js?v=20261023b"></script>
 <!-- PapaParse + XLSX (~900 KB) are loaded on demand (ensureSheetLibs) only when
      a file is uploaded or exported — not at initial page load. -->
 <script>
@@ -649,7 +651,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20261023a'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20261023b'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();

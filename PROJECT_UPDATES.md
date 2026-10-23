@@ -519,3 +519,24 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   re-uploaded (layer card → «⬆ Данные»).
 - Cache version `20261023a`.
 
+## 2026-10-23 — «Только город» for Samarkand, Andijan, Kokand, Fergana, Bukhara
+
+- The city filter's «Город + область / Только город» switch used to exist for
+  Tashkent only (district polygons from `/data`). It now applies to every
+  selected city that has a boundary.
+- New static file `city-bounds.js` (`window.HM_CITY_BOUNDS`, 22 KB): official
+  administrative city boundaries from OpenStreetMap («Samarqand shahri»,
+  «Andijon shahri», «Qoʻqon shahri», «Fargʻona shahri», «Buxoro shahri»;
+  relations 15589846, 15534510, 15537298, 15537982, 13070474), simplified to
+  ~30 m, outer rings only, ODbL. Areas 63–110 km²; each city centre lies
+  inside its boundary.
+- `tashkentScope` → `cityScope` (old saved states are read); one mode for all
+  selected bounded cities. The switch lists which cities it applies to and
+  says which selected cities have no boundary (they keep the nearest-centre
+  rule). Filter label shows «Самарканд (город)».
+- Verified: 14 control points (centres, Registan, Lyabi-Hauz inside; Urgut,
+  Kattakurgan, Margilan, suburbs outside; Navoi → no boundary) and a browser
+  run: Samarkand region 3 points → city 2; Samarkand + Fergana city 3; mode
+  saved in state.
+- Cache version `20261023b`.
+

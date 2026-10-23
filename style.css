@@ -1664,6 +1664,8 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
   text-transform: uppercase; color: var(--dim);
 }
 .city-scope-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.city-scope-note { font-size: 10.5px; color: var(--mut); line-height: 1.35; }
+.city-scope-note[hidden] { display: none; }
 .city-scope-btn {
   padding: 8px 6px; border-radius: 9px; cursor: pointer;
   border: 1px solid var(--line2); background: var(--card2); color: var(--mut);

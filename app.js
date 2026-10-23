@@ -226,12 +226,17 @@ function pointInCity(r, c) {
   return cityOf(r.lat, r.lon) === c && hav(r.lat, r.lon, CC[c][0], CC[c][1]) < 60000;
 }
 
-/* ── ОХВАТ ТАШКЕНТА: город или город + область ───────────────────────────
-   Правило «ближайший центр в пределах 60 км» относит к Ташкенту всю область.
-   Для режима «только город» берём НАСТОЯЩИЕ границы — объединение полигонов
-   районов из `/data` (те же, что рисует кнопка «Районы»), а не радиус. */
+/* ── ОХВАТ ГОРОДА: город или город + область ─────────────────────────────
+   Правило «ближайший центр» относит к городу и его окрестности. Для режима
+   «только город» берём НАСТОЯЩИЕ границы, а не радиус:
+   - Ташкент — объединение полигонов районов из `/data` (те же, что рисует
+     кнопка «Районы»);
+   - Самарканд, Андижан, Коканд, Фергана, Бухара — административные границы
+     из OpenStreetMap, файл `city-bounds.js` (`window.HM_CITY_BOUNDS`).
+   Режим один на все выбранные города, у которых граница есть; остальные
+   выбранные города фильтруются как раньше. */
 const TSHK = 'Ташкент';
-let tashkentScope = 'region';   // 'region' — город + область; 'city' — только город
+let cityScope = 'region';   // 'region' — город + область; 'city' — только город
 
 let _tshkRings = null;
 function tashkentRings() {
@@ -268,31 +273,51 @@ function pointInRing(lat, lon, ring) {
 // Кэш по координатам: тепловой слой может содержать десятки тысяч точек, а
 // фильтр пересчитывается на каждый рендер. Ключ — округлённые координаты, так
 // результат переиспользуется и между слоями. Записи точек не засоряем.
-const _tshkCache = new Map();
-function inTashkentCity(lat, lon) {
-  const rings = tashkentRings();
+function ringWithBox(ring) {
+  let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+  for (const c of ring) {
+    const lon = +c[0], lat = +c[1];
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+    if (lon < minLon) minLon = lon;
+    if (lon > maxLon) maxLon = lon;
+  }
+  return { ring, minLat, maxLat, minLon, maxLon };
+}
+const _cityRings = new Map();
+function cityRings(c) {
+  if (COUNTRY !== 'uz') return [];
+  if (c === TSHK) return tashkentRings();
+  if (_cityRings.has(c)) return _cityRings.get(c);
+  const src = (window.HM_CITY_BOUNDS || {})[c];
+  const out = Array.isArray(src) ? src.filter(r => Array.isArray(r) && r.length >= 4).map(ringWithBox) : [];
+  _cityRings.set(c, out);
+  return out;
+}
+function cityScopeAvailable(c) { return cityRings(c).length > 0; }
+function citiesWithBounds(list) { return (list || []).filter(cityScopeAvailable); }
+const _cityProperCache = new Map();
+function inCityProper(c, lat, lon) {
+  const rings = cityRings(c);
   if (!rings.length) return null;            // границ нет — решает вызывающий
-  const key = lat.toFixed(5) + '|' + lon.toFixed(5);
-  const hit = _tshkCache.get(key);
+  const key = c + '|' + lat.toFixed(5) + '|' + lon.toFixed(5);
+  const hit = _cityProperCache.get(key);
   if (hit !== undefined) return hit;
   let inside = false;
   for (const r of rings) {
     if (lat < r.minLat || lat > r.maxLat || lon < r.minLon || lon > r.maxLon) continue;
     if (pointInRing(lat, lon, r.ring)) { inside = true; break; }
   }
-  _tshkCache.set(key, inside);
+  _cityProperCache.set(key, inside);
   return inside;
-}
-function tashkentCityAvailable() {
-  return COUNTRY === 'uz' && tashkentRings().length > 0;
 }
 
 // Одна проверка принадлежности для ВСЕХ слоёв: у точек тепловых слоёв есть
 // готовая метка `fil`, у слоёв точек её нет. Раньше это были два независимых
 // пути, и охват Ташкента применился бы только к одному из них.
 function cityHolds(r, c) {
-  if (c === TSHK && tashkentScope === 'city') {
-    const v = inTashkentCity(+r.lat, +r.lon);
+  if (cityScope === 'city') {
+    const v = inCityProper(c, +r.lat, +r.lon);
     if (v !== null) return v;
   }
   if (r.fil) return r.fil === c;
@@ -1459,8 +1484,8 @@ function updateCityFilterSummary() {
   const label = document.getElementById('city-filter-label');
   const count = document.getElementById('city-filter-count');
   if (label) {
-    const only = tashkentScope === 'city' && selectedCities.includes(TSHK) && tashkentCityAvailable();
-    const first = selectedCities[0] === TSHK && only ? TSHK + ' (город)' : selectedCities[0];
+    const c0 = selectedCities[0];
+    const first = cityScope === 'city' && cityScopeAvailable(c0) ? c0 + ' (город)' : c0;
     label.textContent = selectedCities.length === 0
       ? 'Все города'
       : selectedCities.length === 1 ? first : first + ` + ${selectedCities.length - 1}`;
@@ -1546,23 +1571,35 @@ function buildCityUI() {
   updateCityFilterSummary();
 }
 
-/* Переключатель охвата Ташкента. Виден только там, где он имеет смысл: на
-   UZ-картах и при выбранном Ташкенте (границы берутся из полигонов районов). */
+/* Переключатель охвата города. Виден только там, где он имеет смысл: выбран
+   хотя бы один город, для которого есть граница. Подпись перечисляет, к каким
+   из выбранных городов он применяется. */
 function buildTshkScopeUI() {
   const box = document.getElementById('tshk-scope');
   if (!box) return;
-  const show = tashkentCityAvailable() && CITIES.includes(TSHK) && selectedCities.includes(TSHK);
+  const bounded = citiesWithBounds(selectedCities);
+  const show = bounded.length > 0;
   box.hidden = !show;
   if (!show) return;
+  const label = box.querySelector('.city-scope-label');
+  if (label) label.textContent = bounded.length === 1 ? 'Охват: ' + bounded[0] : 'Охват городов';
+  let note = box.querySelector('.city-scope-note');
+  if (!note) { note = document.createElement('span'); note.className = 'city-scope-note'; box.appendChild(note); }
+  const rest = selectedCities.filter(c => !bounded.includes(c));
+  note.textContent = [
+    bounded.length > 1 ? 'Применяется к: ' + bounded.join(', ') + '.' : '',
+    rest.length ? `${rest.join(', ')} — без границ города, учитываются с окрестностями.` : '',
+  ].filter(Boolean).join(' ');
+  note.hidden = !note.textContent;
   box.querySelectorAll('[data-tshk]').forEach(btn => {
-    const on = btn.dataset.tshk === tashkentScope;
+    const on = btn.dataset.tshk === cityScope;
     btn.classList.toggle('on', on);
     btn.setAttribute('aria-pressed', String(on));
     if (btn._wired) return;
     btn._wired = true;
     btn.addEventListener('click', () => {
-      if (tashkentScope === btn.dataset.tshk) return;
-      tashkentScope = btn.dataset.tshk;
+      if (cityScope === btn.dataset.tshk) return;
+      cityScope = btn.dataset.tshk;
       buildTshkScopeUI();
       updateCityFilterSummary();
       scheduleCityFilterUpdate();
@@ -3289,7 +3326,7 @@ function buildStateSnapshot() {
     // Keep the legacy field for older consumers; it represents only a single selection.
     city: selectedCities.length === 1 ? selectedCities[0] : '',
     covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
-    tashkentScope,
+    cityScope,
     addrSrcKeys, addrRefKeys, rtRadius, rtRadiusOp, rtExclRadius, rtExclOp, rtExclKeys,
     // recs ручных слоёв несут карточку и идентификаторы фото — байты снимков
     // живут на сервере и в состояние не попадают.
@@ -3421,7 +3458,9 @@ function applySnapshot(st) {
   if (typeof st.heatBoost  === 'number')  heatBoost    = st.heatBoost;
   if (typeof st.heatBlend  === 'string')  heatBlend    = st.heatBlend;
   if (typeof st.heatRadius === 'number')  heatRadius   = st.heatRadius;
-  if (st.tashkentScope === 'city' || st.tashkentScope === 'region') tashkentScope = st.tashkentScope;
+  // До октября 2026 режим назывался tashkentScope и касался только Ташкента.
+  const scope = st.cityScope || st.tashkentScope;
+  if (scope === 'city' || scope === 'region') cityScope = scope;
   if (typeof st.districtsOn  === 'boolean') districtsOn  = st.districtsOn;
   if (typeof st.incomeHeatOn === 'boolean') incomeHeatOn = st.incomeHeatOn;
   if (typeof st.coresOn      === 'boolean') coresOn      = st.coresOn;
@@ -4487,7 +4526,7 @@ function stateFingerprint(snapshot) {
     recBasis: snapshot.recBasis, recShow: snapshot.recShow,
     heatBoost: snapshot.heatBoost, heatBlend: snapshot.heatBlend,
     heatRadius: snapshot.heatRadius, districtsOn: snapshot.districtsOn,
-    tashkentScope: snapshot.tashkentScope,
+    cityScope: snapshot.cityScope || snapshot.tashkentScope,
     incomeHeatOn: snapshot.incomeHeatOn, coresOn: snapshot.coresOn,
     addrSrcKeys: snapshot.addrSrcKeys, addrRefKeys: snapshot.addrRefKeys,
     rtRadius: snapshot.rtRadius, rtRadiusOp: snapshot.rtRadiusOp,
