@@ -842,3 +842,39 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   toggle, brightness, snapshot round trip, server save + reload, viewer sees no
   edit buttons, GeoJSON with a hole, escaped names, Esc in drawing mode.
 - Cache version `20261025c`.
+
+## 2026-10-25 — Yandex location, circle tags, district areas, shapes, Excel
+
+- «Открыть в Яндекс Картах» now opens the «Что здесь?» mode
+  (`mode=whatshere&whatshere[point]=…`): the point is the selected location
+  with its address card and Route/Share, not just a `pt` marker.
+- Heat-layer tags are plain circles in the layer colour again (owner); the
+  shape/glyph picker is gone from heat-layer cards, the canvas pin code
+  (`PinMarker`, `drawCanvasPin`) removed. Point layers keep their markers.
+- Legend: selected districts and zones under a thin grey «районы» separator —
+  each with its area, and «Всего, N районов» with the sum. Area is spherical
+  (Leaflet.draw formula), holes subtracted; the Границы status shows it too.
+- Drawing a zone: «Точками» (free shape), «Прямоугольник» (two corners),
+  «Круг» (centre + radius, stored as a 64-gon). Live size label (sides / R and
+  area).
+- Excel:
+  - every heat and point layer card has «Выгрузить в Excel»: the template
+    columns + the layer's own fields + columns that came with the file; the
+    file uploads back into the same layer (percent layers write
+    «Значение, %», and the parser now reads «%» from the header);
+  - Границы → «Выгрузить точки внутри выбранных в Excel»: sheet «Районы»
+    (area, points per layer, total) + a sheet per visible layer with its
+    columns and «Район».
+- Fixed: creating a heat layer from a file and uploading via «Данные» did not
+  record the file's own columns as layer fields — they were missing from the
+  template and the layer card. Both paths now merge `_fields`.
+- Fixed: flying to a layer with a single point (or all points identical)
+  threw «Invalid LatLng (NaN, NaN)» — the vector basemap has no max zoom, so a
+  zero-size frame gave an infinite zoom. The map now has `maxZoom: 19`, layer
+  flights stop at 16.
+- Verified in a browser: whatshere link, 15 circle tags in layer colour,
+  legend separator + 2 areas + total (14.9 km² for a 0.04° square at 41.3°N),
+  rectangle and circle (area = πR² within 1 %), layer exports (heat with
+  code/percent/own field, points with own field) re-parsed back, zone export
+  sheets, new-layer fields, single-point layer flight.
+- Cache version `20261025d`.

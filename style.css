@@ -2315,6 +2315,22 @@ html, body { font-feature-settings: 'cv11', 'ss01'; -webkit-font-smoothing: anti
   font: 700 10.5px "Inter"; color: var(--mut); padding: 1px 7px; border-radius: 100px;
   background: var(--card2); border: 1px solid var(--line);
 }
+/* Блок «районы»: тонкий серый разделитель с подписью, имя и площадь каждой
+   выбранной зоны, внизу — сумма. */
+.legend-sep {
+  display: flex; align-items: center; gap: 8px; margin: 3px 0 0;
+  font: 500 10px "Inter"; letter-spacing: .08em; text-transform: uppercase; color: var(--dim);
+}
+.legend-sep::before, .legend-sep::after { content: ""; flex: 1; height: 1px; background: var(--line2); }
+.legend-zdot {
+  width: 10px; height: 10px; margin: 0 6px; flex: 0 0 auto; border-radius: 3px;
+  background: var(--c); box-shadow: 0 0 0 2px var(--card), 0 0 6px 1px var(--c);
+}
+.legend-zone .legend-name { font-weight: 500; }
+.legend-area { font: 600 10.5px "Inter"; color: var(--mut); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.legend-total { padding-top: 6px; border-top: 1px dashed var(--line2); }
+.legend-total .legend-name { color: var(--mut); font-weight: 600; padding-left: 22px; }
+.legend-total .legend-area { color: var(--ink); font-weight: 700; }
 
 .mode-badge.mode-edit, .mode-badge.mode-view {
   background: rgba(255,255,255,.88); backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4);
@@ -2473,7 +2489,7 @@ button, input, select, textarea, optgroup, option, kbd, code, pre,
   position: absolute; top: 72px; transform: translateX(-50%); z-index: 1150;
   left: calc(50% + (var(--side-w) + 14px) / 2);
   display: flex; align-items: center; gap: 6px; max-width: calc(100vw - var(--side-w) - 84px);
-  padding: 6px 6px 6px 14px; border-radius: 100px; background: var(--ink); color: var(--line);
+  padding: 5px; border-radius: 100px; background: var(--ink); color: var(--line);
   font: 500 12px "Inter"; box-shadow: var(--shadow);
 }
 .bdraw-bar[hidden] { display: none; }
@@ -2498,3 +2514,21 @@ button, input, select, textarea, optgroup, option, kbd, code, pre,
   #map path.bz-glow, #map path.bz-first { animation: none; }
   #map path.bz-new { animation: none; stroke-dashoffset: 0; }
 }
+
+/* Форма зоны в панели рисования: точками / прямоугольник / круг. */
+.bdraw-modes { display: flex; gap: 2px; padding: 2px; border-radius: 100px; background: rgba(255,255,255,.08); flex: 0 0 auto; }
+.bdraw-mode {
+  padding: 5px 11px; border-radius: 100px; border: 0; background: transparent;
+  color: var(--dim); font: 600 11.5px "Inter"; cursor: pointer; white-space: nowrap;
+  transition: color .2s var(--ease);
+}
+.bdraw-mode:hover { color: #fff; }
+.bdraw-mode.on { color: #fff; }
+.bdraw-mode:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+.bdraw-modes > .liquid { border-radius: 100px; background: var(--acc); box-shadow: 0 2px 8px rgba(18,173,193,.4); }
+.bdraw-btn[hidden] { display: none; }
+@media (max-width: 780px) {
+  .bdraw-mode { padding: 5px 8px; font-size: 11px; }
+}
+.bz-export { width: 100%; margin-top: 6px; }
+.bz-status .bz-export { flex-basis: 100%; }

@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.1/maplibre-gl.css"/>
-  <link rel="stylesheet" href="style.css?v=20261025c"/>
+  <link rel="stylesheet" href="style.css?v=20261025d"/>
 </head>
 <body>
 
@@ -468,7 +468,12 @@
   <div class="mode-badge" id="mode-badge" style="display:none"></div>
   <!-- Рисование своей зоны на карте («Границы») -->
   <div id="bdraw-bar" class="bdraw-bar" role="toolbar" aria-label="Рисование зоны" hidden>
-    <span class="bdraw-t" title="Клик — вершина. Замкнуть — клик по первой вершине, двойной клик или Enter. Backspace — шаг назад, Esc — отмена">«<b id="bdraw-name"></b>»: клик — точка, по первой — замкнуть</span>
+    <div class="bdraw-modes" data-liquid="on" role="group" aria-label="Форма зоны">
+      <button type="button" class="bdraw-mode on" data-bdshape="free" aria-pressed="true" title="Свободная форма: точки, которые нужно сомкнуть">Точками</button>
+      <button type="button" class="bdraw-mode" data-bdshape="rect" aria-pressed="false">Прямоугольник</button>
+      <button type="button" class="bdraw-mode" data-bdshape="circle" aria-pressed="false">Круг</button>
+    </div>
+    <span class="bdraw-t" title="Backspace — шаг назад, Esc — отмена">«<b id="bdraw-name"></b>»: <span id="bdraw-hint">клик — точка, по первой — замкнуть</span></span>
     <button type="button" id="bdraw-undo" class="bdraw-btn" title="Убрать последнюю точку (Backspace)">Шаг назад</button>
     <button type="button" id="bdraw-done" class="bdraw-btn ok" disabled>Готово</button>
     <button type="button" id="bdraw-cancel" class="bdraw-btn" title="Esc">Отмена</button>
@@ -726,7 +731,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20261025c'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20261025d'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();

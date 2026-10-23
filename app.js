@@ -151,13 +151,6 @@ function layerKeyColor(d) {
   const g = gradOf(d);
   return g[0.78] || g[1.0] || d.color;
 }
-// Второй цвет метки теплового слоя: палитра или свой градиент дают
-// градиентную метку, один свой цвет — сплошную.
-function layerPinColor2(d) {
-  if (d.ramp === 'custom' || !d.ramp) return '';
-  const g = gradOf(d);
-  return g[1.0] || '';
-}
 function rampColor(t) {
   t = Math.max(0, Math.min(1, t));
   return t < 0.5 ? mixHex(incCol.low, incCol.mid, t / 0.5) : mixHex(incCol.mid, incCol.high, (t - 0.5) / 0.5);
@@ -453,7 +446,9 @@ function isManualRec(r) {
 // Карточки точек не должны уходить под фильтр городов сверху карты: при
 // открытии карта сдвигается так, чтобы карточка была видна целиком.
 L.Popup.mergeOptions({ autoPanPaddingTopLeft: L.point(16, 84), autoPanPaddingBottomRight: L.point(16, 24) });
-const map = L.map('map', { preferCanvas: true, zoomControl: false, minZoom: 5, zoomSnap: .5 })
+// maxZoom обязателен: у векторной подложки его нет, и flyToBounds по слою из
+// одной точки (рамка нулевого размера) считал зум бесконечным и падал на NaN.
+const map = L.map('map', { preferCanvas: true, zoomControl: false, minZoom: 5, maxZoom: 19, zoomSnap: .5 })
               .setView([41, 67], 6);
 
 /* ── ПОДЛОЖКА ────────────────────────────────────────────────────────────
@@ -670,6 +665,33 @@ function zoneAt(lat, lon) {
   for (let i = zs.length - 1; i >= 0; i--) if (zoneHas(zs[i], lat, lon)) return zs[i];
   return null;
 }
+// Площадь зоны на сфере, м²: внешние кольца минус дырки. Формула та же, что
+// у Leaflet.draw (geodesicArea); для районов города расхождение с
+// проекционной площадью — доли процента.
+const _zoneArea = new WeakMap();
+function ringArea(ring) {
+  const R = 6378137, d2r = Math.PI / 180;
+  let a = 0;
+  for (let i = 0, n = ring.length; i < n; i++) {
+    const p1 = ring[i], p2 = ring[(i + 1) % n];
+    a += (p2[0] - p1[0]) * d2r * (2 + Math.sin(p1[1] * d2r) + Math.sin(p2[1] * d2r));
+  }
+  return Math.abs(a * R * R / 2);
+}
+function zoneArea(mp) {
+  if (_zoneArea.has(mp)) return _zoneArea.get(mp);
+  let a = 0;
+  mp.forEach(poly => poly.forEach((ring, i) => { a += (i ? -1 : 1) * ringArea(ring); }));
+  a = Math.max(0, a);
+  _zoneArea.set(mp, a);
+  return a;
+}
+function fmtArea(m2) {
+  const km = m2 / 1e6;
+  if (km < 0.01) return Math.round(m2).toLocaleString('ru-RU') + ' м²';
+  const digits = km < 1 ? 2 : km < 100 ? 1 : 0;
+  return km.toLocaleString('ru-RU', { minimumFractionDigits: digits, maximumFractionDigits: digits }) + ' км²';
+}
 // Выбранные зоны, которые сейчас на карте: скрытый слой отбор не держит.
 // boundsHold() зовёт это на каждую точку — список кэшируется до bzInvalidate().
 let _bzActive = null;
@@ -744,6 +766,7 @@ function boundsChanged(save = true, rebuildUI = true) {
   renderDistricts();
   renderHeat(); renderCustomPoints(); renderRecs();
   if (rebuildUI) buildBoundsUI(); else syncBoundsStatus();
+  updateLayerLegend();   // блок «районы» в легенде — площади выбранных
   const btn = document.getElementById('districts-toggle');
   if (btn) btn.classList.toggle('on', boundZones().length > 0);
   if (save) saveState();
@@ -852,61 +875,6 @@ function pinSvg(iconId, color, color2, size, shapeId) {
   _pinSvgCache.set(key, out);
   return out;
 }
-const _path2D = new Map();
-function cachedPath2D(d) {
-  if (typeof Path2D === 'undefined') return null;
-  if (!_path2D.has(d)) _path2D.set(d, new Path2D(d));
-  return _path2D.get(d);
-}
-function drawCanvasPin(ctx, x, y, size, color, color2, iconId, shapeId) {
-  const sh = MARKER_SHAPE_MAP[markerShape(shapeId)];
-  const body = sh && cachedPath2D(sh.d);
-  if (!body) return;
-  const s = size / 50;
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(s, s);
-  ctx.translate(0, -(sh.ay || 0));
-  let fill = safeColor(color);
-  if (color2) { const g = ctx.createLinearGradient(0, -48, 0, 0); g.addColorStop(0, fill); g.addColorStop(1, safeColor(color2)); fill = g; }
-  ctx.shadowColor = 'rgba(15,23,42,.32)'; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1.5;
-  ctx.fillStyle = fill; ctx.fill(body);
-  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-  ctx.lineWidth = 2.2; ctx.lineJoin = 'round'; ctx.strokeStyle = '#fff'; ctx.stroke(body);
-  const ic = PIN_ICON_MAP[markerIcon(iconId)];
-  const gp = ic && cachedPath2D(ic.d);
-  if (gp) {
-    ctx.translate(-sh.is / 2, sh.cy - sh.is / 2);
-    if (ic.stroke) {
-      ctx.scale(sh.is / 24, sh.is / 24);
-      ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#fff'; ctx.stroke(gp);
-    } else {
-      ctx.scale(sh.is / 50, sh.is / 50);
-      ctx.fillStyle = '#fff'; ctx.fill(gp);
-    }
-  }
-  ctx.restore();
-}
-// Метка на canvas-рендерере Leaflet: рисуем форму вместо круга, область клика —
-// рамка формы. radius задаёт рамку перерисовки, поэтому с запасом.
-const PinMarker = L.CircleMarker.extend({
-  options: { size: 26, icon: DEFAULT_PIN_ICON, shape: DEFAULT_SHAPE, color2: '' },
-  initialize(latlng, options) {
-    L.CircleMarker.prototype.initialize.call(this, latlng, options);
-    this._radius = (this.options.size || 26) * 1.1;
-  },
-  _updatePath() {
-    const r = this._renderer;
-    if (!r || !r._drawing || this._empty()) return;
-    drawCanvasPin(r._ctx, this._point.x, this._point.y, this.options.size, this.options.fillColor, this.options.color2, this.options.icon, this.options.shape);
-  },
-  _containsPoint(p) {
-    const s = this.options.size, pt = this._point;
-    const sh = MARKER_SHAPE_MAP[markerShape(this.options.shape)];
-    const bottom = pt.y - (sh && sh.ay ? sh.ay : 0) * s / 50;   // нижний край формы
-    return p.x >= pt.x - s * .48 && p.x <= pt.x + s * .48 && p.y >= bottom - s && p.y <= bottom + 1;
-  },
-});
 
 /* ── HEAT LAYERS ─────────────────────────────────────────────────────── */
 function applyHeatCanvas(d) {
@@ -1110,12 +1078,20 @@ function updateLayerLegend() {
     items.push({ color: '#FF8C00', name: 'Адресная программа', count: addrPreview.count });
     if (addrPreview.refs) items.push({ color: '#6C8EFF', name: addrPreview.refLabel, count: addrPreview.refs });
   }
-  if (!items.length) { el.style.display = 'none'; return; }
+  // Выбранные районы и свои зоны: имя и площадь каждой, ниже — сумма.
+  const zones = activeBoundZones();
+  if (!items.length && !zones.length) { el.style.display = 'none'; return; }
   el.style.display = '';
   const folded = legendFolded();
+  const total = zones.reduce((a, z) => a + zoneArea(z.mp), 0);
+  const zoneHtml = !zones.length ? '' :
+    `<div class="legend-sep" role="separator"><span>районы</span></div>` +
+    zones.map(z => `<div class="legend-item legend-zone"><span class="legend-zdot" style="--c:${boundColor(z.color)}"></span>` +
+      `<span class="legend-name" title="${esc(z.name)}">${esc(z.name)}</span><span class="legend-area">${fmtArea(zoneArea(z.mp))}</span></div>`).join('') +
+    (zones.length > 1 ? `<div class="legend-item legend-total"><span class="legend-name">Всего, ${zones.length} ${plural(zones.length, 'район', 'района', 'районов')}</span><span class="legend-area">${fmtArea(total)}</span></div>` : '');
   el.classList.toggle('folded', folded);
   el.innerHTML = `<button type="button" class="legend-head" aria-expanded="${!folded}" title="${folded ? 'Развернуть легенду' : 'Свернуть легенду'}">
-      <span class="legend-title">Легенда</span><span class="legend-n">${items.length}</span>${uiIcon('chevron', 13)}</button>
+      <span class="legend-title">Легенда</span><span class="legend-n">${items.length + zones.length}</span>${uiIcon('chevron', 13)}</button>
     <div class="legend-body">` + items.map(it => {
     const mark = it.ramp
       ? `<span class="legend-ramp" style="background:${it.ramp}"></span>`
@@ -1123,7 +1099,7 @@ function updateLayerLegend() {
       : `<span class="legend-dot" style="background:${safeColor(it.color, '#888')}"></span>`;
     const count = it.count ? `<span class="legend-count">${it.count.toLocaleString('ru-RU')}</span>` : '';
     return `<div class="legend-item">${mark}<span class="legend-name" title="${esc(it.name)}">${esc(it.name)}</span>${count}</div>`;
-  }).join('') + '</div>';
+  }).join('') + zoneHtml + '</div>';
   el.querySelector('.legend-head').addEventListener('click', () => {
     const f = !legendFolded();
     try { localStorage.setItem('hm_legend_folded', f ? '1' : ''); } catch (_) {}
@@ -1143,11 +1119,13 @@ const TAG_LIMIT = 1200;
 function tagLayerKeys() {
   return showPointsAll ? heatKeys.filter(k => DS[k] && DS[k].visible) : [];
 }
-/* «Открыть в Яндекс Картах» — у каждой точки на карте. Метка ставится ровно
-   по координатам точки; на телефоне ссылка открывает приложение Яндекс Карт. */
+/* «Открыть в Яндекс Картах» — у каждой точки на карте. Открывается режим
+   «Что здесь?» (`whatshere`): точка выбрана как локация, с карточкой адреса и
+   кнопками «Маршрут» / «Поделиться», а не просто метка `pt` на карте. На
+   телефоне ссылка открывает приложение Яндекс Карт. */
 function yandexMapsUrl(lat, lon) {
   const la = (+lat).toFixed(6), lo = (+lon).toFixed(6);
-  return `https://yandex.ru/maps/?ll=${lo},${la}&z=17&pt=${lo},${la}&l=map`;
+  return `https://yandex.ru/maps/?ll=${lo}%2C${la}&z=17&mode=whatshere&whatshere%5Bpoint%5D=${lo}%2C${la}&whatshere%5Bzoom%5D=17`;
 }
 function yandexLinkHtml(lat, lon) {
   if (!isFinite(+lat) || !isFinite(+lon)) return '';
@@ -1176,7 +1154,7 @@ let _tagSig = '';
 function renderTags(force) {
   const keys = tagLayerKeys();
   const b = map.getBounds();
-  const sig = keys.map(k => k + ':' + layerKeyColor(DS[k]) + ':' + (DS[k].icon || '') + ':' + (DS[k].shape || '') + ':' + (DS[k]._recordsLoaded ? DS[k].recs.length : -1)).join('|')
+  const sig = keys.map(k => k + ':' + layerKeyColor(DS[k]) + ':' + (DS[k]._recordsLoaded ? DS[k].recs.length : -1)).join('|')
     + '|' + selectionKey() + cityScope
     + '|' + [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(v => v.toFixed(4)).join(',');
   if (!force && sig === _tagSig) return;
@@ -1201,20 +1179,20 @@ function renderTags(force) {
       ? inView.slice().sort((a, b) => (+b.vol || 0) - (+a.vol || 0)).slice(0, TAG_LIMIT)
       : inView;
     shown += pick.length;
+    // Ярлыки тепловых слоёв — простые кружки цвета слоя (решение владельца):
+    // значки-метки остаются у слоёв точек, так их не спутать.
     const color = layerKeyColor(d);
-    const color2 = layerPinColor2(d);
     const withTooltip = pick.length <= 300;
-    // Плотно — метка мельче, чтобы не превращаться в сплошную кашу.
-    const size = pick.length > 600 ? 22 : pick.length > 200 ? 26 : 30;
     pick.forEach(r => {
-      const m = new PinMarker([r.lat, r.lon], {
+      const m = L.circleMarker([r.lat, r.lon], {
         renderer: tagRenderer, pane: 'tags',
-        size, icon: d.icon, shape: d.shape, fillColor: color, color2,
+        radius: 5, weight: 2, color: '#ffffff', opacity: .95,
+        fillColor: color, fillOpacity: .95,
       });
       // Содержимое собирается по клику — 1200 готовых строк HTML не нужны.
       m.bindPopup(() => tagPopupHtml(d, r));
       if (withTooltip && r.name) {
-        m.bindTooltip(esc(r.name), { className: 'tt', direction: 'top', offset: [0, -size - 2] });
+        m.bindTooltip(esc(r.name), { className: 'tt', direction: 'top', offset: [0, -6] });
       }
       m.addTo(tagRoot);
     });
@@ -1526,6 +1504,7 @@ const UI_ICONS = {
   eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  sheet: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/>',
 };
 function uiIcon(name, size = 15) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${UI_ICONS[name] || ''}</svg>`;
@@ -1740,6 +1719,7 @@ function buildHeatUI() {
       <div class="lc-sub">
         <span class="lc-n">${n.toLocaleString('ru-RU')} ${plural(n, 'точка', 'точки', 'точек')}${fields.length ? ' · ' + fields.length + ' ' + plural(fields.length, 'поле', 'поля', 'полей') : ''}</span>
         <div class="lc-tools">
+          <button type="button" class="lc-ic lc-xls" title="Выгрузить точки слоя в Excel — те же колонки, что в шаблоне, со всеми вашими полями" aria-label="Выгрузить в Excel">${uiIcon('sheet')}</button>
           <button type="button" class="lc-ic lc-tpl admin-only" title="Скачать шаблон Excel для этого слоя" aria-label="Скачать шаблон">${uiIcon('download')}</button>
           <button type="button" class="lc-ic lc-up admin-only" title="Загрузить или обновить данные из файла" aria-label="Загрузить данные">${uiIcon('upload')}</button>
           <button type="button" class="lc-ic lc-del admin-only" title="Удалить слой" aria-label="Удалить слой">${uiIcon('trash')}</button>
@@ -1747,8 +1727,6 @@ function buildHeatUI() {
         </div>
       </div>
       <div class="lc-body">
-        <div class="lc-lbl">Метка точки <span>— видна при включённых «Точках»</span></div>
-        ${markerPickerHtml(d.shape, d.icon, layerKeyColor(d), layerPinColor2(d))}
         <div class="lc-sl"><span>Интенсивность</span><input type="range" class="r-int" min="0.2" max="4" step="0.1" value="${d.intensity || 1}"/><b>${(d.intensity || 1).toFixed(1)}×</b></div>
         <div class="lc-sl"><span>Прозрачность</span><input type="range" class="r-op" min="0.05" max="1" step="0.05" value="${d.opacity == null ? 1 : d.opacity}"/><b>${Math.round((d.opacity == null ? 1 : d.opacity) * 100)}%</b></div>
         ${fields.length ? `<div class="lc-fields">${fields.map(f => `<span>${esc(f)}</span>`).join('')}</div>` : ''}
@@ -1772,7 +1750,6 @@ function buildHeatUI() {
       if (p.color) d.color = p.color;
       d.color2 = p.ramp === 'custom2' ? p.color2 : '';
       sw.style.background = paintSwatchCss(d);
-      refreshMarkerPicker(card, d.shape, d.icon, layerKeyColor(d), layerPinColor2(d));
       renderHeat(); renderTags(true); updateLayerLegend();
       if (!live) saveState();
     }));
@@ -1794,13 +1771,6 @@ function buildHeatUI() {
     tog.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(); } });
 
     card.querySelector('.lc-solo').addEventListener('click', () => toggleSolo(k));
-    wireMarkerPicker(card, (shape, icon) => {
-      if (shape) d.shape = shape;
-      if (icon) d.icon = icon;
-      refreshMarkerPicker(card, d.shape, d.icon, layerKeyColor(d), layerPinColor2(d));
-      renderTags(true); saveState();
-      if (!showPointsAll) toast('Метка выбрана — включите «Точки» сверху, чтобы увидеть её на карте', 'info', 3500);
-    });
     card.querySelector('.r-int').addEventListener('input', e => {
       d.intensity = +e.target.value; fillSlider(e.target);
       e.target.nextElementSibling.textContent = d.intensity.toFixed(1) + '×';
@@ -1829,6 +1799,7 @@ function buildHeatUI() {
     });
 
     card.querySelector('.lc-tpl').addEventListener('click', () => downloadLayerTemplate('heat', d));
+    card.querySelector('.lc-xls').addEventListener('click', () => exportLayerXlsx('heat', k));
     card.querySelector('.lc-up').addEventListener('click', () => {
       _heatUpdateTarget = k;
       document.getElementById('heat-update-file').click();
@@ -3209,43 +3180,82 @@ map.on('click', e => {
   if (z) toggleBoundZone(z.key);
 });
 
-// Рисование своей зоны: клики ставят вершины, замыкает клик по первой
-// вершине, двойной клик или Enter; Backspace — шаг назад, Esc — отмена.
-const bdraw = { on: false, layerId: '', pts: [], group: L.layerGroup().addTo(map), live: null };
+// Рисование своей зоны. Три формы:
+// - «Точками» — клики ставят вершины, замыкает клик по первой вершине,
+//   двойной клик или Enter; Backspace — шаг назад;
+// - «Прямоугольник» — клик в один угол, второй клик в противоположный;
+// - «Круг» — клик в центр, второй клик задаёт радиус.
+// Круг хранится многоугольником из 64 вершин — так он проходит те же
+// проверки «точка в зоне» и площадь, что и остальные зоны. Esc — отмена.
+const bdraw = { on: false, layerId: '', shape: 'free', pts: [], cursor: null, group: L.layerGroup().addTo(map) };
+const BDRAW_HINT = {
+  free: 'клик — точка, по первой — замкнуть',
+  rect: 'клик — первый угол, второй клик — противоположный',
+  circle: 'клик — центр, второй клик — радиус',
+};
 function bdrawLayer() { return boundLayers.find(l => l.id === bdraw.layerId); }
 function bdrawStart(layerId) {
   setBoundsPop(false);
   if (ruler.sticky) { ruler.sticky = false; rulerSync(); }
-  bdraw.on = true; bdraw.layerId = layerId; bdraw.pts = [];
+  bdraw.on = true; bdraw.layerId = layerId; bdraw.pts = []; bdraw.cursor = null;
   map.doubleClickZoom.disable();
   bdrawRender();
 }
 function bdrawEnd() {
-  bdraw.on = false; bdraw.pts = [];
-  bdraw.group.clearLayers(); bdraw.live = null;
+  bdraw.on = false; bdraw.pts = []; bdraw.cursor = null;
   map.doubleClickZoom.enable();
   bdrawRender();
 }
-function bdrawCommit() {
-  // Двойной клик успевает поставить две вершины в одно место — склеиваем.
-  const pts = [];
-  bdraw.pts.forEach(p => {
-    const last = pts[pts.length - 1];
-    if (!last || map.latLngToContainerPoint(last).distanceTo(map.latLngToContainerPoint(p)) > 4) pts.push(p);
-  });
+function circleRing(c, r, n = 64) {
+  const R = 6378137, d2r = Math.PI / 180, d = r / R;
+  const la1 = c.lat * d2r, lo1 = c.lng * d2r, out = [];
+  for (let i = 0; i < n; i++) {
+    const brg = 2 * Math.PI * i / n;
+    const la2 = Math.asin(Math.sin(la1) * Math.cos(d) + Math.cos(la1) * Math.sin(d) * Math.cos(brg));
+    const lo2 = lo1 + Math.atan2(Math.sin(brg) * Math.sin(d) * Math.cos(la1), Math.cos(d) - Math.sin(la1) * Math.sin(la2));
+    out.push(L.latLng(la2 / d2r, lo2 / d2r));
+  }
+  return out;
+}
+// Вершины фигуры по опорной точке и второй точке (клик или курсор).
+function bdrawShapePts(a, b) {
+  if (!a || !b) return [];
+  if (bdraw.shape === 'rect') return [a, L.latLng(a.lat, b.lng), b, L.latLng(b.lat, a.lng)];
+  if (bdraw.shape === 'circle') return circleRing(a, map.distance(a, b));
+  return [];
+}
+function bdrawAddZone(pts) {
   const l = bdrawLayer();
   if (!l) { bdrawEnd(); return; }
-  if (pts.length < 3) { toast('Для зоны нужно минимум 3 точки', 'err'); bdraw.pts = pts; bdrawRender(); return; }
   const ring = pts.map(p => [+p.lng.toFixed(5), +p.lat.toFixed(5)]);
   ring.push(ring[0].slice());
-  const n = l.zones.length + 1;
-  l.zones.push({ id: 'z' + Date.now().toString(36), name: `Зона ${n}`, mp: [[ring]] });
+  l.zones.push({ id: 'z' + Date.now().toString(36), name: `Зона ${l.zones.length + 1}`, mp: [[ring]] });
   l.visible = true;
   _bzOpen.add(l.id);
   bdrawEnd();
   boundsChanged();
   toast(`Зона добавлена в «${l.name}»`, 'ok');
   setBoundsPop(true);
+}
+function bdrawCommit() {
+  if (bdraw.shape !== 'free') return;
+  // Двойной клик успевает поставить две вершины в одно место — склеиваем.
+  const pts = [];
+  bdraw.pts.forEach(p => {
+    const last = pts[pts.length - 1];
+    if (!last || map.latLngToContainerPoint(last).distanceTo(map.latLngToContainerPoint(p)) > 4) pts.push(p);
+  });
+  if (pts.length < 3) { toast('Для зоны нужно минимум 3 точки', 'err'); bdraw.pts = pts; bdrawRender(); return; }
+  bdrawAddZone(pts);
+}
+function bdrawSize(pts) {
+  if (pts.length < 3) return '';
+  const m2 = ringArea(pts.map(p => [p.lng, p.lat]));
+  if (m2 < 1) return '';   // курсор ещё в опорной точке — «0 м²» не показываем
+  const area = fmtArea(m2);
+  if (bdraw.shape === 'circle' && bdraw.pts[0] && bdraw.cursor) return 'R ' + fmtKm(map.distance(bdraw.pts[0], bdraw.cursor)) + ' · ' + area;
+  if (bdraw.shape === 'rect') return fmtKm(map.distance(pts[0], pts[1])) + ' × ' + fmtKm(map.distance(pts[1], pts[2])) + ' · ' + area;
+  return area;
 }
 function bdrawRender() {
   map.getContainer().classList.toggle('draw-mode', bdraw.on);
@@ -3255,19 +3265,42 @@ function bdrawRender() {
     const t = document.getElementById('bdraw-name');
     const l = bdrawLayer();
     if (t) t.textContent = l ? l.name : '';
+    const h = document.getElementById('bdraw-hint'); if (h) h.textContent = BDRAW_HINT[bdraw.shape];
+    bar.querySelectorAll('[data-bdshape]').forEach(b => {
+      const on = b.dataset.bdshape === bdraw.shape;
+      b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on));
+    });
     const ok = document.getElementById('bdraw-done');
-    if (ok) ok.disabled = bdraw.pts.length < 3;
+    if (ok) { ok.hidden = bdraw.shape !== 'free'; ok.disabled = bdraw.pts.length < 3; }
   }
-  bdraw.group.clearLayers(); bdraw.live = null;
+  bdraw.group.clearLayers();
   if (!bdraw.on) return;
   const col = boundColor((bdrawLayer() || {}).color);
   const pts = bdraw.pts;
-  if (pts.length >= 3) L.polygon(pts, { color: col, weight: 2.5, dashArray: '6 6', fillColor: col, fillOpacity: .15, interactive: false }).addTo(bdraw.group);
-  else if (pts.length === 2) L.polyline(pts, { color: col, weight: 2.5, dashArray: '6 6', interactive: false }).addTo(bdraw.group);
-  pts.forEach((p, i) => L.circleMarker(p, {
-    radius: i === 0 && pts.length >= 3 ? 7 : 4.5, weight: 2, color: '#fff', fillColor: col, fillOpacity: 1, interactive: false,
-    className: i === 0 && pts.length >= 3 ? 'bz-first' : '',
-  }).addTo(bdraw.group));
+  const style = { color: col, weight: 2.5, dashArray: '6 6', fillColor: col, fillOpacity: .15, interactive: false };
+  let shape = [];
+  if (bdraw.shape === 'free') {
+    // Фигура вместе с курсором: видно, какой получится зона.
+    shape = bdraw.cursor && pts.length ? pts.concat([bdraw.cursor]) : pts;
+    if (shape.length >= 3) L.polygon(shape, style).addTo(bdraw.group);
+    else if (shape.length === 2) L.polyline(shape, style).addTo(bdraw.group);
+    pts.forEach((p, i) => L.circleMarker(p, {
+      radius: i === 0 && pts.length >= 3 ? 7 : 4.5, weight: 2, color: '#fff', fillColor: col, fillOpacity: 1, interactive: false,
+      className: i === 0 && pts.length >= 3 ? 'bz-first' : '',
+    }).addTo(bdraw.group));
+  } else if (pts[0]) {
+    shape = bdrawShapePts(pts[0], bdraw.cursor);
+    if (shape.length >= 3) L.polygon(shape, style).addTo(bdraw.group);
+    L.circleMarker(pts[0], { radius: 4.5, weight: 2, color: '#fff', fillColor: col, fillOpacity: 1, interactive: false }).addTo(bdraw.group);
+    if (bdraw.shape === 'circle' && bdraw.cursor) L.polyline([pts[0], bdraw.cursor], { color: col, weight: 1.5, dashArray: '3 6', interactive: false }).addTo(bdraw.group);
+  }
+  const size = bdraw.cursor ? bdrawSize(shape) : '';
+  if (size) {
+    L.marker(bdraw.cursor, {
+      icon: L.divIcon({ className: 'ruler-label live', html: `<span>${size}</span>`, iconSize: null, iconAnchor: [-12, 22] }),
+      interactive: false, keyboard: false,
+    }).addTo(bdraw.group);
+  }
 }
 _mapEl.addEventListener('click', e => {
   if (!bdraw.on || rulerActive()) return;
@@ -3275,8 +3308,16 @@ _mapEl.addEventListener('click', e => {
   if (_rulerDown && Math.hypot(e.clientX - _rulerDown.x, e.clientY - _rulerDown.y) > 5) return;
   e.preventDefault(); e.stopPropagation();
   const p = map.mouseEventToContainerPoint(e);
+  const ll = map.containerPointToLatLng(p);
+  if (bdraw.shape !== 'free') {
+    if (!bdraw.pts.length) { bdraw.pts = [ll]; bdraw.cursor = ll; bdrawRender(); return; }
+    // Второй клик почти в ту же точку — не фигура, а дрожание руки.
+    if (map.latLngToContainerPoint(bdraw.pts[0]).distanceTo(p) < 6) return;
+    bdrawAddZone(bdrawShapePts(bdraw.pts[0], ll));
+    return;
+  }
   if (bdraw.pts.length >= 3 && map.latLngToContainerPoint(bdraw.pts[0]).distanceTo(p) < 12) { bdrawCommit(); return; }
-  bdraw.pts.push(map.containerPointToLatLng(p));
+  bdraw.pts.push(ll);
   bdrawRender();
 }, true);
 _mapEl.addEventListener('dblclick', e => {
@@ -3284,12 +3325,11 @@ _mapEl.addEventListener('dblclick', e => {
   e.preventDefault(); e.stopPropagation();
   bdrawCommit();
 }, true);
+let _bdrawRaf = 0;
 map.on('mousemove', e => {
   if (!bdraw.on || !bdraw.pts.length) return;
-  const last = bdraw.pts[bdraw.pts.length - 1];
-  const ends = bdraw.pts.length >= 2 ? [last, e.latlng, bdraw.pts[0]] : [last, e.latlng];
-  if (!bdraw.live) bdraw.live = L.polyline(ends, { color: boundColor((bdrawLayer() || {}).color), weight: 1.5, dashArray: '3 6', opacity: .9, interactive: false }).addTo(bdraw.group);
-  else bdraw.live.setLatLngs(ends);
+  bdraw.cursor = e.latlng;
+  if (!_bdrawRaf) _bdrawRaf = requestAnimationFrame(() => { _bdrawRaf = 0; if (bdraw.on) bdrawRender(); });
 });
 document.addEventListener('keydown', e => {
   if (!bdraw.on || rulerBlocked()) return;
@@ -3305,6 +3345,10 @@ document.addEventListener('keydown', e => {
   document.getElementById('bdraw-done')?.addEventListener('click', bdrawCommit);
   document.getElementById('bdraw-undo')?.addEventListener('click', () => { if (bdraw.pts.length) { bdraw.pts.pop(); bdrawRender(); } });
   document.getElementById('bdraw-cancel')?.addEventListener('click', () => { bdrawEnd(); setBoundsPop(true); });
+  bar.querySelectorAll('[data-bdshape]').forEach(b => b.addEventListener('click', () => {
+    bdraw.shape = b.dataset.bdshape; bdraw.pts = []; bdraw.cursor = null;
+    bdrawRender();
+  }));
 })();
 
 // GeoJSON: Polygon / MultiPolygon, имя зоны — из properties.name.
@@ -3592,11 +3636,15 @@ function boundsStatusHtml() {
   const nAct = activeBoundZones().length, nAll = boundSel.length;
   if (!nAll) return 'Ничего не выбрано — кликните зону на карте или в списке.';
   const what = !boundFilter.on ? ' · отбор выключен' : nAct ? '' : ' · все скрыты';
-  return `Выбрано: ${zonesWord(nAll)}${nAct && nAct < nAll ? ` (на карте ${nAct})` : ''}${what} <button type="button" class="lc-link" data-bzclear>Сбросить</button>`;
+  const area = nAct ? ' · ' + fmtArea(activeBoundZones().reduce((a, z) => a + zoneArea(z.mp), 0)) : '';
+  return `Выбрано: ${zonesWord(nAll)}${nAct && nAct < nAll ? ` (на карте ${nAct})` : ''}${area}${what} <button type="button" class="lc-link" data-bzclear>Сбросить</button>` +
+    (nAct ? `<button type="button" class="create-btn ghost bz-export" data-bzexport>${uiIcon('sheet', 14)} Выгрузить точки внутри выбранных в Excel</button>` : '');
 }
 function wireBoundsStatus(box) {
   const clr = box.querySelector('[data-bzclear]');
   if (clr) clr.addEventListener('click', () => { boundSel = []; _bzNew = ''; boundsChanged(); });
+  const xls = box.querySelector('[data-bzexport]');
+  if (xls) xls.addEventListener('click', exportZonePoints);
 }
 function syncBoundsStatus() {
   const st = document.querySelector('#bz-filter .bz-status');
@@ -4254,7 +4302,8 @@ function buildCustomPtUI() {
           ${l.manual
             ? `<button type="button" class="lc-ic admin-only" data-cptaddpt="${id}" title="Добавить точку вручную" aria-label="Добавить точку">${uiIcon('plus')}</button>
                ${n ? `<button type="button" class="lc-ic" data-rpexport="${id}" title="Выгрузить точки слоя в Excel" aria-label="Выгрузить в Excel">${uiIcon('download')}</button>` : ''}`
-            : `<button type="button" class="lc-ic admin-only" data-cpttpl="${id}" title="Скачать шаблон Excel для этого слоя" aria-label="Скачать шаблон">${uiIcon('download')}</button>
+            : `${n ? `<button type="button" class="lc-ic" data-cptxls="${id}" title="Выгрузить точки слоя в Excel — те же колонки, что в шаблоне, со всеми вашими полями" aria-label="Выгрузить в Excel">${uiIcon('sheet')}</button>` : ''}
+               <button type="button" class="lc-ic admin-only" data-cpttpl="${id}" title="Скачать шаблон Excel для этого слоя" aria-label="Скачать шаблон">${uiIcon('download')}</button>
                <button type="button" class="lc-ic admin-only" data-cptup="${id}" title="Загрузить или обновить точки из файла" aria-label="Загрузить данные">${uiIcon('upload')}</button>`}
           <button type="button" class="lc-ic lc-del admin-only" data-cpdel="${id}" title="Удалить слой" aria-label="Удалить слой">${uiIcon('trash')}</button>
           <button type="button" class="lc-ic lc-more" data-cpmore="${id}" title="Настройки слоя" aria-label="Настройки слоя" aria-expanded="${open}">${uiIcon('chevron')}</button>
@@ -4311,6 +4360,7 @@ function buildCustomPtUI() {
       if (open) _cptOpen.add(id); else _cptOpen.delete(id);
     });
   });
+  box.querySelectorAll('[data-cptxls]').forEach(el => el.addEventListener('click', () => exportLayerXlsx('pt', el.dataset.cptxls)));
   box.querySelectorAll('[data-cpttpl]').forEach(el => el.addEventListener('click', () => {
     const l = customPtLayers.find(x => x.id === el.dataset.cpttpl); if (l) downloadLayerTemplate('pt', l);
   }));
@@ -4588,7 +4638,9 @@ function confirmLayerModal() {
   const recs = rows ? enrich(parsed) : [];
   const key  = 'custom_' + Date.now();
   DS[key] = { key, name, color, ramp: 'custom', opacity: 1, intensity: 1, visible: true,
-              volUnit: parsed._percent ? '%' : '', recs, stats: statsOf(recs), _userData: true };
+              volUnit: parsed._percent ? '%' : '', recs, stats: statsOf(recs), _userData: true,
+              // Свои колонки файла — поля слоя: шаблон, карточка, выгрузка.
+              fields: mergeFields([], parsed._fields) };
   heatKeys.push(key);
   focusNewLayer(key);
   toast(recs.length ? `Слой «${name}» загружен (${recs.length} точек)` : `Слой «${name}» создан`, 'ok');
@@ -4603,7 +4655,7 @@ function focusNewLayer(key) {
   buildHeatUI(); rebuildUpTarget(); buildAddrSrcSel(); buildRecBasisSel(); buildRtExclUI();
   renderHeat(); renderRecs(); saveState();
   const bpts = d.recs.filter(recInSelection).map(r => [r.lat, r.lon]);
-  if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6 });
+  if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6, maxZoom: 16 });
 }
 
 // Lazily load the CSV/XLSX parsers — ~900 KB most sessions never need, so they
@@ -4724,7 +4776,8 @@ function toRecs(rows) {
     // Значение можно писать процентом: «0,356%». Храним само число (0.356),
     // а знак запоминаем на уровне слоя — так показываем его везде одинаково.
     const text = '' + (raw == null ? 1 : raw);
-    if (/%/.test(text)) percent = true;
+    // «%» в ячейке или в заголовке («Значение, %» — так её пишет наша выгрузка).
+    if (/%/.test(text) || (kVal !== undefined && /%/.test(kVal))) percent = true;
     let v = parseFloat(text.replace('%', '').replace(/\s/g, '').replace(',', '.'));
     if (!isFinite(v) || v <= 0) v = 1;
     if (!isFinite(la) || !isFinite(lo)) continue;
@@ -5093,6 +5146,146 @@ function exportRecs() {
   toast('Файл скачан', 'ok');
 }
 
+const MANUAL_EXPORT_HEAD = ['Название', 'ДМС-код', 'Оборудование', 'Продажи',
+  'Широта', 'Долгота', 'Город', 'Цвет', 'Комментарий', 'Фото, шт', 'Ссылки на фото'];
+function manualExportRow(l, r) {
+  const photos = (r.photos || []).filter(ph => ph && ph.id);
+  return [
+    r.name || '',
+    r.dms || '',
+    r.equip || '',
+    r.sales != null && r.sales !== '' && isFinite(+r.sales) ? +r.sales : '',
+    +(+r.lat).toFixed(6),
+    +(+r.lon).toFixed(6),
+    cityOf(r.lat, r.lon) || '',
+    r.color || l.color || '',
+    r.comment || '',
+    photos.length,
+    photos.map(ph => SERVER_URL + '/photo/' + ph.id).join('\n'),
+  ];
+}
+
+/* ── ВЫГРУЗКА СЛОЯ В EXCEL ─────────────────────────────────────────────
+   Колонки — как в шаблоне слоя (то, что владелец заполняет и загружает):
+   стандартные + все свои поля слоя и колонки, пришедшие из файла (`r.x`).
+   У тепловых слоёв к шаблону добавляются Код / Адрес / Часы, если они есть
+   в данных. Выгрузку можно загрузить обратно — колонки распознаются те же;
+   процентный слой пишет «Значение, %», и загрузка снова видит проценты. */
+const STD_EXPORT = {
+  'Название': r => r.name || '',
+  'Широта': r => +(+r.lat).toFixed(6),
+  'Долгота': r => +(+r.lon).toFixed(6),
+  'Значение': r => exportNum(r.vol),
+  'Адрес': r => r.addr || '',
+  'Часы работы': r => r.hours || '',
+  'Код': r => r.code || '',
+};
+function layerSheetAoa(kind, layer, recs, tail) {
+  // Ручные точки — своя карточка (ДМС, оборудование, фото): свои колонки.
+  if (kind === 'pt' && layer.manual) {
+    return [MANUAL_EXPORT_HEAD.concat(tail ? [tail.head] : [])]
+      .concat(recs.map(r => manualExportRow(layer, r).concat(tail ? [tail.val(r)] : [])));
+  }
+  const cols = layerTemplateColumns(kind, []);
+  if (kind === 'heat') {
+    [['Код', 'code'], ['Адрес', 'addr'], ['Часы работы', 'hours']].forEach(([c, f]) => { if (recs.some(r => r[f])) cols.push(c); });
+  }
+  const seen = new Set(cols.map(c => c.toLowerCase()));
+  const extra = [];
+  const addField = f => { const k = String(f).trim(); if (k && !seen.has(k.toLowerCase())) { seen.add(k.toLowerCase()); extra.push(k); } };
+  (layer.fields || []).forEach(addField);
+  recs.forEach(r => { if (r.x) Object.keys(r.x).forEach(addField); });
+  const all = cols.concat(extra);
+  const pct = kind === 'heat' && volUnitOf(layer);
+  const head = all.map(c => c === 'Значение' && pct ? 'Значение, %' : c).concat(tail ? [tail.head] : []);
+  const rows = recs.map(r => all.map(c => STD_EXPORT[c] && cols.includes(c) ? STD_EXPORT[c](r) : (r.x && r.x[c] != null ? r.x[c] : ''))
+    .concat(tail ? [tail.val(r)] : []));
+  return [head].concat(rows);
+}
+function layerSheet(kind, layer, recs, tail) {
+  const aoa = layerSheetAoa(kind, layer, recs, tail);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = aoa[0].map(c => ({ wch: Math.min(40, Math.max(10, String(c).length + 4)) }));
+  const vi = aoa[0].indexOf('Значение, %');
+  if (vi >= 0) markPercentColumn(ws, vi, recs.length, recs.map(r => r.vol));
+  return ws;
+}
+function sheetName(name, used) {
+  const base = String(name || 'Слой').replace(/[[\]:*?/\\]/g, ' ').trim().slice(0, 28) || 'Слой';
+  let out = base, i = 2;
+  while (used.has(out.toLowerCase())) out = base.slice(0, 25) + ' ' + (i++);
+  used.add(out.toLowerCase());
+  return out;
+}
+async function exportLayerXlsx(kind, id) {
+  try {
+    await ensureSheetLibs();
+    let layer;
+    if (kind === 'heat') { await ensureLayerRecords(id); layer = DS[id]; }
+    else layer = customPtLayers.find(l => l.id === id);
+    const recs = (layer && layer.recs) || [];
+    if (!recs.length) { toast('В слое нет точек для выгрузки', 'err'); return; }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, layerSheet(kind, layer, recs), sheetName(layer.name, new Set()));
+    saveXlsx(wb, `${translit(layer.name || 'sloy')}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast(`Выгружено: ${recs.length.toLocaleString('ru-RU')} ${plural(recs.length, 'точка', 'точки', 'точек')}`, 'ok');
+  } catch (e) {
+    console.warn('Layer export failed:', e);
+    toast('Не удалось выгрузить слой — проверьте интернет', 'err');
+  }
+}
+/* Точки внутри выбранных районов и зон: лист «Районы» (площадь и сколько
+   точек каждого слоя), затем по листу на каждый включённый слой — колонки
+   слоя плюс «Район». Фильтр городов учитывается, режим «снаружи» — нет:
+   кнопка называется «точки внутри выбранных». */
+async function exportZonePoints() {
+  const zones = activeBoundZones();
+  if (!zones.length) { toast('Сначала выберите районы на карте', 'err'); return; }
+  try {
+    await ensureSheetLibs();
+    const hk = heatKeys.filter(k => DS[k] && DS[k].visible);
+    if (hk.length) await ensureLayerRecords(hk);
+    const layers = hk.map(k => ({ kind: 'heat', layer: DS[k] }))
+      .concat(customPtLayers.filter(l => l.visible).map(l => ({ kind: 'pt', layer: l })));
+    const zonesOf = r => zones.filter(z => zoneHas(z, +r.lat, +r.lon));
+    const perZone = zones.map(() => layers.map(() => 0));
+    const sheets = [];
+    layers.forEach(({ kind, layer }, li) => {
+      const hits = [];
+      (layer.recs || []).forEach(r => {
+        if (!recInCities(r)) return;
+        const zs = zonesOf(r);
+        if (!zs.length) return;
+        zs.forEach(z => { perZone[zones.indexOf(z)][li]++; });
+        hits.push({ r, names: zs.map(z => z.name).join(', ') });
+      });
+      if (hits.length) {
+        const byRec = new Map(hits.map(h => [h.r, h.names]));
+        sheets.push({ kind, layer, recs: hits.map(h => h.r), tail: { head: 'Район', val: r => byRec.get(r) || '' } });
+      }
+    });
+    if (!sheets.length) { toast('В выбранных районах нет точек включённых слоёв', 'err', 3500); return; }
+    const used = new Set();
+    const wb = XLSX.utils.book_new();
+    const sumHead = ['Район', 'Площадь, км²'].concat(layers.map(x => x.layer.name));
+    const sumRows = zones.map((z, zi) => [z.name, exportNum(zoneArea(z.mp) / 1e6)].concat(perZone[zi]));
+    if (zones.length > 1) {
+      sumRows.push(['Всего', exportNum(zones.reduce((a, z) => a + zoneArea(z.mp), 0) / 1e6)]
+        .concat(layers.map((_, li) => sheets.find(sh => sh.layer === layers[li].layer)?.recs.length || 0)));
+    }
+    const sum = XLSX.utils.aoa_to_sheet([sumHead].concat(sumRows));
+    sum['!cols'] = sumHead.map((c, i) => ({ wch: i ? Math.max(12, String(c).length + 2) : 28 }));
+    XLSX.utils.book_append_sheet(wb, sum, sheetName('Районы', used));
+    sheets.forEach(sh => XLSX.utils.book_append_sheet(wb, layerSheet(sh.kind, sh.layer, sh.recs, sh.tail), sheetName(sh.layer.name, used)));
+    saveXlsx(wb, `tochki_v_rayonah_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    const n = sheets.reduce((a, sh) => a + sh.recs.length, 0);
+    toast(`Выгружено: ${n.toLocaleString('ru-RU')} ${plural(n, 'точка', 'точки', 'точек')} из ${zones.length} ${plural(zones.length, 'района', 'районов', 'районов')}`, 'ok');
+  } catch (e) {
+    console.warn('Zone export failed:', e);
+    toast('Не удалось выгрузить — проверьте интернет', 'err');
+  }
+}
+
 /* Выгрузка точек ручного ввода. `layerId` — один слой, иначе все ручные слои
    одним листом. Фото в XLSX не вставить, поэтому даём число и прямые ссылки:
    они открываются в браузере, где уже есть сессия. */
@@ -5102,25 +5295,8 @@ function exportManualPts(layerId) {
     return;
   }
   const layers = layerId ? customPtLayers.filter(l => l.id === layerId) : manualLayers();
-  const rows = [['Слой', 'Название', 'ДМС-код', 'Оборудование', 'Продажи',
-                 'Широта', 'Долгота', 'Город', 'Цвет', 'Комментарий', 'Фото, шт', 'Ссылки на фото']];
-  layers.forEach(l => (l.recs || []).forEach(r => {
-    const photos = (r.photos || []).filter(ph => ph && ph.id);
-    rows.push([
-      l.name,
-      r.name || '',
-      r.dms || '',
-      r.equip || '',
-      r.sales != null && r.sales !== '' && isFinite(+r.sales) ? +r.sales : '',
-      +(+r.lat).toFixed(6),
-      +(+r.lon).toFixed(6),
-      cityOf(r.lat, r.lon) || '',
-      r.color || l.color || '',
-      r.comment || '',
-      photos.length,
-      photos.map(ph => SERVER_URL + '/photo/' + ph.id).join('\n'),
-    ]);
-  }));
+  const rows = [['Слой'].concat(MANUAL_EXPORT_HEAD)];
+  layers.forEach(l => (l.recs || []).forEach(r => rows.push([l.name].concat(manualExportRow(l, r)))));
   if (rows.length === 1) { toast('В слое нет точек для выгрузки', 'err'); return; }
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -5574,7 +5750,7 @@ async function previewAddrOnMap() {
 
   const allPts = [...points.map(p => [p.lat, p.lon]),
                   ...[...usedRefs.values()].map(r => [r.lat, r.lon])];
-  map.flyToBounds(L.latLngBounds(allPts).pad(.12), { duration: .7 });
+  map.flyToBounds(L.latLngBounds(allPts).pad(.12), { duration: .7, maxZoom: 16 });
   toast(`На карте: ${points.length} точек · ${usedRefs.size} ориентиров`, 'ok');
 }
 
@@ -6465,6 +6641,7 @@ function wireEvents() {
     const parsedUpload = toRecs(pendingUpload);
     d.recs = enrich(parsedUpload); d.stats = statsOf(d.recs); d.visible = true; d._userData = true;
     d.volUnit = parsedUpload._percent ? '%' : '';
+    d.fields = mergeFields(d.fields, parsedUpload._fields);
     reset();
     // The selected-city filter would otherwise silently hide points that fall
     // in other cities — reset to "Все" so the freshly uploaded layer is visible.
@@ -6472,7 +6649,7 @@ function wireEvents() {
     buildHeatUI(); renderHeat(); renderRecs(); buildRtExclUI();
     // Frame the map on the new data so it's obvious it loaded.
     const bpts = d.recs.filter(recInSelection).map(r => [r.lat, r.lon]);
-    if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6 });
+    if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6, maxZoom: 16 });
     saveState();
     toast(`Слой «${d.name}» обновлён (${d.stats.n} точек)`, 'ok');
   });
@@ -7334,7 +7511,7 @@ function renderCurrentState() {
 function fitInitialBounds() {
   if (hasCityFilter()) return;
   const framePts = visiblePts();
-  if (framePts.length) map.fitBounds(L.latLngBounds(framePts).pad(.05));
+  if (framePts.length) map.fitBounds(L.latLngBounds(framePts).pad(.05), { maxZoom: 16 });
   else if (CITIES[0] && CC[CITIES[0]]) map.setView(CC[CITIES[0]], 11);
 }
 async function applyStartupSnapshot(snapshot) {
