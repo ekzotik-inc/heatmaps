@@ -391,6 +391,9 @@ function isManualRec(r) {
 }
 
 /* ── MAP INIT ────────────────────────────────────────────────────────── */
+// Карточки точек не должны уходить под фильтр городов сверху карты: при
+// открытии карта сдвигается так, чтобы карточка была видна целиком.
+L.Popup.mergeOptions({ autoPanPaddingTopLeft: L.point(16, 84), autoPanPaddingBottomRight: L.point(16, 24) });
 const map = L.map('map', { preferCanvas: true, zoomControl: false, minZoom: 5, zoomSnap: .5 })
               .setView([41, 67], 6);
 
@@ -599,7 +602,7 @@ function renderIncome() {
        .bindPopup(`<div class="pp-title">${z.n}. ${z.name}</div>
                    <div class="pp-row"><span>Уровень</span><b>${TIER_NAME[z.tier]}</b></div>
                    <div class="pp-row"><span>Ориентиры</span><b style="font-family:Manrope;font-weight:500;text-align:right">${z.pl}</b></div>
-                   <div class="pp-why">${CX[z.tier]}</div>`)
+                   <div class="pp-why">${CX[z.tier]}</div>${yandexLinkHtml(z.lat, z.lon)}`)
        .addTo(coresGroup);
     });
   }
@@ -898,6 +901,19 @@ const TAG_LIMIT = 1200;
 function tagLayerKeys() {
   return heatKeys.filter(k => DS[k] && DS[k].showTags && DS[k].visible);
 }
+/* «Открыть в Яндекс Картах» — у каждой точки на карте. Метка ставится ровно
+   по координатам точки; на телефоне ссылка открывает приложение Яндекс Карт. */
+function yandexMapsUrl(lat, lon) {
+  const la = (+lat).toFixed(6), lo = (+lon).toFixed(6);
+  return `https://yandex.ru/maps/?ll=${lo},${la}&z=17&pt=${lo},${la}&l=map`;
+}
+function yandexLinkHtml(lat, lon) {
+  if (!isFinite(+lat) || !isFinite(+lon)) return '';
+  return `<a class="pp-ymaps" href="${yandexMapsUrl(lat, lon)}" target="_blank" rel="noopener noreferrer">` +
+    `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 12-9 12s-9-5-9-12a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg>` +
+    `Открыть в Яндекс Картах</a>`;
+}
+
 function tagPopupHtml(d, r) {
   const rows = [];
   if (r.addr)  rows.push(['Адрес', r.addr]);
@@ -909,7 +925,8 @@ function tagPopupHtml(d, r) {
     rows.map(([k, v]) =>
       `<div class="pp-row"><span>${esc(k)}</span><b style="font-family:Manrope;font-weight:600;text-align:right">${esc(String(v))}</b></div>`
     ).join('') +
-    `<span class="pp-tag" style="background:var(--acc-l);color:var(--acc-d);border:1px solid rgba(18,173,193,.35)">${esc(d.name)}</span>`;
+    `<span class="pp-tag" style="background:var(--acc-l);color:var(--acc-d);border:1px solid rgba(18,173,193,.35)">${esc(d.name)}</span>` +
+    yandexLinkHtml(r.lat, r.lon);
 }
 // renderHeat() дёргается на каждое движение ползунка. Пересобирать до 1200
 // маркеров на каждый кадр незачем — сверяем сигнатуру входных данных.
@@ -1014,7 +1031,8 @@ function openRec(s, rank) {
      <div class="pp-row"><span>Точек рынка в зоне</span><b>${s.lc}</b></div>
      <div class="pp-row"><span>До ближайшей ТТ</span><b>${fmtD(s.nd)}</b></div>
      <div class="pp-why">Высокий спрос (${esc(d.name).toLowerCase()}) в радиусе ~700 м без нашей ТТ ближе ${fmtD(covR)}. Ориентир — «${esc(s.name)}». Рекомендуется открытие BR.</div>
-     <span class="pp-tag" style="background:var(--rec-l);color:var(--rec-ink);border:1px solid rgba(20,184,125,.35)">РЕКОМЕНДАЦИЯ BR</span>`)
+     <span class="pp-tag" style="background:var(--rec-l);color:var(--rec-ink);border:1px solid rgba(20,184,125,.35)">РЕКОМЕНДАЦИЯ BR</span>
+     ${yandexLinkHtml(s.lat, s.lon)}`)
    .openOn(map);
 }
 
@@ -2273,6 +2291,7 @@ function renderCustomPoints() {
         if (r.addr)  parts.push(`<div class="pp-row"><span>Адрес</span><b style="font-family:Manrope;font-weight:500;text-align:right">${esc(r.addr)}</b></div>`);
         if (r.hours) parts.push(`<div class="pp-row"><span>Часы</span><b>${esc(r.hours)}</b></div>`);
         if (r.code)  parts.push(`<div class="pp-row"><span>Код</span><b>${esc(r.code)}</b></div>`);
+        parts.push(yandexLinkHtml(r.lat, r.lon));
         m.bindPopup(parts.filter(Boolean).join(''));
       }
       if (r.name) m.bindTooltip(`<b style="font-weight:700">${esc(r.name)}</b><br>${esc(l.name)}`, { className: 'tt', direction: 'top', offset: [0, -ic.anchor[1] + 4] });
@@ -2556,6 +2575,7 @@ function manualPopupHtml(layer, r) {
       `<div class="pp-row"><span>${esc(k)}</span><b style="font-family:Manrope;font-weight:600;text-align:right">${esc(String(v))}</b></div>`).join('')}
     ${r.comment ? `<div class="rp-comment">${esc(r.comment)}</div>` : ''}
     <span class="pp-tag rp-tag" style="background:${esc(r.color || layer.color)}22;color:var(--ink);border:1px solid ${esc(r.color || layer.color)}">${esc(layer.name)}</span>
+    ${yandexLinkHtml(r.lat, r.lon)}
     ${isAdmin() && layer.manual ? '<button type="button" class="rp-edit" data-rpedit="1">✎ Редактировать</button>' : ''}`;
 }
 
@@ -2662,7 +2682,36 @@ function openRetailForm(layerId, id) {
   rpField('rp-delete').style.display = p ? '' : 'none';
   renderRetailFormPhotos();
   rpField('rp-modal').hidden = false;
+  _rpInitial = retailFormSnapshot();
   setTimeout(() => rpField('rp-name').focus(), 120);
+}
+// Снимок формы при открытии — по нему понимаем, есть ли что терять.
+let _rpInitial = '';
+function retailFormSnapshot() {
+  return JSON.stringify([
+    'rp-layer', 'rp-layer-new', 'rp-name', 'rp-dms', 'rp-equip', 'rp-sales', 'rp-comment', 'rp-lat', 'rp-lon',
+  ].map(id => { const el = rpField(id); return el ? el.value : ''; })
+    .concat([_rpColor, _rpPhotos.map(ph => ph.id).join(',')]));
+}
+function retailFormDirty() {
+  const m = rpField('rp-modal');
+  return !!m && !m.hidden && retailFormSnapshot() !== _rpInitial;
+}
+// Закрыть по «Отмена» или Esc. Если что-то введено — сначала спрашиваем:
+// раньше промах кликом мимо формы молча стирал всё введённое.
+function requestCloseRetailForm() {
+  if (retailFormDirty() && !confirm('Закрыть форму? Введённые данные не сохранятся.')) return;
+  closeRetailForm();
+}
+// Клик мимо формы ничего не закрывает — только подсказывает, как закрыть.
+function nudgeRetailForm() {
+  const card = document.querySelector('#rp-modal .rp-card');
+  if (card) { card.classList.remove('nudge'); void card.offsetWidth; card.classList.add('nudge'); }
+  const now = Date.now();
+  if (!nudgeRetailForm._t || now - nudgeRetailForm._t > 4000) {
+    toast('Форма не закрывается кликом мимо — нажмите «Отмена» или Esc', 'info', 3200);
+    nudgeRetailForm._t = now;
+  }
 }
 function closeRetailForm() {
   rpField('rp-modal').hidden = true;
@@ -2899,11 +2948,13 @@ function wireRetailUI() {
     renderRetailColors();   // «как у слоя» показывает цвет выбранного слоя
   });
   on('rp-color-auto', 'click', () => { _rpColor = ''; renderRetailColors(); });
-  on('rp-cancel', 'click', closeRetailForm);
+  on('rp-cancel', 'click', requestCloseRetailForm);
   on('rp-save', 'click', saveRetailForm);
   on('rp-delete', 'click', deleteRetailPoint);
   on('rp-geo-pick', 'click', startGeoPick);
-  on('rp-modal', 'click', e => { if (e.target.id === 'rp-modal') closeRetailForm(); });
+  // pointerdown, а не click: выделение текста в поле, отпущенное за краем
+  // формы, тоже давало «клик по фону».
+  on('rp-modal', 'pointerdown', e => { if (e.target.id === 'rp-modal' && !_rpPickingGeo) nudgeRetailForm(); });
 
   const fileInp = document.getElementById('rp-photo-file');
   on('rp-photo-add', 'click', () => fileInp && fileInp.click());
@@ -2948,7 +2999,10 @@ function wireRetailUI() {
   document.addEventListener('keydown', e => {
     const ov = document.getElementById('photo-lightbox');
     if (!ov || ov.hidden) {
-      if (e.key === 'Escape' && _rpPickingGeo) stopGeoPick();
+      if (e.key !== 'Escape') return;
+      if (_rpPickingGeo) { stopGeoPick(); return; }
+      const m = document.getElementById('rp-modal');
+      if (m && !m.hidden) requestCloseRetailForm();
       return;
     }
     if (e.key === 'Escape') closeLightbox();
@@ -4233,7 +4287,7 @@ async function previewAddrOnMap() {
     if (multiSrc && p._srcNames) lines.push(`Слой: <b>${esc(p._srcNames.join(', '))}</b>`);
     lines.push(`До ${esc(nearLabel)}${nearName ? ' (' + esc(nearName) + ')' : ''}: <b>${fmtD(p._distOwn)}</b>`);
     if (p.vol_total != null) lines.push(`${volUnitOf(srcLayer) ? 'Значение' : 'Объём'}: ${fmtVol(srcLayer, p.vol_total)}`);
-    m.bindPopup(lines.join('<br>'));
+    m.bindPopup(lines.join('<br>') + yandexLinkHtml(p.lat, p.lon));
     addrLayer.addLayer(m);
   });
 
@@ -5048,7 +5102,12 @@ function wireEvents() {
   $('layer-modal-cancel').addEventListener('click', () => { pendingHeatRows = null; closeLayerModal(); });
   $('layer-modal-confirm').addEventListener('click', confirmLayerModal);
   $('layer-modal-input').addEventListener('keydown', e => { if (e.key === 'Enter') confirmLayerModal(); if (e.key === 'Escape') closeLayerModal(); });
-  $('layer-modal-overlay').addEventListener('click', e => { if (e.target === $('layer-modal-overlay')) { pendingHeatRows = null; closeLayerModal(); } });
+  // Клик мимо закрывает окно, только если название ещё не введено.
+  $('layer-modal-overlay').addEventListener('click', e => {
+    if (e.target !== $('layer-modal-overlay')) return;
+    if ($('layer-modal-input').value.trim()) { toast('Чтобы закрыть — «Отмена» или Esc', 'info'); return; }
+    pendingHeatRows = null; closeLayerModal();
+  });
 
   // Template downloads — one generator for both upload flows, so the sample
   // files always match what the corresponding parser expects.
@@ -5290,7 +5349,10 @@ function wireEvents() {
     toast(`Слой «${name}» создан — загрузите данные`, 'ok');
   });
   $('cpt-modal-overlay').addEventListener('click', e => {
-    if (e.target === $('cpt-modal-overlay')) $('cpt-modal-overlay').classList.remove('open');
+    if (e.target !== $('cpt-modal-overlay')) return;
+    const inp = $('cpt-modal-overlay').querySelector('input[type="text"]');
+    if (inp && inp.value.trim()) { toast('Чтобы закрыть — «Отмена» или Esc', 'info'); return; }
+    $('cpt-modal-overlay').classList.remove('open');
   });
 
   // Custom point layers — file upload

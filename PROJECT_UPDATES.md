@@ -596,3 +596,27 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   reachable by cursor and by Tab.
 - Cache version `20261023e`.
 
+## 2026-10-23 — Point form survives a misclick; «Open in Yandex Maps»
+
+- **Manual point form:** a click on the dimmed background no longer closes it
+  (the card gives a short nudge and a hint says to use «Отмена» or Esc).
+  Esc now closes the form too. «Отмена» and Esc ask for confirmation when
+  anything was entered; an untouched form closes silently. Dirty state is a
+  snapshot of all fields, colour and photo ids taken on open. The backdrop
+  reacts to `pointerdown`, so a text selection released outside the card does
+  not count either.
+- New-layer and new-point-layer dialogs close on a background click only while
+  their name field is empty.
+- **Yandex Maps:** every point card has «Открыть в Яндекс Картах» (new tab;
+  on phones the Yandex Maps app): heat-layer tags, file point layers, manual
+  points, address-program results, recommendation zones and city cores. URL
+  `https://yandex.ru/maps/?ll=lon,lat&z=17&pt=lon,lat&l=map` puts a marker on
+  the exact coordinates. Yandex rate-limits the sandbox, so opening it could
+  not be screenshotted; the URL format is Yandex's documented one and returned
+  HTTP 200 with parameters intact.
+- Popups now auto-pan clear of the city filter bar
+  (`autoPanPaddingTopLeft` 16×84), since cards became taller.
+- Verified in a browser: misclick keeps the form and its data, Esc/Cancel ask
+  only when dirty, links present with correct coordinates and `noopener`.
+- Cache version `20261023f`.
+
