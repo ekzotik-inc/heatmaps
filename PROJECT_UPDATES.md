@@ -805,3 +805,40 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
 - Verified in a browser: 159 visible text nodes all in Inter, the blob lands
   under the active tab, ripple on press, no address rows overflow.
 - Cache version `20261025b`.
+
+## 2026-10-25 — «Границы»: districts and own zones, point selection by area
+
+- The «Районы» button over the map is now «Границы» with a panel (hover with
+  the safe triangle, click pins it; map clicks don't close it, so the selection
+  can be watched live).
+- Layers in the panel:
+  - «Районы Ташкента» — the city districts from `/data` (UZ maps only), toggle
+    and district list;
+  - own boundaries — admin creates a layer (name + colour), then draws zones
+    on the map (click = vertex, close with a click on the first vertex, double
+    click or Enter; Backspace undo, Esc cancel) or uploads GeoJSON
+    (Polygon/MultiPolygon with holes; names from `properties.name`). Rename,
+    colour, delete layer or zone. Up to 20 000 vertices in total — the geometry
+    travels with every state save.
+- Clicking a zone on the map (or in the list) selects it; several can be
+  selected. The selected zone gets a glowing outline in its own colour (SVG
+  blur filter, a bright line with a light core, the outline draws itself in on
+  selection and breathes softly); other zones dim slightly. The black square
+  on click was the browser focus ring on the SVG path — removed.
+- «Яркость заливки» slider for all boundaries (4–60 %).
+- «Отбирать точки по выбранным зонам» + «Только внутри» / «Только снаружи»:
+  heat layers, point layers, labels, recommendations, the address program and
+  the counter all follow it via `recInSelection()`. A hidden layer's selection
+  doesn't filter.
+- Selection is by point-in-polygon on map click, not SVG events: the canvas of
+  point labels lies above the boundary pane and would swallow the clicks. A
+  click that closes a point card doesn't toggle a zone.
+- State: `distOpacity`, `boundLayers`, `boundSel`, `boundFilter` in the
+  snapshot, apply (reset to defaults when missing — map switch) and the
+  fingerprint.
+- Verified in a browser: district select by click, glow in the district
+  colour, 6/10/5/15 points for A / A+B / outside / filter off, hiding the
+  layer releases the filter, drawing a zone, list select, marker click doesn't
+  toggle, brightness, snapshot round trip, server save + reload, viewer sees no
+  edit buttons, GeoJSON with a hole, escaped names, Esc in drawing mode.
+- Cache version `20261025c`.

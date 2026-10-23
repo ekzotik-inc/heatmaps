@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.1/maplibre-gl.css"/>
-  <link rel="stylesheet" href="style.css?v=20261025b"/>
+  <link rel="stylesheet" href="style.css?v=20261025c"/>
 </head>
 <body>
 
@@ -439,7 +439,14 @@
       </div>
     </div>
     <div class="city-bar-sep"></div>
-    <button id="districts-toggle" class="city-extra-btn" title="Границы 12 районов Ташкента"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>Районы</button>
+    <div class="city-info-wrap" id="bounds-wrap">
+      <button id="districts-toggle" class="city-extra-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="bounds-pop" title="Районы города и свои границы: выбор зон и отбор точек">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 20.5 7v10L12 21.5 3.5 17V7z"/><path d="M12 2.5v19M3.5 7 12 12l8.5-5" opacity=".45"/></svg>Границы
+      </button>
+      <div id="bounds-pop" class="city-pop bounds-pop" role="dialog" aria-label="Границы" hidden>
+        <div id="bounds-ui"></div>
+      </div>
+    </div>
     <div class="city-info-wrap" id="city-info-wrap">
       <button id="city-info-btn" class="city-extra-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="city-pop" title="Сводка по выбранному городу">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg>Город
@@ -449,7 +456,7 @@
       </div>
     </div>
   </div>
-  <div class="map-stat" id="map-stat" aria-live="polite" title="Сумма всех включённых слоёв с учётом фильтра по городам — совпадает с суммой строк легенды">
+  <div class="map-stat" id="map-stat" aria-live="polite" title="Сумма всех включённых слоёв с учётом фильтра по городам и отбора по границам — совпадает с суммой строк легенды">
     <div class="ms-num"><b id="b-count">—</b><span id="b-count-label">точек на карте</span></div>
     <div class="sync-badge" id="sync-badge" style="display:none">
       <span class="sync-dot" id="sync-dot"></span>
@@ -459,6 +466,22 @@
   <div id="layer-legend" style="display:none"></div>
   <div id="tag-note" style="display:none"></div>
   <div class="mode-badge" id="mode-badge" style="display:none"></div>
+  <!-- Рисование своей зоны на карте («Границы») -->
+  <div id="bdraw-bar" class="bdraw-bar" role="toolbar" aria-label="Рисование зоны" hidden>
+    <span class="bdraw-t" title="Клик — вершина. Замкнуть — клик по первой вершине, двойной клик или Enter. Backspace — шаг назад, Esc — отмена">«<b id="bdraw-name"></b>»: клик — точка, по первой — замкнуть</span>
+    <button type="button" id="bdraw-undo" class="bdraw-btn" title="Убрать последнюю точку (Backspace)">Шаг назад</button>
+    <button type="button" id="bdraw-done" class="bdraw-btn ok" disabled>Готово</button>
+    <button type="button" id="bdraw-cancel" class="bdraw-btn" title="Esc">Отмена</button>
+  </div>
+  <!-- Свечение контура выбранной зоны: размытая копия линии под ней -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <filter id="bz-glow" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="4.5" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+  </svg>
 
   <!-- Владелец опубликовал новую версию карты: предложение обновиться -->
   <div id="update-banner" role="status" aria-live="polite" hidden>
@@ -703,7 +726,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20261025b'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20261025c'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();

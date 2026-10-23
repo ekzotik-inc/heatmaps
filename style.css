@@ -2406,3 +2406,95 @@ button, input, select, textarea, optgroup, option, kbd, code, pre,
   .drop-ripple { display: none; }
   .cbx::after { transition: none; }
 }
+
+/* ── ГРАНИЦЫ: районы города и свои зоны ──────────────────────────────── */
+/* Клик по району давал чёрную рамку фокуса браузера — у путей Leaflet она не нужна. */
+#map .leaflet-interactive:focus, #map path:focus { outline: none; }
+.bounds-pop { width: min(370px, calc(100vw - 32px)); }
+#districts-toggle[aria-expanded="true"]:not(.on) { color: var(--acc); border-color: var(--acc); }
+.bz-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.bz-head b { font-size: 14px; font-weight: 700; color: var(--ink); }
+.bz-head span { font-size: 11.5px; color: var(--mut); }
+.bz-sec {
+  margin: 14px 0 8px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--dim);
+}
+.bz-layer { margin-bottom: 8px; }
+.bz-sw { position: relative; overflow: hidden; cursor: pointer; }
+.bz-sw input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.bz-sw-city { cursor: default; }
+.bz-sw-city:hover { transform: none; }
+.bz-zones { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; scrollbar-width: thin; }
+.bz-zone { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.bz-zbtn {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  padding: 6px 9px; border-radius: 9px; border: 1px solid var(--line2); background: var(--card);
+  font: 500 12px "Inter"; color: var(--ink); text-align: left; cursor: pointer;
+  transition: border-color .18s var(--ease), background .18s var(--ease), box-shadow .25s var(--ease);
+}
+.bz-zbtn span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bz-zbtn i {
+  flex: 0 0 auto; width: 10px; height: 10px; border-radius: 3px; background: var(--c);
+  transition: box-shadow .25s var(--ease), transform .25s var(--ease);
+}
+.bz-zbtn:hover { border-color: var(--acc); }
+.bz-zbtn:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+.bz-zone.on .bz-zbtn { background: var(--acc-l); border-color: var(--acc); font-weight: 600; }
+.bz-zone.on .bz-zbtn i { transform: scale(1.15); box-shadow: 0 0 0 2px var(--card), 0 0 8px 2px var(--c); }
+.bz-none { font-size: 11.5px; color: var(--mut); padding: 4px 0; }
+.bz-add { width: 100%; margin-top: 4px; }
+.bz-new { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px dashed var(--acc); border-radius: 12px; background: var(--side-bg2); }
+.bz-new input[type="text"] {
+  width: 100%; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line2);
+  background: var(--card); font: 500 12.5px "Inter"; color: var(--ink);
+}
+.bz-new input[type="text"]:focus { outline: none; border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-l); }
+.bz-new-act { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.bz-new-act .create-btn { flex: 1 1 auto; margin: 0; padding: 9px 10px; font-size: 12px; }
+.bz-op { margin: 0; }
+.bz-filter { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.bz-filter .lc-opt { margin: 0 0 10px; font-weight: 600; }
+.bz-mode { transition: opacity .2s var(--ease); }
+.bz-mode.dim { opacity: .45; }
+.bz-status { margin-top: 8px; font-size: 11.5px; color: var(--mut); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.leaflet-tooltip.tt .tt-hint { font-size: 10.5px; color: var(--dim); }
+
+/* Выбранная зона: свечение её цвета, яркая линия и светлый блик по центру. */
+#map path.bz-glow { filter: url(#bz-glow); animation: bz-breathe 2.8s ease-in-out infinite; }
+#map path.bz-core { stroke-dasharray: none; }
+#map path.bz-new { stroke-dasharray: 1; stroke-dashoffset: 1; animation: bz-draw .9s var(--ease) forwards; }
+@keyframes bz-breathe { 0%, 100% { stroke-opacity: .55; } 50% { stroke-opacity: .95; } }
+@keyframes bz-draw { to { stroke-dashoffset: 0; } }
+
+/* Рисование зоны */
+#map.draw-mode, #map.draw-mode .leaflet-interactive { cursor: crosshair !important; }
+#map path.bz-first { animation: bz-breathe 1.4s ease-in-out infinite; cursor: pointer; }
+.bdraw-bar {
+  position: absolute; top: 72px; transform: translateX(-50%); z-index: 1150;
+  left: calc(50% + (var(--side-w) + 14px) / 2);
+  display: flex; align-items: center; gap: 6px; max-width: calc(100vw - var(--side-w) - 84px);
+  padding: 6px 6px 6px 14px; border-radius: 100px; background: var(--ink); color: var(--line);
+  font: 500 12px "Inter"; box-shadow: var(--shadow);
+}
+.bdraw-bar[hidden] { display: none; }
+.bdraw-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bdraw-t b { color: #fff; font-weight: 700; }
+.bdraw-btn {
+  flex: 0 0 auto; padding: 6px 12px; border-radius: 100px; border: 1px solid rgba(255,255,255,.18);
+  background: transparent; color: #fff; font: 600 12px "Inter"; cursor: pointer;
+  transition: background .18s var(--ease), border-color .18s var(--ease);
+}
+.bdraw-btn:hover { background: rgba(255,255,255,.1); }
+.bdraw-btn.ok { background: var(--acc); border-color: var(--acc); }
+.bdraw-btn.ok:hover { background: var(--acc-d); }
+.bdraw-btn:disabled { opacity: .4; cursor: default; }
+.bdraw-btn:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+#app.side-hidden .bdraw-bar { left: 50%; max-width: calc(100vw - 84px); }
+@media (max-width: 780px) {
+  .bdraw-bar { left: 50%; max-width: calc(100vw - 32px); top: auto; bottom: 84px; padding-left: 10px; }
+  .bdraw-t { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #map path.bz-glow, #map path.bz-first { animation: none; }
+  #map path.bz-new { animation: none; stroke-dashoffset: 0; }
+}

@@ -373,8 +373,14 @@ function cityHolds(r, c) {
   if (r.fil) return r.fil === c;
   return pointInCity(r, c);
 }
-function recInSelection(r) {
+function recInCities(r) {
   return !hasCityFilter() || allCitiesSelected() || selectedCities.some(c => cityHolds(r, c));
+}
+// Единая проверка «точка видна при текущем отборе»: города + «Границы».
+function recInSelection(r) { return recInCities(r) && boundsHold(r); }
+function selectionActive() { return (hasCityFilter() && !allCitiesSelected()) || boundsActive(); }
+function selectionKey() {
+  return (hasCityFilter() && !allCitiesSelected() ? selectedCities.join('|') : '*') + '#' + boundFilterKey();
 }
 
 /* ── LAYER STATE ─────────────────────────────────────────────────────── */
@@ -610,21 +616,166 @@ function coreIcon(z) {
   });
 }
 
+/* ── ГРАНИЦЫ: районы города и свои зоны ──────────────────────────────────
+   Кнопка «Границы» над картой. Два вида слоёв:
+   - «Районы города» — полигоны районов Ташкента из `/data` (districtsOn);
+   - свои границы — слои владельца, в каждом одна или несколько зон,
+     нарисованных на карте или загруженных из GeoJSON.
+   Клик по зоне на карте выбирает её (можно несколько) — у выбранной светится
+   контур её же цвета. Включён «Отбор точек» — все слои показывают только
+   точки внутри выбранных зон (или только снаружи). Отбор встроен в
+   recInSelection(), поэтому действует везде, где действует фильтр городов.
+   Геометрия зоны — как у районов: мультиполигон [полигон][кольцо][lon, lat]. */
+let distOpacity = .16;                   // яркость заливки границ, 0.04–0.6
+let boundLayers = [];                    // свои границы
+let boundSel = [];                       // ключи выбранных зон: 'city:<район>' / '<слой>:<зона>'
+let boundFilter = { on: true, mode: 'in' };
+let _bzNew = '';                         // только что выбранная зона — контур прорисовывается
+const BZ_MAX_VERTICES = 20000;           // ≈400 КБ: состояние уходит целиком на каждое сохранение
+const DIST_TIER_NAME = { high: 'Высокий доход', mid: 'Средний доход', low: 'Ниже / растущий' };
+
+// Районы — ташкентские: на картах других стран их не показываем.
+function cityDistricts() { return COUNTRY === 'uz' ? (DATA.districts || []).filter(f => f && f.ru && Array.isArray(f.mp)) : []; }
+function boundColor(c) { return typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c) ? c : '#12ADC1'; }
+function mpBoxes(mp) {
+  return mp.map(poly => ({ poly, ...ringWithBox(poly[0] || []) }))
+           .filter(p => Array.isArray(p.ring) && p.ring.length >= 4);
+}
+// Все зоны включённых слоёв в порядке отрисовки: сверху — последние.
+let _bzZones = null;
+function boundZones() {
+  if (_bzZones) return _bzZones;
+  const out = [];
+  if (districtsOn) cityDistricts().forEach(f => out.push({
+    key: 'city:' + f.ru, name: f.ru, sub: DIST_TIER_NAME[f.tier] || '', color: incCol[f.tier] || '#12ADC1', mp: f.mp,
+  }));
+  boundLayers.forEach(l => {
+    if (!l.visible) return;
+    l.zones.forEach(z => out.push({ key: l.id + ':' + z.id, name: z.name, sub: l.name, color: boundColor(l.color), mp: z.mp }));
+  });
+  out.forEach(z => { z.boxes = mpBoxes(z.mp); });
+  return (_bzZones = out);
+}
+function zoneHas(z, lat, lon) {
+  for (const b of z.boxes) {
+    if (lat < b.minLat || lat > b.maxLat || lon < b.minLon || lon > b.maxLon) continue;
+    if (!pointInRing(lat, lon, b.ring)) continue;
+    // Дырки (внутренние кольца) — не зона.
+    if (!b.poly.slice(1).some(h => pointInRing(lat, lon, h))) return true;
+  }
+  return false;
+}
+function zoneAt(lat, lon) {
+  const zs = boundZones();
+  for (let i = zs.length - 1; i >= 0; i--) if (zoneHas(zs[i], lat, lon)) return zs[i];
+  return null;
+}
+// Выбранные зоны, которые сейчас на карте: скрытый слой отбор не держит.
+// boundsHold() зовёт это на каждую точку — список кэшируется до bzInvalidate().
+let _bzActive = null;
+function activeBoundZones() {
+  if (_bzActive) return _bzActive;
+  const sel = new Set(boundSel);
+  return (_bzActive = boundZones().filter(z => sel.has(z.key)));
+}
+function boundsActive() { return !!boundFilter.on && activeBoundZones().length > 0; }
+function boundFilterKey() {
+  return boundsActive() ? boundFilter.mode + ':' + activeBoundZones().map(z => z.key).join(',') : '';
+}
+const _bhCache = new Map();
+function bzInvalidate() { _bzZones = null; _bzActive = null; _bhCache.clear(); }
+function boundsHold(r) {
+  if (!boundsActive()) return true;
+  const lat = +r.lat, lon = +r.lon;
+  const key = lat.toFixed(5) + '|' + lon.toFixed(5);
+  let inside = _bhCache.get(key);
+  if (inside === undefined) {
+    inside = activeBoundZones().some(z => zoneHas(z, lat, lon));
+    _bhCache.set(key, inside);
+  }
+  return boundFilter.mode === 'out' ? !inside : inside;
+}
+
 function renderDistricts() {
   districtGroup.clearLayers();
-  if (!districtsOn) return;
-  const tn = { high: 'Высокий доход', mid: 'Средний доход', low: 'Ниже / растущий' };
-  (DATA.districts || []).forEach(f => {
-    const fill = incCol[f.tier];
+  const zones = boundZones();
+  if (!zones.length) return;
+  const sel = new Set(boundSel);
+  const anySel = zones.some(z => sel.has(z.key));
+  const op = Math.min(.6, Math.max(.04, +distOpacity || .16));
+  const edgeOp = Math.min(1, .45 + op * 1.6);
+  const picked = [];
+  zones.forEach(z => {
+    const on = sel.has(z.key);
+    if (on) picked.push(z);
     try {
-      L.polygon(llswap(f.mp), { renderer: distRenderer, color: darken(fill, .2), weight: 2.2,
-                                fillColor: fill, fillOpacity: .16, opacity: .9 })
-       .bindTooltip(`<b style="font-weight:700">${f.ru}</b><br>${tn[f.tier]}`, { className: 'tt', sticky: true })
+      L.polygon(llswap(z.mp), {
+        renderer: distRenderer, color: darken(z.color, .2), weight: on ? 1.5 : 2,
+        fillColor: z.color, opacity: anySel && !on ? edgeOp * .6 : edgeOp,
+        // Выбор подсвечивает зону, остальные чуть уходят в тень.
+        fillOpacity: on ? Math.min(.7, op + .1) : anySel ? op * .6 : op,
+      }).bindTooltip(`<b style="font-weight:700">${esc(z.name)}</b>${z.sub ? '<br>' + esc(z.sub) : ''}<br><span class="tt-hint">${on ? 'Клик — снять выбор' : 'Клик — выбрать'}</span>`,
+                     { className: 'tt', sticky: true })
        .addTo(districtGroup);
-    } catch (e) { console.warn('District render error:', e); }
+    } catch (e) { console.warn('Boundary render error:', e); }
+  });
+  // Контур выбранных — поверх всех: свечение цвета зоны, яркая линия и
+  // тонкий светлый блик по центру, как неоновая трубка.
+  picked.forEach(z => {
+    const ll = llswap(z.mp);
+    L.polygon(ll, { renderer: distRenderer, fill: false, color: z.color, weight: 9, opacity: .9, interactive: false, className: 'bz-glow' }).addTo(districtGroup);
+    const edge = L.polygon(ll, { renderer: distRenderer, fill: false, color: z.color, weight: 3.5, opacity: 1, interactive: false, className: 'bz-edge' + (z.key === _bzNew ? ' bz-new' : '') }).addTo(districtGroup);
+    L.polygon(ll, { renderer: distRenderer, fill: false, color: '#ffffff', weight: 1, opacity: .85, interactive: false, className: 'bz-core' }).addTo(districtGroup);
+    // pathLength=1 — прорисовка контура одной анимацией независимо от длины.
+    const el = edge.getElement(); if (el) el.setAttribute('pathLength', '1');
   });
 }
 function llswap(mp) { return mp.map(poly => poly.map(ring => ring.map(c => [c[1], c[0]]))); }
+
+// Любая правка видимости, выбора или режима отбора — пересчёт всех слоёв.
+function boundsChanged(save = true, rebuildUI = true) {
+  bzInvalidate();
+  // Удалённые зоны из выбора убираем; скрытые оставляем — включат слой, выбор
+  // вернётся. Районы города могут ещё не приехать с `/data` — их не трогаем.
+  const dists = cityDistricts();
+  const known = new Set([...dists.map(f => 'city:' + f.ru), ...boundLayers.flatMap(l => l.zones.map(z => l.id + ':' + z.id))]);
+  boundSel = boundSel.filter(k => known.has(k) || (!dists.length && k.startsWith('city:')));
+  _bzActive = null;
+  renderDistricts();
+  renderHeat(); renderCustomPoints(); renderRecs();
+  if (rebuildUI) buildBoundsUI(); else syncBoundsStatus();
+  const btn = document.getElementById('districts-toggle');
+  if (btn) btn.classList.toggle('on', boundZones().length > 0);
+  if (save) saveState();
+}
+// Состояние приходит с сервера/из файла — проверяем форму и числа. Чего нет
+// в состоянии — сбрасываем: иначе при смене карты остались бы зоны прошлой.
+function cleanMp(mp) {
+  if (!Array.isArray(mp)) return null;
+  const okRing = r => Array.isArray(r) && r.length >= 4 && r.every(c => Array.isArray(c) && Number.isFinite(+c[0]) && Number.isFinite(+c[1]));
+  const out = mp.map(poly => Array.isArray(poly) && okRing(poly[0]) ? poly.filter(okRing).map(r => r.map(c => [+c[0], +c[1]])) : null).filter(Boolean);
+  return out.length ? out : null;
+}
+const bzId = v => String(v == null ? '' : v).replace(/[^\w-]/g, '').slice(0, 40);
+function applyBoundsState(st) {
+  distOpacity = typeof st.distOpacity === 'number' && Number.isFinite(st.distOpacity) ? Math.min(.6, Math.max(.04, st.distOpacity)) : .16;
+  boundLayers = (Array.isArray(st.boundLayers) ? st.boundLayers : []).filter(l => l && bzId(l.id)).map(l => ({
+    id: bzId(l.id), name: String(l.name || 'Граница').slice(0, 40), color: boundColor(l.color), visible: l.visible !== false,
+    zones: (Array.isArray(l.zones) ? l.zones : [])
+      .map(z => z && { id: bzId(z.id), name: String(z.name || 'Зона').slice(0, 60), mp: cleanMp(z.mp) })
+      .filter(z => z && z.id && z.mp),
+  }));
+  boundSel = Array.isArray(st.boundSel) ? st.boundSel.filter(k => typeof k === 'string').slice(0, 500) : [];
+  const f = st.boundFilter && typeof st.boundFilter === 'object' ? st.boundFilter : {};
+  boundFilter = { on: f.on !== false, mode: f.mode === 'out' ? 'out' : 'in' };
+  bzInvalidate();
+}
+function toggleBoundZone(key) {
+  const i = boundSel.indexOf(key);
+  if (i >= 0) { boundSel.splice(i, 1); _bzNew = ''; }
+  else { boundSel.push(key); _bzNew = key; setTimeout(() => { if (_bzNew === key) _bzNew = ''; }, 1200); }
+  boundsChanged();
+}
 
 function renderIncome() {
   if (fieldOverlay) { map.removeLayer(fieldOverlay); fieldOverlay = null; }
@@ -813,7 +964,7 @@ function refreshHeatMax() {
 function renderHeat() {
   let total = 0;
   let needsUiRefresh = false;
-  const selectionKey = !hasCityFilter() || allCitiesSelected() ? '*' : selectedCities.join('|');
+  const selKey = selectionKey();
   heatKeys.forEach(k => {
     const d = DS[k];
     if (!d) return;
@@ -822,7 +973,7 @@ function renderHeat() {
       d._heatMaxCache = new Map();
       d._heatMaxCacheSource = sourceRef;
     }
-    const renderKey = [selectionKey, d.intensity || 1, heatRadius, d.ramp || '', d.color || '', d.opacity == null ? 1 : d.opacity].join('|');
+    const renderKey = [selKey, d.intensity || 1, heatRadius, d.ramp || '', d.color || '', d.opacity == null ? 1 : d.opacity].join('|');
     const legendKey = [d.name || '', d.color || '', d.visible ? 1 : 0, d.recs.length].join('|');
     if (d._legendKey !== legendKey) {
       d._legendKey = legendKey;
@@ -845,7 +996,7 @@ function renderHeat() {
       return;
     }
     needsUiRefresh = true;
-    const fullSelection = !hasCityFilter() || allCitiesSelected();
+    const fullSelection = !selectionActive();
     const recs = fullSelection ? d.recs : d.recs.filter(recInSelection);
     let scale;
     if (fullSelection && d.stats && d.stats.p90) {
@@ -917,7 +1068,7 @@ function shownCount(x) {
   // Легенду могут собрать до первой отрисовки слоя. Без фильтра городов
   // «нарисовано» равно всему слою; с фильтром честнее показать 0 и дождаться
   // рендера, чем вывести неотфильтрованное число.
-  if (!hasCityFilter() || allCitiesSelected()) return (x.recs || []).length;
+  if (!selectionActive()) return (x.recs || []).length;
   return 0;
 }
 function updateCountBadge() {
@@ -1026,7 +1177,7 @@ function renderTags(force) {
   const keys = tagLayerKeys();
   const b = map.getBounds();
   const sig = keys.map(k => k + ':' + layerKeyColor(DS[k]) + ':' + (DS[k].icon || '') + ':' + (DS[k].shape || '') + ':' + (DS[k]._recordsLoaded ? DS[k].recs.length : -1)).join('|')
-    + '|' + selectedCities.join(',')
+    + '|' + selectionKey() + cityScope
     + '|' + [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(v => v.toFixed(4)).join(',');
   if (!force && sig === _tagSig) return;
   _tagSig = sig;
@@ -2102,7 +2253,7 @@ function setCityInfoPop(open) {
   const pop = document.getElementById('city-pop');
   const btn = document.getElementById('city-info-btn');
   if (!pop || !btn) return;
-  if (open) { renderCityInfo(); setCityPopover(false); }
+  if (open) { renderCityInfo(); setCityPopover(false); setBoundsPop(false); }
   pop.hidden = !open;
   btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   btn.classList.toggle('on', open);
@@ -2132,6 +2283,7 @@ function setCityPopover(open, focusSearch = true) {
   const trigger = document.getElementById('city-filter-trigger');
   if (!pop || !trigger) return;
   if (open && !document.getElementById('city-pop')?.hidden) setCityInfoPop(false);
+  if (open) setBoundsPop(false);
   pop.hidden = !open;
   trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
   document.getElementById('city-filter')?.classList.toggle('open', open);
@@ -2573,6 +2725,7 @@ let COUNTRY = 'uz';
 // wage units. Called at the start of startApp() once the map is known.
 function applyCountry(mapId) {
   COUNTRY = mapInfo(mapId).country === 'kg' ? 'kg' : 'uz';
+  bzInvalidate();   // районы Ташкента в «Границах» — только на картах UZ
   const co = COUNTRIES[COUNTRY];
   CITY_STATS   = co.stats;
   SMOKE_M = co.smokeM; SMOKE_F = co.smokeF; SMOKE_AVG = (SMOKE_M + SMOKE_F) / 2;
@@ -2789,7 +2942,7 @@ const LABEL_FONT = '600 11px Inter, sans-serif';
 const LABEL_H = 18, LABEL_PAD = 15, LABEL_MAX = 28, LABEL_GAP = 2;
 const _lblCtx = document.createElement('canvas').getContext('2d');
 const _lblWidth = new Map();
-const MAP_OVERLAYS = '#city-bar, #layer-legend, #tag-note, #map-stat, #mode-badge, #update-banner, #zoom-ctl, #side-reopen, #ruler-hint';
+const MAP_OVERLAYS = '#city-bar, #layer-legend, #tag-note, #map-stat, #mode-badge, #update-banner, #zoom-ctl, #side-reopen, #ruler-hint, #bdraw-bar';
 let _lblFrame = 0;
 
 function labelText(name) {
@@ -3042,6 +3195,442 @@ map.on('zoomend', () => { if (ruler.pts.length) rulerDraw(); });
     rulerSync();
   });
 })();
+
+/* ── «ГРАНИЦЫ»: выбор кликом, рисование зон, панель ─────────────────────
+   Выбор — проверкой точки в полигоне по клику на карту, а не событиями SVG:
+   холст меток лежит выше слоя границ и перехватил бы клики по районам.
+   Клик, которым закрыли карточку точки, выбор не меняет. */
+let _bzHadPopup = false;
+map.on('preclick', () => { _bzHadPopup = !!(map._popup && map.hasLayer(map._popup)); });
+map.on('click', e => {
+  if (_bzHadPopup) { _bzHadPopup = false; return; }
+  if (bdraw.on || rulerActive() || _rpPickingGeo) return;
+  const z = zoneAt(e.latlng.lat, e.latlng.lng);
+  if (z) toggleBoundZone(z.key);
+});
+
+// Рисование своей зоны: клики ставят вершины, замыкает клик по первой
+// вершине, двойной клик или Enter; Backspace — шаг назад, Esc — отмена.
+const bdraw = { on: false, layerId: '', pts: [], group: L.layerGroup().addTo(map), live: null };
+function bdrawLayer() { return boundLayers.find(l => l.id === bdraw.layerId); }
+function bdrawStart(layerId) {
+  setBoundsPop(false);
+  if (ruler.sticky) { ruler.sticky = false; rulerSync(); }
+  bdraw.on = true; bdraw.layerId = layerId; bdraw.pts = [];
+  map.doubleClickZoom.disable();
+  bdrawRender();
+}
+function bdrawEnd() {
+  bdraw.on = false; bdraw.pts = [];
+  bdraw.group.clearLayers(); bdraw.live = null;
+  map.doubleClickZoom.enable();
+  bdrawRender();
+}
+function bdrawCommit() {
+  // Двойной клик успевает поставить две вершины в одно место — склеиваем.
+  const pts = [];
+  bdraw.pts.forEach(p => {
+    const last = pts[pts.length - 1];
+    if (!last || map.latLngToContainerPoint(last).distanceTo(map.latLngToContainerPoint(p)) > 4) pts.push(p);
+  });
+  const l = bdrawLayer();
+  if (!l) { bdrawEnd(); return; }
+  if (pts.length < 3) { toast('Для зоны нужно минимум 3 точки', 'err'); bdraw.pts = pts; bdrawRender(); return; }
+  const ring = pts.map(p => [+p.lng.toFixed(5), +p.lat.toFixed(5)]);
+  ring.push(ring[0].slice());
+  const n = l.zones.length + 1;
+  l.zones.push({ id: 'z' + Date.now().toString(36), name: `Зона ${n}`, mp: [[ring]] });
+  l.visible = true;
+  _bzOpen.add(l.id);
+  bdrawEnd();
+  boundsChanged();
+  toast(`Зона добавлена в «${l.name}»`, 'ok');
+  setBoundsPop(true);
+}
+function bdrawRender() {
+  map.getContainer().classList.toggle('draw-mode', bdraw.on);
+  const bar = document.getElementById('bdraw-bar');
+  if (bar) {
+    bar.hidden = !bdraw.on;
+    const t = document.getElementById('bdraw-name');
+    const l = bdrawLayer();
+    if (t) t.textContent = l ? l.name : '';
+    const ok = document.getElementById('bdraw-done');
+    if (ok) ok.disabled = bdraw.pts.length < 3;
+  }
+  bdraw.group.clearLayers(); bdraw.live = null;
+  if (!bdraw.on) return;
+  const col = boundColor((bdrawLayer() || {}).color);
+  const pts = bdraw.pts;
+  if (pts.length >= 3) L.polygon(pts, { color: col, weight: 2.5, dashArray: '6 6', fillColor: col, fillOpacity: .15, interactive: false }).addTo(bdraw.group);
+  else if (pts.length === 2) L.polyline(pts, { color: col, weight: 2.5, dashArray: '6 6', interactive: false }).addTo(bdraw.group);
+  pts.forEach((p, i) => L.circleMarker(p, {
+    radius: i === 0 && pts.length >= 3 ? 7 : 4.5, weight: 2, color: '#fff', fillColor: col, fillOpacity: 1, interactive: false,
+    className: i === 0 && pts.length >= 3 ? 'bz-first' : '',
+  }).addTo(bdraw.group));
+}
+_mapEl.addEventListener('click', e => {
+  if (!bdraw.on || rulerActive()) return;
+  if (e.target.closest('.leaflet-control-container') || e.target.closest('.leaflet-popup')) return;
+  if (_rulerDown && Math.hypot(e.clientX - _rulerDown.x, e.clientY - _rulerDown.y) > 5) return;
+  e.preventDefault(); e.stopPropagation();
+  const p = map.mouseEventToContainerPoint(e);
+  if (bdraw.pts.length >= 3 && map.latLngToContainerPoint(bdraw.pts[0]).distanceTo(p) < 12) { bdrawCommit(); return; }
+  bdraw.pts.push(map.containerPointToLatLng(p));
+  bdrawRender();
+}, true);
+_mapEl.addEventListener('dblclick', e => {
+  if (!bdraw.on) return;
+  e.preventDefault(); e.stopPropagation();
+  bdrawCommit();
+}, true);
+map.on('mousemove', e => {
+  if (!bdraw.on || !bdraw.pts.length) return;
+  const last = bdraw.pts[bdraw.pts.length - 1];
+  const ends = bdraw.pts.length >= 2 ? [last, e.latlng, bdraw.pts[0]] : [last, e.latlng];
+  if (!bdraw.live) bdraw.live = L.polyline(ends, { color: boundColor((bdrawLayer() || {}).color), weight: 1.5, dashArray: '3 6', opacity: .9, interactive: false }).addTo(bdraw.group);
+  else bdraw.live.setLatLngs(ends);
+});
+document.addEventListener('keydown', e => {
+  if (!bdraw.on || rulerBlocked()) return;
+  // stopImmediatePropagation: иначе тот же Esc сразу закрыл бы вернувшуюся панель.
+  if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); bdrawEnd(); setBoundsPop(true); }
+  else if (e.key === 'Enter') { e.preventDefault(); bdrawCommit(); }
+  else if (e.key === 'Backspace' && bdraw.pts.length) { e.preventDefault(); bdraw.pts.pop(); bdrawRender(); }
+});
+(function wireBdrawBar() {
+  const bar = document.getElementById('bdraw-bar');
+  if (!bar) return;
+  L.DomEvent.disableClickPropagation(bar);
+  document.getElementById('bdraw-done')?.addEventListener('click', bdrawCommit);
+  document.getElementById('bdraw-undo')?.addEventListener('click', () => { if (bdraw.pts.length) { bdraw.pts.pop(); bdrawRender(); } });
+  document.getElementById('bdraw-cancel')?.addEventListener('click', () => { bdrawEnd(); setBoundsPop(true); });
+})();
+
+// GeoJSON: Polygon / MultiPolygon, имя зоны — из properties.name.
+function geojsonZones(gj) {
+  const feats = gj && gj.type === 'FeatureCollection' ? gj.features
+    : gj && gj.type === 'Feature' ? [gj]
+    : gj && gj.type ? [{ type: 'Feature', properties: {}, geometry: gj }] : [];
+  const okRing = r => Array.isArray(r) && r.length >= 4 && r.every(c => Array.isArray(c) && isFinite(+c[0]) && isFinite(+c[1]) && Math.abs(+c[0]) <= 180 && Math.abs(+c[1]) <= 90);
+  const cleanPoly = poly => Array.isArray(poly) && okRing(poly[0])
+    ? poly.filter(okRing).map(r => r.map(c => [+(+c[0]).toFixed(5), +(+c[1]).toFixed(5)])) : null;
+  const out = [];
+  (feats || []).forEach((f, i) => {
+    const g = f && f.geometry;
+    if (!g) return;
+    const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+    const mp = (polys || []).map(cleanPoly).filter(Boolean);
+    if (!mp.length) return;
+    const p = f.properties || {};
+    const nm = [p.name_ru, p['name:ru'], p.name, p.NAME, p.Name, p.title].find(v => typeof v === 'string' && v.trim());
+    out.push({ name: (nm || `Зона ${i + 1}`).trim().slice(0, 60), mp });
+  });
+  return out;
+}
+function boundVertexCount() {
+  return boundLayers.reduce((a, l) => a + l.zones.reduce((b, z) => b + z.mp.reduce((c, poly) => c + poly.reduce((d, r) => d + r.length, 0), 0), 0), 0);
+}
+function importGeojsonInto(layerId, file) {
+  const l = boundLayers.find(x => x.id === layerId);
+  if (!l || !file) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    let zones;
+    try { zones = geojsonZones(JSON.parse(rd.result)); } catch (_) { toast('Файл не похож на GeoJSON', 'err'); return; }
+    if (!zones.length) { toast('В файле нет полигонов (Polygon / MultiPolygon)', 'err', 4000); return; }
+    const add = zones.reduce((a, z) => a + z.mp.reduce((b, poly) => b + poly.reduce((c, r) => c + r.length, 0), 0), 0);
+    if (boundVertexCount() + add > BZ_MAX_VERTICES) {
+      toast(`Слишком подробные границы: ${add.toLocaleString('ru-RU')} вершин. Упростите файл (например, mapshaper.org) до ${BZ_MAX_VERTICES.toLocaleString('ru-RU')}.`, 'err', 6000);
+      return;
+    }
+    const t = Date.now().toString(36);
+    zones.forEach((z, i) => l.zones.push({ id: 'z' + t + i, name: z.name, mp: z.mp }));
+    l.visible = true;
+    _bzOpen.add(l.id);
+    boundsChanged();
+    const pts = zones.flatMap(z => z.mp.flatMap(poly => poly[0].map(c => [c[1], c[0]])));
+    if (pts.length) map.flyToBounds(L.latLngBounds(pts).pad(.1), { duration: .6 });
+    toast(`Добавлено ${zones.length} ${plural(zones.length, 'зона', 'зоны', 'зон')} в «${l.name}»`, 'ok');
+  };
+  rd.readAsText(file);
+}
+
+// Панель «Границы» над картой.
+const _bzOpen = new Set();
+let _bzCreating = false, _bzNewColor = '';
+function setBoundsPop(open) {
+  const pop = document.getElementById('bounds-pop');
+  const btn = document.getElementById('districts-toggle');
+  if (!pop || !btn) return;
+  if (open) { buildBoundsUI(); setCityPopover(false); setCityInfoPop(false); }
+  else _bzCreating = false;
+  pop.hidden = !open;
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+function zonesWord(n) { return `${n} ${plural(n, 'зона', 'зоны', 'зон')}`; }
+function buildBoundsUI() {
+  const box = document.getElementById('bounds-ui');
+  if (!box) return;
+  const sel = new Set(boundSel);
+  const admin = isAdmin();
+  const dists = cityDistricts();
+  const zoneRow = (key, name, color, delKey) => `
+    <div class="bz-zone${sel.has(key) ? ' on' : ''}">
+      <button type="button" class="bz-zbtn" data-bzsel="${esc(key)}" aria-pressed="${sel.has(key)}" title="${sel.has(key) ? 'Снять выбор' : 'Выбрать'}"><i style="--c:${color}"></i><span>${esc(name)}</span></button>
+      ${delKey ? `<button type="button" class="lc-ic admin-only" data-bzzdel="${esc(delKey)}" title="Удалить зону" aria-label="Удалить зону «${esc(name)}»">${uiIcon('x', 13)}</button>` : ''}
+    </div>`;
+  const allSel = keys => keys.length && keys.every(k => sel.has(k));
+  const pickAll = (id, keys) => keys.length ? `<button type="button" class="lc-link" data-bzall="${esc(id)}">${allSel(keys) ? 'Снять выбор' : 'Выбрать все'}</button>` : '<span></span>';
+  let html = `<div class="bz-head"><b>Границы</b><span>Клик по зоне на карте — выбрать, можно несколько</span></div>`;
+
+  if (dists.length) {
+    const keys = dists.map(f => 'city:' + f.ru);
+    const open = _bzOpen.has('city');
+    const nSel = keys.filter(k => sel.has(k)).length;
+    html += `
+    <div class="lc bz-layer${open ? ' open' : ''}${districtsOn ? '' : ' off'}" data-bzid="city">
+      <div class="lc-row">
+        <span class="lc-sw bz-sw-city" aria-hidden="true" style="background:linear-gradient(135deg, ${incCol.high}, ${incCol.mid} 50%, ${incCol.low})"></span>
+        <div class="lc-name"><span class="lc-t">Районы Ташкента</span></div>
+        <div class="cbx sm${districtsOn ? ' on' : ''}" data-bzvis="city" role="switch" tabindex="0" aria-checked="${districtsOn}" aria-label="Показывать районы Ташкента"></div>
+      </div>
+      <div class="lc-sub">
+        <span class="lc-n" data-bzmore="city">${dists.length} ${plural(dists.length, 'район', 'района', 'районов')}${nSel ? ` · выбрано ${nSel}` : ''}</span>
+        <div class="lc-tools"><button type="button" class="lc-ic lc-more" data-bzmore="city" title="Список районов" aria-label="Список районов" aria-expanded="${open}">${uiIcon('chevron')}</button></div>
+      </div>
+      <div class="lc-body">
+        <div class="bz-zones">${dists.map(f => zoneRow('city:' + f.ru, f.ru, incCol[f.tier] || '#12ADC1', '')).join('')}</div>
+        <div class="lc-foot"><span></span>${pickAll('city', keys)}</div>
+      </div>
+    </div>`;
+  }
+
+  html += `<div class="bz-sec">Свои границы</div>`;
+  if (!boundLayers.length) {
+    html += `<div class="lc-empty">${admin
+      ? 'Своих границ пока нет. Создайте слой и нарисуйте зоны на карте или загрузите GeoJSON.'
+      : 'Своих границ пока нет — их добавляет владелец карты.'}</div>`;
+  }
+  boundLayers.forEach(l => {
+    const id = esc(l.id);
+    const keys = l.zones.map(z => l.id + ':' + z.id);
+    const open = _bzOpen.has(l.id);
+    const nSel = keys.filter(k => sel.has(k)).length;
+    const col = boundColor(l.color);
+    html += `
+    <div class="lc bz-layer${open ? ' open' : ''}${l.visible ? '' : ' off'}" data-bzid="${id}">
+      <div class="lc-row">
+        <label class="lc-sw bz-sw" style="background:${col}" title="${admin ? 'Цвет границы' : ''}">${admin ? `<input type="color" data-bzcol="${id}" value="${col}" aria-label="Цвет границы «${esc(l.name)}»"/>` : ''}</label>
+        <div class="lc-name"><span class="lc-t" title="${esc(l.name)}">${esc(l.name)}</span>${admin ? `<button type="button" class="lc-ic lc-ren" data-bzren="${id}" title="Переименовать" aria-label="Переименовать «${esc(l.name)}»">${uiIcon('pencil', 13)}</button>` : ''}</div>
+        <div class="cbx sm${l.visible ? ' on' : ''}" data-bzvis="${id}" role="switch" tabindex="0" aria-checked="${l.visible}" aria-label="Показывать «${esc(l.name)}» на карте"></div>
+      </div>
+      <div class="lc-sub">
+        <span class="lc-n" data-bzmore="${id}">${zonesWord(l.zones.length)}${nSel ? ` · выбрано ${nSel}` : ''}</span>
+        <div class="lc-tools">
+          <button type="button" class="lc-ic admin-only" data-bzdraw="${id}" title="Нарисовать зону на карте" aria-label="Нарисовать зону">${uiIcon('plus')}</button>
+          <button type="button" class="lc-ic admin-only" data-bzup="${id}" title="Загрузить зоны из GeoJSON" aria-label="Загрузить GeoJSON">${uiIcon('upload')}</button>
+          <button type="button" class="lc-ic lc-del admin-only" data-bzdel="${id}" title="Удалить слой границ" aria-label="Удалить слой границ">${uiIcon('trash')}</button>
+          <button type="button" class="lc-ic lc-more" data-bzmore="${id}" title="Список зон" aria-label="Список зон" aria-expanded="${open}">${uiIcon('chevron')}</button>
+        </div>
+      </div>
+      <div class="lc-body">
+        ${l.zones.length ? `<div class="bz-zones">${l.zones.map(z => zoneRow(l.id + ':' + z.id, z.name, col, l.id + ':' + z.id)).join('')}</div>`
+          : `<div class="bz-none">Зон нет — нажмите «+» и обведите участок на карте.</div>`}
+        <div class="lc-foot"><span></span>${pickAll(l.id, keys)}</div>
+      </div>
+    </div>`;
+  });
+  if (admin) {
+    if (_bzCreating) {
+      const c = boundColor(_bzNewColor || SWATCHES[(boundLayers.length + 6) % SWATCHES.length]);
+      _bzNewColor = c;
+      html += `
+      <div class="bz-new">
+        <input type="text" id="bz-new-name" maxlength="40" placeholder="Название, например «Зона доставки»"/>
+        <div class="pp2-sw">${SWATCHES.map(s => `<button type="button" class="sw${s.toLowerCase() === c.toLowerCase() ? ' on' : ''}" data-bzsw="${s}" style="background:${s}" aria-label="Цвет ${s}"></button>`).join('')}</div>
+        <div class="bz-new-act">
+          <button type="button" class="create-btn" data-bznew="draw">${uiIcon('pencil', 14)} Нарисовать на карте</button>
+          <button type="button" class="create-btn ghost" data-bznew="file">${uiIcon('upload', 14)} Из GeoJSON</button>
+          <button type="button" class="lc-link" data-bznew="cancel">Отмена</button>
+        </div>
+      </div>`;
+    } else {
+      html += `<button type="button" class="create-btn ghost bz-add" data-bzcreate>${uiIcon('plus', 14)} Новая граница</button>`;
+    }
+  }
+
+  const op = Math.min(.6, Math.max(.04, +distOpacity || .16));
+  html += `
+    <div class="bz-sec">Яркость заливки</div>
+    <div class="lc-sl bz-op"><span>Заливка</span><input type="range" id="bz-opacity" min="0.04" max="0.6" step="0.02" value="${op}" aria-label="Яркость заливки границ"/><b id="bz-opacity-v">${Math.round(op * 100)}%</b></div>
+    <div class="bz-filter" id="bz-filter">
+      <div class="lc-opt"><div class="cbx sm${boundFilter.on ? ' on' : ''}" data-bzfilter role="switch" tabindex="0" aria-checked="${boundFilter.on}" aria-label="Отбирать точки по выбранным границам"></div><span>Отбирать точки по выбранным зонам</span></div>
+      <div class="city-scope-btns bz-mode${boundFilter.on ? '' : ' dim'}" data-liquid="on" role="group" aria-label="Какие точки показывать">
+        <button type="button" class="city-scope-btn${boundFilter.mode === 'in' ? ' on' : ''}" data-bzmode="in" aria-pressed="${boundFilter.mode === 'in'}">Только внутри</button>
+        <button type="button" class="city-scope-btn${boundFilter.mode === 'out' ? ' on' : ''}" data-bzmode="out" aria-pressed="${boundFilter.mode === 'out'}">Только снаружи</button>
+      </div>
+      <div class="bz-status">${boundsStatusHtml()}</div>
+    </div>`;
+  // Перестройка (например, клик по зоне на карте) не стирает набранное имя.
+  const typed = box.querySelector('#bz-new-name')?.value || '';
+  box.innerHTML = html;
+  if (typed && box.querySelector('#bz-new-name')) box.querySelector('#bz-new-name').value = typed;
+
+  const toggleOpen = id => { if (_bzOpen.has(id)) _bzOpen.delete(id); else _bzOpen.add(id); buildBoundsUI(); };
+  box.querySelectorAll('[data-bzmore]').forEach(el => el.addEventListener('click', () => toggleOpen(el.dataset.bzmore)));
+  box.querySelectorAll('[data-bzvis]').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.bzvis;
+      if (id === 'city') districtsOn = !districtsOn;
+      else { const l = boundLayers.find(x => x.id === id); if (!l) return; l.visible = !l.visible; }
+      boundsChanged();
+    });
+    el.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); el.click(); } });
+  });
+  box.querySelectorAll('[data-bzsel]').forEach(el => el.addEventListener('click', () => {
+    const key = el.dataset.bzsel;
+    // Выбор в списке скрытого слоя бессмыслен — сразу показываем слой.
+    const lid = key.slice(0, key.indexOf(':'));
+    if (lid === 'city') districtsOn = true;
+    else { const l = boundLayers.find(x => x.id === lid); if (l) l.visible = true; }
+    toggleBoundZone(key);
+  }));
+  box.querySelectorAll('[data-bzall]').forEach(el => el.addEventListener('click', () => {
+    const id = el.dataset.bzall;
+    const keys = id === 'city' ? cityDistricts().map(f => 'city:' + f.ru)
+      : ((boundLayers.find(x => x.id === id) || { zones: [] }).zones.map(z => id + ':' + z.id));
+    if (id === 'city') districtsOn = true;
+    else { const l = boundLayers.find(x => x.id === id); if (l) l.visible = true; }
+    if (allSel(keys)) boundSel = boundSel.filter(k => !keys.includes(k));
+    else boundSel = boundSel.concat(keys.filter(k => !sel.has(k)));
+    _bzNew = '';
+    boundsChanged();
+  }));
+  box.querySelectorAll('[data-bzzdel]').forEach(el => el.addEventListener('click', () => {
+    const key = el.dataset.bzzdel, i = key.indexOf(':');
+    const l = boundLayers.find(x => x.id === key.slice(0, i)); if (!l) return;
+    const z = l.zones.find(x => x.id === key.slice(i + 1)); if (!z) return;
+    if (!confirm(`Удалить зону «${z.name}»?`)) return;
+    l.zones = l.zones.filter(x => x !== z);
+    boundsChanged();
+  }));
+  box.querySelectorAll('[data-bzdel]').forEach(el => el.addEventListener('click', () => {
+    const l = boundLayers.find(x => x.id === el.dataset.bzdel); if (!l) return;
+    if (!confirm(`Удалить слой границ «${l.name}» со всеми зонами (${l.zones.length})?`)) return;
+    boundLayers = boundLayers.filter(x => x !== l);
+    boundsChanged();
+  }));
+  box.querySelectorAll('[data-bzdraw]').forEach(el => el.addEventListener('click', () => bdrawStart(el.dataset.bzdraw)));
+  box.querySelectorAll('[data-bzup]').forEach(el => el.addEventListener('click', () => pickGeojson(el.dataset.bzup)));
+  box.querySelectorAll('[data-bzcol]').forEach(el => {
+    el.addEventListener('input', () => { el.parentElement.style.background = el.value; });
+    el.addEventListener('change', () => {
+      const l = boundLayers.find(x => x.id === el.dataset.bzcol); if (!l) return;
+      l.color = boundColor(el.value); boundsChanged();
+    });
+  });
+  box.querySelectorAll('[data-bzren]').forEach(el => el.addEventListener('click', () => {
+    const l = boundLayers.find(x => x.id === el.dataset.bzren); if (!l) return;
+    const nmEl = el.closest('.lc-name'); if (!nmEl) return;
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.value = l.name; inp.maxLength = 40; inp.className = 'lc-rename';
+    nmEl.replaceWith(inp); inp.focus(); inp.select();
+    let done = false;
+    const commit = save => {
+      if (done) return; done = true;
+      const v = inp.value.trim();
+      if (save && v && v !== l.name) { l.name = v; boundsChanged(); } else buildBoundsUI();
+    };
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') commit(true); else if (e.key === 'Escape') commit(false); });
+    inp.addEventListener('blur', () => commit(true));
+  }));
+  const create = box.querySelector('[data-bzcreate]');
+  if (create) create.addEventListener('click', () => { _bzCreating = true; _bzNewColor = ''; buildBoundsUI(); box.querySelector('#bz-new-name')?.focus(); });
+  box.querySelectorAll('[data-bzsw]').forEach(el => el.addEventListener('click', () => {
+    _bzNewColor = el.dataset.bzsw;
+    box.querySelectorAll('[data-bzsw]').forEach(b => b.classList.toggle('on', b === el));
+  }));
+  box.querySelectorAll('[data-bznew]').forEach(el => el.addEventListener('click', () => {
+    const act = el.dataset.bznew;
+    if (act === 'cancel') { _bzCreating = false; buildBoundsUI(); return; }
+    const nameEl = box.querySelector('#bz-new-name');
+    const name = (nameEl && nameEl.value.trim()) || `Граница ${boundLayers.length + 1}`;
+    const l = { id: 'b' + Date.now().toString(36), name: name.slice(0, 40), color: boundColor(_bzNewColor), visible: true, zones: [] };
+    boundLayers.push(l);
+    _bzCreating = false;
+    _bzOpen.add(l.id);
+    boundsChanged();
+    if (act === 'draw') bdrawStart(l.id); else pickGeojson(l.id);
+  }));
+  const nm = box.querySelector('#bz-new-name');
+  if (nm) nm.addEventListener('keydown', e => { if (e.key === 'Enter') box.querySelector('[data-bznew="draw"]')?.click(); });
+  const opEl = box.querySelector('#bz-opacity');
+  if (opEl) {
+    opEl.addEventListener('input', () => {
+      distOpacity = +opEl.value;
+      const v = box.querySelector('#bz-opacity-v'); if (v) v.textContent = Math.round(distOpacity * 100) + '%';
+      renderDistricts();
+    });
+    opEl.addEventListener('change', () => saveState());
+  }
+  const flt = box.querySelector('[data-bzfilter]');
+  if (flt) {
+    flt.addEventListener('click', () => { boundFilter.on = !boundFilter.on; boundsChanged(); });
+    flt.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flt.click(); } });
+  }
+  box.querySelectorAll('[data-bzmode]').forEach(el => el.addEventListener('click', () => {
+    if (boundFilter.mode === el.dataset.bzmode) return;
+    boundFilter.mode = el.dataset.bzmode;
+    // Кнопки меняем на месте — капля перетекает, а не появляется заново.
+    box.querySelectorAll('[data-bzmode]').forEach(b => { const on = b === el; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+    boundsChanged(true, false);
+  }));
+  wireBoundsStatus(box);
+}
+function boundsStatusHtml() {
+  const nAct = activeBoundZones().length, nAll = boundSel.length;
+  if (!nAll) return 'Ничего не выбрано — кликните зону на карте или в списке.';
+  const what = !boundFilter.on ? ' · отбор выключен' : nAct ? '' : ' · все скрыты';
+  return `Выбрано: ${zonesWord(nAll)}${nAct && nAct < nAll ? ` (на карте ${nAct})` : ''}${what} <button type="button" class="lc-link" data-bzclear>Сбросить</button>`;
+}
+function wireBoundsStatus(box) {
+  const clr = box.querySelector('[data-bzclear]');
+  if (clr) clr.addEventListener('click', () => { boundSel = []; _bzNew = ''; boundsChanged(); });
+}
+function syncBoundsStatus() {
+  const st = document.querySelector('#bz-filter .bz-status');
+  if (!st) return;
+  st.innerHTML = boundsStatusHtml();
+  wireBoundsStatus(st);
+}
+function pickGeojson(layerId) {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.geojson,.json,application/geo+json,application/json';
+  inp.addEventListener('change', () => { if (inp.files && inp.files[0]) importGeojsonInto(layerId, inp.files[0]); });
+  inp.click();
+}
+function wireBoundsPop() {
+  const btn = document.getElementById('districts-toggle');
+  const pop = document.getElementById('bounds-pop');
+  if (!btn || !pop || btn._wired) return;
+  btn._wired = true;
+  btn.addEventListener('click', () => setBoundsPop(pop.hidden));
+  // Клики по карте панель не закрывают: в ней видно, как меняется выбор зон.
+  document.addEventListener('pointerdown', e => {
+    if (!pop.hidden && !e.target.closest('#bounds-wrap') && !e.target.closest('#map') && !e.target.closest('.paint-pop')) setBoundsPop(false);
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !pop.hidden && !bdraw.on) setBoundsPop(false); });
+  const hm = hoverMenu({
+    trigger: btn,
+    panel: () => pop,
+    isOpen: () => !pop.hidden,
+    open: () => setBoundsPop(true),
+    close: () => setBoundsPop(false),
+    canOpen: () => !bdraw.on,
+  });
+  if (hm) hm.bindPanel();
+}
 
 function syncLabelAllBtn() {
   const btn = document.getElementById('pt-labels-all');
@@ -4008,7 +4597,7 @@ function confirmLayerModal() {
 // Re-render everything after a layer's data changes, then fly the map to it.
 function focusNewLayer(key) {
   const d = DS[key]; if (!d) return;
-  if (hasCityFilter() && d.recs.length && !d.recs.some(recInSelection)) { selectedCities = []; buildCityUI(); }
+  if (hasCityFilter() && d.recs.length && !d.recs.some(recInCities)) { selectedCities = []; buildCityUI(); }
   // buildRtExclUI обязателен: без него новый слой не появлялся в списке
   // исключений адресной программы до перезагрузки страницы.
   buildHeatUI(); rebuildUpTarget(); buildAddrSrcSel(); buildRecBasisSel(); buildRtExclUI();
@@ -4278,6 +4867,9 @@ function buildStateSnapshot() {
     // Keep the legacy field for older consumers; it represents only a single selection.
     city: selectedCities.length === 1 ? selectedCities[0] : '',
     covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
+    // «Границы»: свои зоны (геометрия — только контуры), выбор и режим отбора.
+    distOpacity, boundLayers: boundLayers.map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, zones: l.zones })),
+    boundSel: boundSel.slice(), boundFilter: { ...boundFilter },
     showHeatAll, showPointsAll,
     cityScope,
     addrSrcKeys, addrRefKeys, rtRadius, rtRadiusOp, rtExclRadius, rtExclOp, rtExclKeys,
@@ -4425,6 +5017,7 @@ function applySnapshot(st) {
   const scope = st.cityScope || st.tashkentScope;
   if (scope === 'city' || scope === 'region') cityScope = scope;
   if (typeof st.districtsOn  === 'boolean') districtsOn  = st.districtsOn;
+  applyBoundsState(st);
   if (typeof st.incomeHeatOn === 'boolean') incomeHeatOn = st.incomeHeatOn;
   if (typeof st.coresOn      === 'boolean') coresOn      = st.coresOn;
   // Старые состояния хранили один ключ строкой — переносим в список.
@@ -4848,7 +5441,7 @@ function runAddrFilter() {
   const srcName = addrSrcName();
 
   let points = addrSrcRecs();
-  if (hasCityFilter()) points = points.filter(recInSelection);
+  if (selectionActive()) points = points.filter(recInSelection);
 
   const refPts = addrRefPoints();
 
@@ -5200,6 +5793,7 @@ async function pruneOldLayerRevisions(revision) {
 function dataRevision(data) { return (data && (data._savedAt || data._revision)) || ''; }
 function applyData(data) {
   DATA = Object.assign(data, { _loaded: true });
+  bzInvalidate();   // районы города для «Границ» приехали только сейчас
   Object.assign(DS.cig, data.cig || {});
   Object.assign(DS.sticks, data.sticks || {});
   DS.cig.ramp = DS.cig.ramp || 'warm';
@@ -5535,6 +6129,11 @@ function stateFingerprint(snapshot) {
     heatBoost: snapshot.heatBoost, heatBlend: snapshot.heatBlend,
     showHeatAll: snapshot.showHeatAll !== false, showPointsAll: !!snapshot.showPointsAll,
     heatRadius: snapshot.heatRadius, districtsOn: snapshot.districtsOn,
+    distOpacity: snapshot.distOpacity, boundSel: snapshot.boundSel || [], boundFilter: snapshot.boundFilter || null,
+    // Геометрию зон целиком не сравниваем: зоны не правятся по вершинам, их
+    // только добавляют и удаляют — хватает идентификатора, имени и числа вершин.
+    boundLayers: (snapshot.boundLayers || []).map(l => [l.id, l.name, l.color, l.visible,
+      (l.zones || []).map(z => [z.id, z.name, JSON.stringify(z.mp || []).length].join('~')).join('|')]),
     cityScope: snapshot.cityScope || snapshot.tashkentScope,
     incomeHeatOn: snapshot.incomeHeatOn, coresOn: snapshot.coresOn,
     addrSrcKeys: snapshot.addrSrcKeys, addrRefKeys: snapshot.addrRefKeys,
@@ -5711,7 +6310,7 @@ function syncControls() {
   $('heat-blend').value    = heatBlend;
   $('rec-show').classList.toggle('on', recShow);
   buildRecBasisSel();
-  const distBtn = $('districts-toggle'); if (distBtn) distBtn.classList.toggle('on', districtsOn);
+  const distBtn = $('districts-toggle'); if (distBtn) distBtn.classList.toggle('on', boundZones().length > 0);
   $('s-rt-radius').value  = rtRadius;     $('v-rt-radius').textContent = fmtD(rtRadius);
   $('op-rt-radius').value = rtRadiusOp;
   $('s-rt-excl').value    = rtExclRadius; $('v-rt-excl').textContent   = fmtD(rtExclRadius);
@@ -5869,7 +6468,7 @@ function wireEvents() {
     reset();
     // The selected-city filter would otherwise silently hide points that fall
     // in other cities — reset to "Все" so the freshly uploaded layer is visible.
-    if (hasCityFilter() && !d.recs.some(recInSelection)) { selectedCities = []; buildCityUI(); }
+    if (hasCityFilter() && !d.recs.some(recInCities)) { selectedCities = []; buildCityUI(); }
     buildHeatUI(); renderHeat(); renderRecs(); buildRtExclUI();
     // Frame the map on the new data so it's obvious it loaded.
     const bpts = d.recs.filter(recInSelection).map(r => [r.lat, r.lon]);
@@ -5897,12 +6496,8 @@ function wireEvents() {
     pushDataset(saveDsBtn);
   });
 
-  // Districts borders toggle (next to cities on the map)
-  $('districts-toggle').addEventListener('click', e => {
-    districtsOn = !districtsOn;
-    e.currentTarget.classList.toggle('on', districtsOn);
-    renderDistricts(); saveState();
-  });
+  // «Границы» над картой: районы города и свои зоны.
+  wireBoundsPop();
 
   // Custom zoom controls
   const zc = $('zoom-ctl');
@@ -6770,8 +7365,6 @@ async function startApp() {
   showRoleBadge();
   wireMapSwitch();
   applyCountry(currentMap);
-  const distBtn = document.getElementById('districts-toggle');
-  if (distBtn) distBtn.style.display = COUNTRY === 'uz' ? '' : 'none';
 
   const legacyLocal = readLocalSnapshot();
   const cachedState = await cachedStatePromise;
