@@ -1036,7 +1036,8 @@ function compactLayerChunk(recs, offset, limit, revision, key, map) {
   const start = Math.max(0, Math.min(Number(offset) || 0, total));
   const size = Math.max(500, Math.min(Number(limit) || 4000, 5000));
   const end = Math.min(start + size, total);
-  const dictionaries = { name: [], addr: [], code: [], hours: [] };
+  // x — дополнительные поля точки (JSON-строкой; одинаковые наборы сжимаются словарём).
+  const dictionaries = { name: [], addr: [], code: [], hours: [], x: [] };
   const indexes = Object.fromEntries(Object.keys(dictionaries).map(field => [field, new Map()]));
   const dictIndex = (field, value) => {
     const text = value == null ? '' : String(value);
@@ -1059,6 +1060,7 @@ function compactLayerChunk(recs, offset, limit, revision, key, map) {
       dictIndex('addr', r.addr),
       dictIndex('code', r.code),
       dictIndex('hours', r.hours),
+      dictIndex('x', r.x && typeof r.x === 'object' ? JSON.stringify(r.x) : ''),
     ]);
   }
   return {

@@ -668,3 +668,32 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   UI, generator, Com Dep sees no admin tab and «5» does not open it).
 - Cache version `20261024c`. Server changed — Render redeploys on push.
 
+## 2026-10-24 — Layers tab redesign
+
+- **Top switches** «Точки» (pins of all enabled layers, replaces per-layer
+  «Ярлыки») and «Тепловая карта» (density spots on/off), with icons and
+  one-line descriptions. Spot size and blend moved right under them. The
+  global brightness control is gone (state value ignored, fixed at 1).
+  Old states that had any layer's `showTags` turn «Точки» on.
+- **Compact layer cards:** colour square, name with a pencil, on/off switch;
+  second line with the point count and icons — Excel template, upload/update,
+  delete, settings. Settings: pin icon (16 Lucide glyphs), intensity,
+  opacity, the layer's fields, «Только этот».
+- **Colour window:** four preset gradients or own colour — single or a
+  two-colour gradient (`ramp: 'custom2'`, `color2`). Legacy palettes keep
+  working and show as «current».
+- **Pins:** one teardrop marker with a white glyph everywhere; canvas
+  `PinMarker` for heat-layer points (up to 1 200, size shrinks with density),
+  `pinSvg` for DOM markers.
+- **«Создать слой»:** name + template columns (suggested and own fields) →
+  step 2 «download template» / «upload filled file». Templates are .xlsx
+  (Excel 2007+) with a «Как заполнить» sheet, latin file names.
+- **Layer fields:** any non-standard column becomes a point field (`r.x`,
+  `d.fields`), shown in point cards; carried through `slimRecs`, the server's
+  compact chunks (`x` dictionary) and `expandLayerChunk`. Server changed.
+- Verified in a browser (12 checks): fields as chips, template download with
+  the right columns, filled file upload with fields, «Точки» shows 3 pins,
+  heat off hides canvases, pin icon, preset and two-colour gradient, point
+  card shows fields + Yandex link, fields survive the server round trip.
+- Cache version `20261024d`.
+

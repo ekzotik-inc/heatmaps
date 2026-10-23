@@ -104,6 +104,13 @@ _pinchZoom/_resize` ещё существуют с тем же смыслом.
     при открытии наведением не ставить фокус внутрь — это закрепит меню.
     Подсказки — атрибут `data-tip` у `.tip-icon`; если иконка создана из JS,
     вызвать `wireTips(контейнер)`.
+12. **Поля точек (`r.x`) идут по всей цепочке:** `toRecs`/`toCustomPtRecs`
+    (`recExtras`) → `slimRecs` → сервер `compactLayerChunk` (словарь `x`,
+    `row[7]`) → `expandLayerChunk` → карточки (`extraRowsHtml`). Новое поле
+    записи — пройти все звенья, иначе оно пропадёт на ленивой загрузке.
+13. **Метки — одна форма:** `pinSvg()` (DOM) и `PinMarker`/`drawCanvasPin()`
+    (canvas), значки из `PIN_ICONS` (Lucide, ISC). Цвета из состояния — через
+    `safeColor()`: они попадают в SVG и стили.
 
 ## Сервер
 

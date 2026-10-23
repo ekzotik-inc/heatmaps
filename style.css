@@ -2014,3 +2014,193 @@ input[type=color]:focus-visible,
     scroll-behavior: auto !important;
   }
 }
+
+
+/* ════════════════════════════════════════════════════════════════════════
+   ВКЛАДКА СЛОЁВ (2026-10): переключатели вида, компактные карточки,
+   окно цвета, «Создать слой».
+   ════════════════════════════════════════════════════════════════════════ */
+.view-toggles { display: grid; gap: 8px; margin-bottom: 12px; }
+.vt {
+  display: flex; align-items: center; gap: 11px; padding: 11px 12px; cursor: pointer;
+  background: var(--card); border: 1px solid var(--line2); border-radius: 14px;
+  box-shadow: var(--shadow-card); transition: border-color .16s var(--ease), background .16s var(--ease);
+  user-select: none;
+}
+.vt:hover { border-color: var(--acc); }
+.vt:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+.vt.on { background: var(--acc-l); border-color: var(--acc-l2); }
+.vt-ic {
+  width: 34px; height: 34px; border-radius: 10px; flex: 0 0 auto; display: grid; place-items: center;
+  background: var(--card2); color: var(--acc-d); border: 1px solid var(--line2);
+}
+.vt.on .vt-ic { background: var(--acc); color: #fff; border-color: var(--acc); }
+.vt-ic.heat { color: var(--warn); }
+.vt.on .vt-ic.heat { background: var(--warn); border-color: var(--warn); color: #fff; }
+.vt-txt { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.vt-txt b { font: 700 13px "Manrope"; color: var(--ink); }
+.vt-txt small { font-size: 10.5px; color: var(--mut); line-height: 1.35; }
+.vt .cbx { pointer-events: none; }
+
+.spot-ctl {
+  padding: 11px 12px 10px; margin-bottom: 16px; background: var(--card2);
+  border: 1px solid var(--line); border-radius: 14px;
+}
+.spot-ctl .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.spot-ctl label { font-size: 12px; font-weight: 600; color: var(--ink); }
+.spot-ctl .blend-row { margin: 10px 0 0; gap: 8px; }
+.spot-ctl select { max-width: 52%; }
+
+.lc-empty {
+  padding: 18px 14px; text-align: center; font-size: 12px; line-height: 1.5; color: var(--mut);
+  background: var(--card2); border: 1.5px dashed var(--line2); border-radius: 14px; margin-bottom: 10px;
+}
+.lc {
+  background: var(--card); border: 1px solid var(--line2); border-radius: 13px;
+  padding: 9px 10px 7px; margin-bottom: 7px; box-shadow: var(--shadow-card);
+  transition: border-color .16s var(--ease), opacity .16s var(--ease);
+}
+.lc:hover { border-color: var(--acc-l2); }
+.lc.off .lc-t, .lc.off .lc-n { color: var(--dim); }
+.lc.off .lc-sw { filter: grayscale(.7); opacity: .6; }
+.lc-row { display: flex; align-items: center; gap: 9px; }
+.lc-sw {
+  width: 26px; height: 26px; border-radius: 8px; flex: 0 0 auto; cursor: pointer; padding: 0;
+  border: 1px solid rgba(0,0,0,.08); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.55), var(--shadow-card);
+  transition: transform .14s var(--ease);
+}
+.lc-sw:hover { transform: scale(1.08); }
+.lc-sw[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--acc), inset 0 0 0 1.5px rgba(255,255,255,.55); }
+.lc-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; }
+.lc-t { font: 700 13px "Manrope"; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lc-rename {
+  flex: 1; min-width: 0; font: 700 13px "Manrope"; color: var(--ink); background: var(--card2);
+  border: 1.5px solid var(--acc); border-radius: 8px; padding: 4px 7px; outline: none;
+}
+.lc-ic {
+  width: 26px; height: 26px; border-radius: 8px; flex: 0 0 auto; display: grid; place-items: center;
+  border: 1px solid transparent; background: none; color: var(--dim); cursor: pointer; padding: 0;
+  transition: .14s var(--ease);
+}
+.lc-ic:hover { color: var(--acc-d); background: var(--acc-l); border-color: var(--acc-l2); }
+.lc-ic:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+.lc-ren { width: 22px; height: 22px; opacity: 0; }
+.lc:hover .lc-ren, .lc-ren:focus-visible { opacity: 1; }
+.lc-del:hover { color: var(--danger); background: rgba(233,86,75,.08); border-color: rgba(233,86,75,.3); }
+.lc-more svg { transition: transform .2s var(--ease); }
+.lc.open .lc-more svg { transform: rotate(180deg); }
+.lc.open .lc-more { color: var(--acc-d); }
+.lc-sub { display: flex; align-items: center; gap: 6px; margin: 3px 0 0 35px; }
+.lc-n { flex: 1; min-width: 0; font-size: 11px; color: var(--mut); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lc-tools { display: flex; gap: 1px; }
+.lc-body { display: none; margin: 8px 0 3px; padding-top: 10px; border-top: 1px solid var(--line); }
+.lc.open .lc-body { display: block; animation: adv-in .2s var(--ease); }
+.lc-lbl { font-size: 11px; font-weight: 700; color: var(--mut); margin-bottom: 6px; }
+.lc-lbl span { font-weight: 500; color: var(--dim); }
+.lc-icons { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; margin-bottom: 10px; }
+.lc-pin {
+  aspect-ratio: 1 / 1.05; display: grid; place-items: center; padding: 0; cursor: pointer;
+  border: 1px solid var(--line2); border-radius: 9px; background: var(--card2);
+  transition: .14s var(--ease);
+}
+.lc-pin:hover { border-color: var(--acc); background: var(--card); }
+.lc-pin.on { border-color: var(--acc); background: var(--acc-l); box-shadow: 0 0 0 1.5px var(--acc); }
+.lc-pin svg { display: block; filter: drop-shadow(0 1px 1.5px rgba(15,23,42,.25)); }
+.lc-sl { display: grid; grid-template-columns: 92px 1fr 44px; align-items: center; gap: 8px; margin: 4px 0; }
+.lc-sl span { font-size: 11.5px; color: var(--mut); }
+.lc-sl b { font-size: 11.5px; color: var(--acc-d); text-align: right; font-variant-numeric: tabular-nums; }
+.lc-fields { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 2px; }
+.lc-fields span { font-size: 10.5px; padding: 2px 8px; border-radius: 100px; background: var(--card2); border: 1px solid var(--line2); color: var(--mut); }
+.lc-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 10.5px; color: var(--dim); }
+.lc-foot > span { flex: 1; min-width: 0; }
+.lc-link {
+  display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line2); background: var(--card);
+  color: var(--mut); border-radius: 100px; padding: 3px 9px; font: 700 10.5px "Manrope"; cursor: pointer;
+}
+.lc-link:hover { color: var(--acc-d); border-color: var(--acc); }
+.lc-link.on { background: var(--acc); color: #fff; border-color: var(--acc); }
+body.viewer .admin-only { display: none !important; }
+
+.create-btn {
+  width: 100%; margin-top: 6px; padding: 11px 14px; border-radius: 12px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: var(--ink); color: #fff; border: 1px solid var(--ink);
+  font: 700 13px "Manrope"; letter-spacing: .1px; box-shadow: var(--shadow-sm);
+  transition: transform .14s var(--ease), box-shadow .14s var(--ease), background .14s var(--ease);
+}
+.create-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow); filter: brightness(1.18); }
+.create-btn:active { transform: none; }
+.create-btn:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+
+/* Метки-капли */
+.pin2 { display: block; overflow: visible; }
+.pt-marker-wrap .pin2 { filter: drop-shadow(0 2px 3px rgba(15,23,42,.35)); }
+
+/* Окно цвета */
+.paint-pop {
+  position: fixed; z-index: 10070; width: 286px; padding: 12px;
+  background: var(--card); border: 1px solid var(--line2); border-radius: 14px; box-shadow: var(--shadow);
+}
+.pp2-h { font: 700 9.5px "Manrope"; text-transform: uppercase; letter-spacing: 1.2px; color: var(--dim); margin: 2px 0 7px; }
+.pp2-h ~ .pp2-h { margin-top: 12px; }
+.pp2-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.pp2-preset {
+  display: flex; align-items: center; gap: 7px; padding: 5px 8px 5px 5px; cursor: pointer; text-align: left;
+  border: 1px solid var(--line2); border-radius: 10px; background: var(--card); font: 600 11.5px "Manrope"; color: var(--ink);
+}
+.pp2-preset i { width: 26px; height: 20px; border-radius: 6px; flex: 0 0 auto; }
+.pp2-preset:hover { border-color: var(--acc); }
+.pp2-preset.on { border-color: var(--acc); background: var(--acc-l); box-shadow: 0 0 0 1px var(--acc); }
+.pp2-seg { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; gap: 3px; background: var(--card2); border: 1px solid var(--line2); border-radius: 10px; margin-bottom: 9px; }
+.pp2-seg button { border: 0; border-radius: 7px; padding: 6px; background: none; font: 700 11.5px "Manrope"; color: var(--mut); cursor: pointer; }
+.pp2-seg button.on { background: var(--card); color: var(--ink); box-shadow: var(--shadow-card); }
+.pp2-sw { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pp2-grad { display: flex; align-items: center; gap: 8px; }
+.pp2-grad label { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--mut); }
+.pp2-grad input[type=color] { width: 30px; height: 26px; }
+.pp2-gbar { flex: 1; height: 14px; border-radius: 7px; border: 1px solid var(--line2); }
+.pp2-apply {
+  width: 100%; margin-top: 9px; padding: 8px; border-radius: 9px; border: 1px solid var(--acc);
+  background: var(--acc); color: #fff; font: 700 12px "Manrope"; cursor: pointer;
+}
+.pp2-apply:hover { background: var(--acc-d); }
+
+/* Создать слой */
+.cl-overlay {
+  position: fixed; inset: 0; z-index: 10040; display: grid; place-items: center; padding: 16px;
+  background: rgba(40,55,90,.35); backdrop-filter: blur(6px);
+}
+.cl-overlay[hidden] { display: none; }
+.cl-card {
+  width: min(440px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; padding: 20px 20px 16px;
+  background: var(--card); border-radius: 18px; box-shadow: var(--shadow); animation: adv-in .2s var(--ease);
+}
+.cl-card h3 { margin: 0 0 4px; font: 800 17px "Manrope"; color: var(--ink); letter-spacing: -.2px; }
+.cl-sub { margin: 0 0 14px; font-size: 12px; color: var(--mut); line-height: 1.5; }
+.cl-label { display: block; font-size: 11px; font-weight: 700; color: var(--mut); margin: 12px 0 6px; }
+.cl-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.cl-chips:empty { display: none; }
+#cl-fields { margin-top: 5px; }
+.cl-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px 4px 10px; border-radius: 100px;
+  font: 600 11.5px "Manrope"; background: var(--acc-l); color: var(--acc-d); border: 1px solid var(--acc-l2);
+}
+.cl-chip.fixed { padding: 4px 10px; background: var(--card2); color: var(--mut); border-color: var(--line2); }
+.cl-chip button { width: 18px; height: 18px; border-radius: 50%; border: 0; background: none; color: var(--acc-d); cursor: pointer; display: grid; place-items: center; padding: 0; }
+.cl-chip button:hover { background: var(--card); color: var(--danger); }
+.cl-add { display: flex; gap: 6px; margin-top: 8px; }
+.cl-add .lyr-act { flex: 0 0 auto; padding: 0 12px; }
+.cl-suggest { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 8px; font-size: 10.5px; color: var(--dim); }
+.cl-suggest button { border: 1px dashed var(--line2); background: none; border-radius: 100px; padding: 3px 9px; font: 600 11px "Manrope"; color: var(--mut); cursor: pointer; }
+.cl-suggest button:hover { border-color: var(--acc); color: var(--acc-d); }
+.cl-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.cl-done { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--rec-l); color: var(--rec-ink); margin-bottom: 10px; }
+.cl-steps { margin: 12px 0 0; padding-left: 18px; display: grid; gap: 12px; font-size: 12.5px; color: var(--mut); line-height: 1.45; }
+.cl-steps b { color: var(--ink); }
+.cl-big {
+  display: block; width: 100%; margin-top: 7px; padding: 10px; border-radius: 11px; cursor: pointer;
+  border: 1px solid var(--acc); background: var(--acc); color: #fff; font: 700 12.5px "Manrope";
+}
+.cl-big:hover { background: var(--acc-d); }
+.cl-big.ghost { background: var(--card); color: var(--acc-d); }
+.cl-big.ghost:hover { background: var(--acc-l); }

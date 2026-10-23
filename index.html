@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.1/maplibre-gl.css"/>
-  <link rel="stylesheet" href="style.css?v=20261024c"/>
+  <link rel="stylesheet" href="style.css?v=20261024d"/>
 </head>
 <body>
 
@@ -121,42 +121,39 @@
 
       <!-- TAB: КАРТА -->
       <div class="tab-panel active" id="tab-map">
-        <p class="tab-section-title">Тепловые слои</p>
-        <div id="heat-list"></div>
-        <div class="ctrl ctrl-card">
-          <div class="row">
-            <label>Общая яркость тепла <span class="tip-icon" data-tip="Усиливает или ослабляет яркость всех тепловых слоёв одновременно">ⓘ</span></label>
-            <span class="val blue" id="v-heat-boost">100%</span>
+        <div class="view-toggles" role="group" aria-label="Что показывать на карте">
+          <div class="vt" id="vt-points" role="switch" tabindex="0" aria-checked="false">
+            <span class="vt-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg></span>
+            <span class="vt-txt"><b>Точки</b><small>Метки всех включённых слоёв — по клику карточка точки</small></span>
+            <span class="cbx sm" aria-hidden="true"></span>
           </div>
-          <input type="range" class="full" id="s-heat-boost" min="0.3" max="3" step="0.1" value="1"/>
+          <div class="vt" id="vt-heat" role="switch" tabindex="0" aria-checked="true">
+            <span class="vt-ic heat"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg></span>
+            <span class="vt-txt"><b>Тепловая карта</b><small>Цветные пятна: где точек больше, там ярче</small></span>
+            <span class="cbx sm on" aria-hidden="true"></span>
+          </div>
         </div>
-        <details class="adv-group">
-          <summary>Тонкая настройка<span class="chev">›</span></summary>
-          <div class="adv-body">
-            <div class="ctrl" style="margin-top:4px">
-              <div class="row">
-                <label>Размер пятна <span class="tip-icon" data-tip="Радиус размытия каждой точки на тепловой карте в пикселях">ⓘ</span></label>
-                <span class="val blue" id="v-heat-radius">28 px</span>
-              </div>
-              <input type="range" class="full" id="s-heat-radius" min="14" max="48" step="2" value="28"/>
-            </div>
-            <div class="ctrl">
-              <div class="row" style="align-items:center">
-                <label>Наложение слоёв</label>
-                <select id="heat-blend">
-                  <option value="multiply">Умножение (смешивание)</option>
-                  <option value="normal">Обычное (верхний поверх)</option>
-                  <option value="darken">Затемнение</option>
-                </select>
-              </div>
-            </div>
+        <div class="spot-ctl">
+          <div class="row">
+            <label for="s-heat-radius">Размер пятна <span class="tip-icon" data-tip="Насколько широко расплывается каждая точка на тепловой карте. Больше — плавнее, меньше — детальнее.">ⓘ</span></label>
+            <span class="val blue" id="v-heat-radius">28 px</span>
           </div>
-        </details>
-        <button class="add-layer-btn" id="add-layer-btn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Загрузить слой (файл)
+          <input type="range" class="full" id="s-heat-radius" min="14" max="48" step="2" value="28"/>
+          <div class="row blend-row">
+            <label for="heat-blend">Наложение слоёв <span class="tip-icon" data-tip="Как смешиваются цвета, когда пятна нескольких слоёв перекрываются.">ⓘ</span></label>
+            <select id="heat-blend">
+              <option value="multiply">Смешивать</option>
+              <option value="normal">Верхний поверх</option>
+              <option value="darken">Затемнять</option>
+            </select>
+          </div>
+        </div>
+        <p class="tab-section-title">Слои</p>
+        <div id="heat-list"></div>
+        <button class="create-btn" id="add-layer-btn" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          Создать слой
         </button>
-        <input type="file" id="heat-file" accept=".csv,.xlsx,.xls" style="display:none"/>
         <input type="file" id="heat-update-file" accept=".csv,.xlsx,.xls" style="display:none"/>
       </div>
 
@@ -506,6 +503,39 @@
 </div>
 
 <!-- Heat layer modal (name + colour, shown after picking a file) -->
+<div id="cl-modal" class="cl-overlay" hidden>
+  <div class="cl-card" role="dialog" aria-modal="true" aria-labelledby="cl-title">
+    <div class="cl-step" id="cl-step1">
+      <h3 id="cl-title">Новый слой</h3>
+      <p class="cl-sub" id="cl-sub">Задайте название и поля — по ним соберём шаблон Excel для заполнения.</p>
+      <label class="cl-label" for="cl-name">Название слоя</label>
+      <input type="text" id="cl-name" class="mf-input" maxlength="40" placeholder="Например: Конкуренты, Розница Ташкент" autocomplete="off"/>
+      <div class="cl-label">Колонки шаблона</div>
+      <div class="cl-chips" id="cl-fixed"></div>
+      <div class="cl-chips" id="cl-fields"></div>
+      <div class="cl-add">
+        <input type="text" id="cl-field-inp" class="mf-input" maxlength="40" placeholder="Своё поле, например «Телефон»" autocomplete="off"/>
+        <button type="button" class="lyr-act" id="cl-field-add">Добавить</button>
+      </div>
+      <div class="cl-suggest" id="cl-suggest"></div>
+      <div class="cl-actions">
+        <button type="button" class="modal-btn secondary" id="cl-cancel">Отмена</button>
+        <button type="button" class="modal-btn primary" id="cl-create">Создать слой</button>
+      </div>
+    </div>
+    <div class="cl-step" id="cl-step2" hidden>
+      <div class="cl-done"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+      <h3 id="cl-done-title">Слой создан</h3>
+      <ol class="cl-steps">
+        <li><b>Скачайте шаблон</b> — в нём уже есть ваши колонки.
+          <button type="button" class="cl-big" id="cl-tpl">⬇ Скачать шаблон Excel</button></li>
+        <li><b>Заполните и загрузите</b> — точки появятся на карте.
+          <button type="button" class="cl-big ghost" id="cl-upload">⬆ Загрузить заполненный файл</button></li>
+      </ol>
+      <div class="cl-actions"><button type="button" class="modal-btn primary" id="cl-done">Готово</button></div>
+    </div>
+  </div>
+</div>
 <div id="layer-modal-overlay">
   <div class="layer-modal">
     <h3>Новый слой</h3>
@@ -667,7 +697,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20261024c'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20261024d'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();
