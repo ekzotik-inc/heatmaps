@@ -2327,3 +2327,21 @@ html, body { font-feature-settings: 'cv11', 'ss01'; -webkit-font-smoothing: anti
   .map-stat { top: 14px; left: 70px; right: auto; min-width: 0; padding: 7px 10px; }
   .ms-num b { font-size: 16px; }
 }
+
+/* Выбор метки: формы и значки */
+.mk-shapes { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin-bottom: 4px; }
+.mk-shape {
+  aspect-ratio: 1; display: grid; place-items: center; padding: 0; cursor: pointer;
+  border: 1px solid var(--line2); border-radius: 10px; background: var(--card2); transition: .14s var(--ease);
+}
+.mk-shape:hover { border-color: var(--acc); background: var(--card); }
+.mk-shape.on { border-color: var(--acc); background: var(--acc-l); box-shadow: 0 0 0 1.5px var(--acc); }
+.mk-shape svg { filter: drop-shadow(0 1px 1.5px rgba(15,23,42,.25)); }
+.lc-lbl2 { margin-top: 8px; }
+.mk-glyphs { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; margin-bottom: 10px; max-height: 148px; overflow-y: auto; padding: 2px; scrollbar-width: thin; }
+.mk-glyph {
+  aspect-ratio: 1; display: grid; place-items: center; padding: 0; cursor: pointer; color: var(--mut);
+  border: 1px solid var(--line2); border-radius: 8px; background: var(--card); transition: .14s var(--ease);
+}
+.mk-glyph:hover { color: var(--ink); border-color: var(--acc); }
+.mk-glyph.on { color: #fff; background: var(--acc); border-color: var(--acc); }

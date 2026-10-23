@@ -115,30 +115,28 @@ function safeColor(c, fallback = '#12ADC1') {
   return typeof c === 'string' && /^#[0-9a-f]{3,8}$/i.test(c) ? c : fallback;
 }
 
-/* Значки меток — набор Lucide (github.com/lucide-icons/lucide, лицензия ISC),
-   элементы каждой иконки сведены в один path для canvas и SVG. Метка — капля
-   цвета слоя с белым значком; одна форма на всё приложение. */
-const PIN_ICONS = [
-  { id: "store", name: "Магазин", d: "M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5 M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244 M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05" },
-  { id: "shopping-cart", name: "Супермаркет", d: "m2.05 2.05 1.099-.028a1 1 0 0 1 1.008.815l2.69 14.347A1 1 0 0 0 7.83 18H18 M4.563 5h16.435a1 1 0 0 1 .981 1.204l-1.026 6.226A2 2 0 0 1 18.962 14H6.25 M16 20a2 2 0 1 0 4 0a2 2 0 1 0 -4 0 M6 20a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" },
-  { id: "shopping-bag", name: "Покупки", d: "M16 10a4 4 0 0 1-8 0 M3.103 6.034h17.794 M3.4 5.467a2 2 0 0 0-.4 1.2V20a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6.667a2 2 0 0 0-.4-1.2l-2-2.667A2 2 0 0 0 17 2H7a2 2 0 0 0-1.6.8z" },
-  { id: "cigarette", name: "Табак", d: "M17 12H3a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h14 M18 8c0-2.5-2-2.5-2-5 M21 16a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1 M22 8c0-2.5-2-2.5-2-5 M7 12v4" },
-  { id: "coffee", name: "Кафе", d: "M10 2v2 M14 2v2 M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1 M6 2v2" },
-  { id: "utensils", name: "Ресторан", d: "M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2 M7 2v20 M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" },
-  { id: "fuel", name: "АЗС", d: "M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 4 0v-6.998a2 2 0 0 0-.59-1.42L18 5 M14 21V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v16 M2 21h13 M3 9h11" },
-  { id: "pill", name: "Аптека", d: "m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z m8.5 8.5 7 7" },
-  { id: "building-2", name: "Офис", d: "M10 12h4 M10 8h4 M14 21v-3a2 2 0 0 0-4 0v3 M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2 M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16" },
-  { id: "warehouse", name: "Склад", d: "M18 21V10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v11 M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 1.132-1.803l7.95-3.974a2 2 0 0 1 1.837 0l7.948 3.974A2 2 0 0 1 22 8z M6 13h12 M6 17h12" },
-  { id: "truck", name: "Дистрибуция", d: "M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2 M15 18H9 M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14 M15 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0 M5 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" },
-  { id: "package", name: "Пункт выдачи", d: "M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z M12 22V12 M3.29 7L12 12L20.71 7 m7.5 4.27 9 5.15" },
-  { id: "house", name: "Дом", d: "M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8 M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" },
-  { id: "landmark", name: "Банк", d: "M10 18v-7 M11.119 2.205a2 2 0 0 1 1.762 0l7.84 3.846A.5.5 0 0 1 20.5 7h-17a.5.5 0 0 1-.22-.949z M14 18v-7 M18 18v-7 M3 22h18 M6 18v-7" },
-  { id: "flag", name: "Флаг", d: "M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528" },
-  { id: "circle-dot", name: "Точка", d: "M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0 M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0" },
-];
+/* Метки на карте: форма + значок, из Map Icons (marker-icons.js, MIT / SIL OFL).
+   Форма и значок выбираются у слоя отдельно; цвет — цвет или градиент слоя. */
+const HM_MARKERS = window.HM_MARKERS || { shapes: [], icons: [] };
+const MARKER_SHAPES = HM_MARKERS.shapes;
+const MARKER_SHAPE_MAP = Object.fromEntries(MARKER_SHAPES.map(sh => [sh.id, sh]));
+const PIN_ICONS = HM_MARKERS.icons;
 const PIN_ICON_MAP = Object.fromEntries(PIN_ICONS.map(i => [i.id, i]));
-const PIN_PATH = 'M16 39C16 39 4.5 26.5 4.5 15.5a11.5 11.5 0 0 1 23 0C27.5 26.5 16 39 16 39Z';
 const DEFAULT_PIN_ICON = 'store';
+const DEFAULT_SHAPE = 'map-pin';
+// Значки прежнего набора (Lucide) → ближайшие из Map Icons, чтобы сохранённые
+// слои не потеряли выбор.
+const LEGACY_ICON = {
+  'shopping-cart': 'grocery-or-supermarket', 'shopping-bag': 'department-store', coffee: 'cafe',
+  utensils: 'restaurant', fuel: 'gas-station', pill: 'pharmacy', 'building-2': 'real-estate-agency',
+  warehouse: 'storage', truck: 'moving-company', package: 'post-office', house: 'lodging',
+  landmark: 'bank', flag: 'point-of-interest', 'circle-dot': 'circle',
+};
+function markerIcon(id) {
+  if (id === 'none') return 'none';
+  return PIN_ICON_MAP[id] ? id : (LEGACY_ICON[id] || DEFAULT_PIN_ICON);
+}
+function markerShape(id) { return MARKER_SHAPE_MAP[id] ? id : DEFAULT_SHAPE; }
 // CSS-градиент палитры — используется в чипах выбора, превью и легенде.
 function rampCss(grad, from = 'transparent') {
   const stops = Object.keys(grad).map(Number).sort((a, b) => a - b)
@@ -663,72 +661,94 @@ function renderIncome() {
 /* ── POINT MARKERS ───────────────────────────────────────────────────── */
 
 
-/* Метка-капля: SVG для DOM-маркеров (слои точек) и canvas для ярлыков
-   тепловых слоёв, где точек бывает до тысячи с лишним. */
+/* Метка: SVG для DOM-маркеров (слои точек) и canvas для меток тепловых
+   слоёв, где точек бывает больше тысячи. Привязка — нижняя точка формы. */
 const _pinSvgCache = new Map();
 let _pinGradSeq = 0;
-function pinSvg(iconId, color, color2, size) {
+function glyphMarkup(icId, cx, cy, is, color) {
+  const ic = PIN_ICON_MAP[icId];
+  if (!ic) return '';
+  const x = (cx - is / 2).toFixed(2), y = (cy - is / 2).toFixed(2);
+  return ic.stroke
+    ? `<path d="${ic.d}" transform="translate(${x} ${y}) scale(${(is / 24).toFixed(4)})" fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`
+    : `<path d="${ic.d}" transform="translate(${x} ${y}) scale(${(is / 50).toFixed(4)})" fill="${color}"/>`;
+}
+// Значок отдельно — для сетки выбора.
+function glyphSvg(icId, size) {
+  const ic = PIN_ICON_MAP[icId];
+  if (!ic) return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+  return ic.stroke
+    ? `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ic.d}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+    : `<svg width="${size}" height="${size}" viewBox="0 0 50 50" aria-hidden="true"><path d="${ic.d}" fill="currentColor"/></svg>`;
+}
+function pinSvg(iconId, color, color2, size, shapeId) {
   color = safeColor(color); color2 = color2 ? safeColor(color2, '') : '';
-  const key = [iconId, color, color2, size].join('|');
+  const sh = MARKER_SHAPE_MAP[markerShape(shapeId)];
+  const icId = markerIcon(iconId);
+  const key = [icId, sh ? sh.id : '', color, color2, size].join('|');
   if (_pinSvgCache.has(key)) return _pinSvgCache.get(key);
-  const h = Math.round(size * 1.25);
+  if (!sh) return { html: '', w: size, h: size, anchor: [size / 2, size] };
   const gid = color2 ? 'pg' + (++_pinGradSeq) : '';
-  const defs = color2 ? `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}"/><stop offset="1" stop-color="${color2}"/></linearGradient></defs>` : '';
-  const ic = PIN_ICON_MAP[iconId];
-  const html = `<svg class="pin2" width="${size}" height="${h}" viewBox="0 0 32 40" aria-hidden="true">${defs}` +
-    `<path d="${PIN_PATH}" fill="${color2 ? `url(#${gid})` : color}" stroke="#fff" stroke-width="2"/>` +
-    (ic ? `<path d="${ic.d}" transform="translate(9.5 9) scale(.5417)" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>` : '') +
-    `</svg>`;
-  const out = { html, w: size, h, anchor: [size / 2, Math.round(h * 39 / 40)] };
+  const defs = color2 ? `<defs><linearGradient id="${gid}" gradientUnits="userSpaceOnUse" x1="0" y1="-48" x2="0" y2="0"><stop offset="0" stop-color="${color}"/><stop offset="1" stop-color="${color2}"/></linearGradient></defs>` : '';
+  const html = `<svg class="pin2" width="${size}" height="${size}" viewBox="-25 -49 50 50" aria-hidden="true">${defs}` +
+    `<path d="${sh.d}" fill="${color2 ? `url(#${gid})` : color}" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/>` +
+    glyphMarkup(icId, 0, sh.cy, sh.is, '#fff') + `</svg>`;
+  const out = { html, w: size, h: size, anchor: [size / 2, Math.round(size * 49 / 50)] };
   _pinSvgCache.set(key, out);
   return out;
 }
-const _iconPath2D = new Map();
-function iconPath2D(id) {
+const _path2D = new Map();
+function cachedPath2D(d) {
   if (typeof Path2D === 'undefined') return null;
-  if (!_iconPath2D.has(id)) _iconPath2D.set(id, PIN_ICON_MAP[id] ? new Path2D(PIN_ICON_MAP[id].d) : null);
-  return _iconPath2D.get(id);
+  if (!_path2D.has(d)) _path2D.set(d, new Path2D(d));
+  return _path2D.get(d);
 }
-const _pinBody2D = typeof Path2D !== 'undefined' ? new Path2D(PIN_PATH) : null;
-function drawCanvasPin(ctx, x, y, size, color, color2, iconId) {
-  if (!_pinBody2D) return;
-  const s = size / 32;
+function drawCanvasPin(ctx, x, y, size, color, color2, iconId, shapeId) {
+  const sh = MARKER_SHAPE_MAP[markerShape(shapeId)];
+  const body = sh && cachedPath2D(sh.d);
+  if (!body) return;
+  const s = size / 50;
   ctx.save();
-  ctx.translate(x - 16 * s, y - 39 * s);
+  ctx.translate(x, y);
   ctx.scale(s, s);
   let fill = safeColor(color);
-  if (color2) { const g = ctx.createLinearGradient(0, 4, 0, 30); g.addColorStop(0, fill); g.addColorStop(1, safeColor(color2)); fill = g; }
-  ctx.shadowColor = 'rgba(15,23,42,.30)'; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1.5;
-  ctx.fillStyle = fill; ctx.fill(_pinBody2D);
+  if (color2) { const g = ctx.createLinearGradient(0, -48, 0, 0); g.addColorStop(0, fill); g.addColorStop(1, safeColor(color2)); fill = g; }
+  ctx.shadowColor = 'rgba(15,23,42,.32)'; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1.5;
+  ctx.fillStyle = fill; ctx.fill(body);
   ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-  ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke(_pinBody2D);
-  const ip = iconPath2D(iconId);
-  if (ip) {
-    ctx.translate(9.5, 9); ctx.scale(13 / 24, 13 / 24);
-    ctx.lineWidth = 2.3; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#fff';
-    ctx.stroke(ip);
+  ctx.lineWidth = 2.2; ctx.lineJoin = 'round'; ctx.strokeStyle = '#fff'; ctx.stroke(body);
+  const ic = PIN_ICON_MAP[markerIcon(iconId)];
+  const gp = ic && cachedPath2D(ic.d);
+  if (gp) {
+    ctx.translate(-sh.is / 2, sh.cy - sh.is / 2);
+    if (ic.stroke) {
+      ctx.scale(sh.is / 24, sh.is / 24);
+      ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#fff'; ctx.stroke(gp);
+    } else {
+      ctx.scale(sh.is / 50, sh.is / 50);
+      ctx.fillStyle = '#fff'; ctx.fill(gp);
+    }
   }
   ctx.restore();
 }
-// Метка на canvas-рендерере Leaflet: рисуем каплю вместо круга, область клика —
-// контур капли. radius задаёт рамку перерисовки, поэтому берём её с запасом.
+// Метка на canvas-рендерере Leaflet: рисуем форму вместо круга, область клика —
+// рамка формы. radius задаёт рамку перерисовки, поэтому с запасом.
 const PinMarker = L.CircleMarker.extend({
-  options: { size: 24, icon: DEFAULT_PIN_ICON, color2: '' },
+  options: { size: 26, icon: DEFAULT_PIN_ICON, shape: DEFAULT_SHAPE, color2: '' },
   initialize(latlng, options) {
     L.CircleMarker.prototype.initialize.call(this, latlng, options);
-    this._radius = (this.options.size || 24) * 1.3;
+    this._radius = (this.options.size || 26) * 1.1;
   },
   _updatePath() {
     const r = this._renderer;
     if (!r || !r._drawing || this._empty()) return;
-    drawCanvasPin(r._ctx, this._point.x, this._point.y, this.options.size, this.options.fillColor, this.options.color2, this.options.icon);
+    drawCanvasPin(r._ctx, this._point.x, this._point.y, this.options.size, this.options.fillColor, this.options.color2, this.options.icon, this.options.shape);
   },
   _containsPoint(p) {
     const s = this.options.size, pt = this._point;
-    return p.x >= pt.x - s * .42 && p.x <= pt.x + s * .42 && p.y >= pt.y - s * 1.22 && p.y <= pt.y + 1;
+    return p.x >= pt.x - s * .48 && p.x <= pt.x + s * .48 && p.y >= pt.y - s && p.y <= pt.y + 1;
   },
 });
-
 
 /* ── HEAT LAYERS ─────────────────────────────────────────────────────── */
 function applyHeatCanvas(d) {
@@ -922,7 +942,7 @@ function updateLayerLegend() {
   });
   customPtLayers.forEach(l => {
     if (l.visible && l.recs && l.recs.length && shownCount(l)) {
-      items.push({ color: l.color, pin: pinSvg(l.icon || DEFAULT_PIN_ICON, l.color, l.color2, 16).html, name: l.name, count: shownCount(l) });
+      items.push({ color: l.color, pin: pinSvg(l.icon, l.color, l.color2, 18, l.shape).html, name: l.name, count: shownCount(l) });
     }
   });
   if (recShow && lastRecs.length) items.push({ color: '#14B87D', name: 'Рекомендации' });
@@ -998,7 +1018,7 @@ let _tagSig = '';
 function renderTags(force) {
   const keys = tagLayerKeys();
   const b = map.getBounds();
-  const sig = keys.map(k => k + ':' + layerKeyColor(DS[k]) + ':' + (DS[k].icon || '') + ':' + (DS[k]._recordsLoaded ? DS[k].recs.length : -1)).join('|')
+  const sig = keys.map(k => k + ':' + layerKeyColor(DS[k]) + ':' + (DS[k].icon || '') + ':' + (DS[k].shape || '') + ':' + (DS[k]._recordsLoaded ? DS[k].recs.length : -1)).join('|')
     + '|' + selectedCities.join(',')
     + '|' + [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(v => v.toFixed(4)).join(',');
   if (!force && sig === _tagSig) return;
@@ -1027,11 +1047,11 @@ function renderTags(force) {
     const color2 = layerPinColor2(d);
     const withTooltip = pick.length <= 300;
     // Плотно — метка мельче, чтобы не превращаться в сплошную кашу.
-    const size = pick.length > 600 ? 18 : pick.length > 200 ? 21 : 24;
+    const size = pick.length > 600 ? 22 : pick.length > 200 ? 26 : 30;
     pick.forEach(r => {
       const m = new PinMarker([r.lat, r.lon], {
         renderer: tagRenderer, pane: 'tags',
-        size, icon: d.icon || DEFAULT_PIN_ICON, fillColor: color, color2,
+        size, icon: d.icon, shape: d.shape, fillColor: color, color2,
       });
       // Содержимое собирается по клику — 1200 готовых строк HTML не нужны.
       m.bindPopup(() => tagPopupHtml(d, r));
@@ -1486,6 +1506,31 @@ function downloadLayerTemplate(kind, layer) {
    Компактно: цвет, имя с карандашом, переключатель; ниже — число точек и
    иконки (шаблон, загрузка, удаление, настройки). В настройках — значок
    метки, интенсивность и прозрачность. */
+/* Выбор метки: ряд форм (с текущим значком и цветом) и сетка значков. */
+function markerPickerHtml(shape, icon, color, color2) {
+  const sh = markerShape(shape), ic = markerIcon(icon);
+  return `<div class="mk-shapes">${MARKER_SHAPES.map(x => `<button type="button" class="mk-shape${x.id === sh ? ' on' : ''}" data-mkshape="${x.id}" title="${esc(x.name)}" aria-label="Форма «${esc(x.name)}»" aria-pressed="${x.id === sh}">${pinSvg(ic, color, color2, 30, x.id).html}</button>`).join('')}</div>
+    <div class="lc-lbl lc-lbl2">Значок</div>
+    <div class="mk-glyphs">${['none'].concat(PIN_ICONS.map(i => i.id)).map(id => {
+      const name = id === 'none' ? 'Без значка' : PIN_ICON_MAP[id].name;
+      return `<button type="button" class="mk-glyph${id === ic ? ' on' : ''}" data-mkicon="${id}" title="${esc(name)}" aria-label="Значок «${esc(name)}»" aria-pressed="${id === ic}">${glyphSvg(id, 17)}</button>`;
+    }).join('')}</div>`;
+}
+function refreshMarkerPicker(card, shape, icon, color, color2) {
+  const sh = markerShape(shape), ic = markerIcon(icon);
+  card.querySelectorAll('[data-mkshape]').forEach(b => {
+    b.innerHTML = pinSvg(ic, color, color2, 30, b.dataset.mkshape).html;
+    b.classList.toggle('on', b.dataset.mkshape === sh); b.setAttribute('aria-pressed', String(b.dataset.mkshape === sh));
+  });
+  card.querySelectorAll('[data-mkicon]').forEach(b => {
+    b.classList.toggle('on', b.dataset.mkicon === ic); b.setAttribute('aria-pressed', String(b.dataset.mkicon === ic));
+  });
+}
+function wireMarkerPicker(card, onPick) {
+  card.querySelectorAll('[data-mkshape]').forEach(b => b.addEventListener('click', () => onPick(b.dataset.mkshape, null)));
+  card.querySelectorAll('[data-mkicon]').forEach(b => b.addEventListener('click', () => onPick(null, b.dataset.mkicon)));
+}
+
 function syncViewToggles() {
   [['vt-points', showPointsAll], ['vt-heat', showHeatAll]].forEach(([id, on]) => {
     const el = document.getElementById(id);
@@ -1544,7 +1589,7 @@ function buildHeatUI() {
       </div>
       <div class="lc-body">
         <div class="lc-lbl">Метка точки <span>— видна при включённых «Точках»</span></div>
-        <div class="lc-icons">${PIN_ICONS.map(ic => `<button type="button" class="lc-pin${(d.icon || DEFAULT_PIN_ICON) === ic.id ? ' on' : ''}" data-icon="${ic.id}" title="${esc(ic.name)}" aria-label="Метка «${esc(ic.name)}»">${pinSvg(ic.id, layerKeyColor(d), layerPinColor2(d), 20).html}</button>`).join('')}</div>
+        ${markerPickerHtml(d.shape, d.icon, layerKeyColor(d), layerPinColor2(d))}
         <div class="lc-sl"><span>Интенсивность</span><input type="range" class="r-int" min="0.2" max="4" step="0.1" value="${d.intensity || 1}"/><b>${(d.intensity || 1).toFixed(1)}×</b></div>
         <div class="lc-sl"><span>Прозрачность</span><input type="range" class="r-op" min="0.05" max="1" step="0.05" value="${d.opacity == null ? 1 : d.opacity}"/><b>${Math.round((d.opacity == null ? 1 : d.opacity) * 100)}%</b></div>
         ${fields.length ? `<div class="lc-fields">${fields.map(f => `<span>${esc(f)}</span>`).join('')}</div>` : ''}
@@ -1568,7 +1613,7 @@ function buildHeatUI() {
       if (p.color) d.color = p.color;
       d.color2 = p.ramp === 'custom2' ? p.color2 : '';
       sw.style.background = paintSwatchCss(d);
-      card.querySelectorAll('.lc-pin').forEach(b => { b.innerHTML = pinSvg(b.dataset.icon, layerKeyColor(d), layerPinColor2(d), 20).html; });
+      refreshMarkerPicker(card, d.shape, d.icon, layerKeyColor(d), layerPinColor2(d));
       renderHeat(); renderTags(true); updateLayerLegend();
       if (!live) saveState();
     }));
@@ -1590,12 +1635,13 @@ function buildHeatUI() {
     tog.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(); } });
 
     card.querySelector('.lc-solo').addEventListener('click', () => toggleSolo(k));
-    card.querySelectorAll('.lc-pin').forEach(b => b.addEventListener('click', () => {
-      d.icon = b.dataset.icon;
-      card.querySelectorAll('.lc-pin').forEach(x => x.classList.toggle('on', x === b));
+    wireMarkerPicker(card, (shape, icon) => {
+      if (shape) d.shape = shape;
+      if (icon) d.icon = icon;
+      refreshMarkerPicker(card, d.shape, d.icon, layerKeyColor(d), layerPinColor2(d));
       renderTags(true); saveState();
       if (!showPointsAll) toast('Метка выбрана — включите «Точки» сверху, чтобы увидеть её на карте', 'info', 3500);
-    }));
+    });
     card.querySelector('.r-int').addEventListener('input', e => {
       d.intensity = +e.target.value; fillSlider(e.target);
       e.target.nextElementSibling.textContent = d.intensity.toFixed(1) + '×';
@@ -1691,7 +1737,7 @@ function clCreate() {
     const used = heatKeys.map(k2 => DS[k2] && DS[k2].color).filter(Boolean);
     const color = LAYER_PALETTE.find(c => !used.includes(c)) || LAYER_PALETTE[heatKeys.length % LAYER_PALETTE.length];
     const key = 'custom_' + Date.now();
-    DS[key] = { key, name, color, color2: '', ramp: 'custom', icon: DEFAULT_PIN_ICON, fields: _cl.fields.slice(),
+    DS[key] = { key, name, color, color2: '', ramp: 'custom', icon: DEFAULT_PIN_ICON, shape: DEFAULT_SHAPE, fields: _cl.fields.slice(),
       opacity: 1, intensity: 1, visible: true, volUnit: '', recs: [], stats: statsOf([]), _userData: true, _recordsLoaded: true };
     heatKeys.push(key);
     _lyrOpen.add(key);
@@ -1701,7 +1747,7 @@ function clCreate() {
     const id = 'cpt_' + Date.now();
     const used = customPtLayers.map(l => String(l.color).toLowerCase());
     const color = SWATCHES.find(c => !used.includes(c.toLowerCase())) || SWATCHES[customPtLayers.length % SWATCHES.length];
-    customPtLayers.push({ id, name, color, icon: DEFAULT_PIN_ICON, fields: _cl.fields.slice(), visible: true, shape: 'teardrop', size: 30, opacity: 1,
+    customPtLayers.push({ id, name, color, icon: DEFAULT_PIN_ICON, fields: _cl.fields.slice(), visible: true, shape: DEFAULT_SHAPE, size: 32, opacity: 1,
       radiusOn: false, radiusM: 1500, radiusColor: color, radiusOpacity: 0.15, recs: [], _group: null });
     _cptOpen.add(id);
     _cl.key = id;
@@ -2571,12 +2617,12 @@ function renderCustomPoints() {
     l._shownCount = 0;
     l._shownRecs = [];
     if (!l.visible || !l.recs.length) return;
-    const pinIcon = l.icon || DEFAULT_PIN_ICON;
+    const pinIcon = l.icon, pinShape = l.shape;
     const markerSize = Math.min(44, Math.max(20, Number.isFinite(+l.size) ? +l.size : 30));
     const markerOpacity = Math.min(1, Math.max(.2, Number.isFinite(+l.opacity) ? +l.opacity : 1));
     // У точки может быть свой цвет (`r.color`) — тогда метка сплошная этого
     // цвета; иначе цвет (или градиент) слоя. SVG кэширует pinSvg.
-    const iconFor = color => color ? pinSvg(pinIcon, color, '', markerSize) : pinSvg(pinIcon, l.color, l.color2, markerSize);
+    const iconFor = color => color ? pinSvg(pinIcon, color, '', markerSize, pinShape) : pinSvg(pinIcon, l.color, l.color2, markerSize, pinShape);
     const recs = l.recs.filter(r => selectedPointMatches(r));
     l._shownCount = recs.length;   // столько же показывает легенда
     l._shownRecs = recs;           // для подписей — ровно то, что нарисовано
@@ -2709,7 +2755,7 @@ function renderPointLabels() {
   customPtLayers.forEach((l, li) => {
     if (!l.visible || !l._shownRecs || !l._shownRecs.length) return;
     const ms = Math.min(44, Math.max(20, Number.isFinite(+l.size) ? +l.size : 30));
-    const pin = pinSvg(l.icon || DEFAULT_PIN_ICON, l.color, l.color2, ms);
+    const pin = pinSvg(l.icon, l.color, l.color2, ms, l.shape);
     const anc = pin.anchor;
     const inset = ms * .14;
     l._shownRecs.forEach(r => {
@@ -3501,7 +3547,7 @@ function buildCustomPtUI() {
     const n = l.recs.length;
     const fields = l.fields || [];
     const open = _cptOpen.has(l.id);
-    const icon = l.icon || DEFAULT_PIN_ICON;
+    const icon = l.icon;
     const id = esc(l.id);
     return `
     <div class="lc cpt-layer${open ? ' open' : ''}${l.visible ? '' : ' off'}" data-cpid="${id}">
@@ -3524,7 +3570,7 @@ function buildCustomPtUI() {
       </div>
       <div class="lc-body">
         <div class="lc-lbl">Метка на карте</div>
-        <div class="lc-icons">${PIN_ICONS.map(ic => `<button type="button" class="lc-pin${icon === ic.id ? ' on' : ''}" data-cpicon="${id}" data-icon="${ic.id}" title="${esc(ic.name)}" aria-label="Метка «${esc(ic.name)}»">${pinSvg(ic.id, l.color, l.color2, 20).html}</button>`).join('')}</div>
+        ${markerPickerHtml(l.shape, icon, l.color, l.color2)}
         <div class="lc-sl"><span>Размер</span><input type="range" class="cpt-size" data-cpsize="${id}" min="20" max="44" step="1" value="${size}"/><b class="cpt-size-val">${size} px</b></div>
         <div class="lc-sl"><span>Прозрачность</span><input type="range" class="cpt-opacity" data-cpopacity="${id}" min="0.2" max="1" step="0.05" value="${opacity}"/><b class="cpt-opacity-val">${Math.round(opacity * 100)}%</b></div>
         <div class="lc-opt">
@@ -3595,12 +3641,13 @@ function buildCustomPtUI() {
     });
   });
 
-  box.querySelectorAll('[data-cpicon]').forEach(el => {
-    el.addEventListener('click', () => {
-      const l = customPtLayers.find(x => x.id === el.dataset.cpicon); if (!l) return;
-      l.icon = el.dataset.icon;
-      el.closest('.lc-icons').querySelectorAll('.lc-pin').forEach(b => b.classList.toggle('on', b === el));
-      renderCustomPoints(); saveState();
+  box.querySelectorAll('.cpt-layer').forEach(card => {
+    const l = customPtLayers.find(x => x.id === card.dataset.cpid); if (!l) return;
+    wireMarkerPicker(card, (shape, icon) => {
+      if (shape) l.shape = shape;
+      if (icon) l.icon = icon;
+      refreshMarkerPicker(card, l.shape, l.icon, l.color, l.color2);
+      renderCustomPoints(); updateLayerLegend(); saveState();
     });
   });
 
@@ -3618,7 +3665,7 @@ function buildCustomPtUI() {
         }
         sw.style.background = l.color2 ? `linear-gradient(135deg, ${safeColor(l.color)}, ${safeColor(l.color2)})` : safeColor(l.color);
         const card = sw.closest('.cpt-layer');
-        if (card) card.querySelectorAll('.lc-pin').forEach(b => { b.innerHTML = pinSvg(b.dataset.icon, l.color, l.color2, 20).html; });
+        if (card) refreshMarkerPicker(card, l.shape, l.icon, l.color, l.color2);
         renderCustomPoints();
         if (!live) { buildAddrSrcSel(); buildRtExclUI(); saveState(); }
       });
@@ -4112,7 +4159,7 @@ function buildStateSnapshot() {
   const layers = {};
   heatKeys.forEach(k => {
     const d = DS[k]; if (!d) return;
-    const o = { name: d.name, color: d.color, color2: d.color2 || '', ramp: d.ramp, icon: d.icon || '', fields: d.fields || [], opacity: d.opacity, intensity: d.intensity, visible: d.visible, showTags: !!d.showTags, volUnit: d.volUnit || '', stats: d.stats };
+    const o = { name: d.name, color: d.color, color2: d.color2 || '', ramp: d.ramp, icon: d.icon || '', shape: d.shape || '', fields: d.fields || [], opacity: d.opacity, intensity: d.intensity, visible: d.visible, showTags: !!d.showTags, volUnit: d.volUnit || '', stats: d.stats };
     if (k.startsWith('custom_') || d._userData) {
       o._userData = true;
       if (d._recordsLoaded === false) o._recordsOmitted = true;
@@ -4216,7 +4263,8 @@ function applySnapshot(st) {
       });
       if (typeof sv.ramp    === 'string') DS[k].ramp    = sv.ramp;
       DS[k].color2 = typeof sv.color2 === 'string' ? sv.color2 : '';
-      DS[k].icon = typeof sv.icon === 'string' && PIN_ICON_MAP[sv.icon] ? sv.icon : '';
+      DS[k].icon = typeof sv.icon === 'string' ? sv.icon : '';
+      DS[k].shape = typeof sv.shape === 'string' ? sv.shape : '';
       DS[k].fields = Array.isArray(sv.fields) ? sv.fields.filter(f => typeof f === 'string').slice(0, EXTRA_MAX_COLS) : [];
       if (typeof sv.opacity === 'number') DS[k].opacity = sv.opacity;
       DS[k].showTags = !!sv.showTags;
@@ -5357,7 +5405,7 @@ function stateFingerprint(snapshot) {
     key, layer && layer.name, layer && layer.color, layer && layer.opacity,
     layer && layer.intensity, layer && layer.visible,
     layer && layer.ramp, layer && layer.showTags,
-    layer && layer.color2, layer && layer.icon, layer && JSON.stringify(layer.fields || []),
+    layer && layer.color2, layer && layer.icon, layer && layer.shape, layer && JSON.stringify(layer.fields || []),
     layer && layer._recordsOmitted,
     layer && layer.recordCount,
     layer && layer.stats,

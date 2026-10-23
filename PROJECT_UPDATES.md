@@ -748,3 +748,24 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   new stat card and the ruler hint.
 - Cache version `20261024g`.
 
+## 2026-10-24 — Map Icons markers: shape + glyph
+
+- Owner feedback: every marker was the same teardrop, only the glyph changed.
+  Markers now come from Map Icons (github.com/scottdejonge/map-icons; code MIT,
+  icons SIL OFL 1.1), chosen per layer in two independent rows:
+  - **shape** — Капля, Табличка, Щит, Герб, Квадрат, Скруглённый;
+  - **glyph** — 47 Map Icons glyphs for retail and city context (магазин,
+    минимаркет, супермаркет, ТЦ, алкомаркет, АЗС, кафе, аптека, банк, склад,
+    доставка, метро …) + «Табак» from Lucide (Map Icons has none) + «Без значка».
+- New static file `marker-icons.js` (`window.HM_MARKERS`, 35 KB): shape paths
+  anchored at the bottom tip and glyph paths — no icon font needed, the same
+  paths draw on canvas (heat-layer pins) and in SVG (point layers, legend).
+- Heat layers gain a `shape` field (saved, restored, fingerprinted); point
+  layers reuse `shape`. Old Lucide icon ids and old shape names map to the
+  nearest new ones (`markerIcon`, `markerShape`), so saved layers keep a
+  sensible marker.
+- Verified in a browser: 6 point layers with all six shapes and different
+  glyphs/colours, 12 canvas pins of a heat layer, shape and glyph picking,
+  legacy mapping; the layers and points regression runs pass.
+- Cache version `20261024h`.
+
