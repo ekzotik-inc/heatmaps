@@ -33,7 +33,7 @@
 html, body {
   margin: 0; height: 100%;
   background: var(--bg); color: var(--ink);
-  font-family: "Manrope", system-ui, sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
@@ -61,7 +61,7 @@ html, body {
 }
 
 #map { flex: 1; height: 100%; border-radius: 24px; overflow: hidden; box-shadow: var(--shadow); background: #EDF1F7; }
-.leaflet-container { font-family: "Manrope"; background: #EDF1F7; }
+.leaflet-container { font-family: "Inter"; background: #EDF1F7; }
 
 /* ── BRAND ───────────────────────────────────────────────────────────── */
 .brand {
@@ -80,11 +80,11 @@ html, body {
 .brand-mark svg { display: block; }
 .brand-text { flex: 1; min-width: 0; }
 .brand-text h1 {
-  font-family: "Manrope"; font-weight: 800; font-size: 15px;
+  font-family: "Inter"; font-weight: 800; font-size: 15px;
   margin: 0; line-height: 1.2; color: var(--ink); letter-spacing: -.3px;
 }
 .brand-text p {
-  font-family: "Manrope"; font-size: 10px;
+  font-family: "Inter"; font-size: 10px;
   color: var(--dim); margin: 3px 0 0;
 }
 /* Переключатель карт под названием приложения */
@@ -92,7 +92,7 @@ html, body {
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
   margin: 4px 0 0 -7px; padding: 3px 8px 3px 7px; border-radius: 8px;
   border: 1px solid transparent; background: none; cursor: pointer;
-  font: 700 11.5px "Manrope"; color: var(--acc-d); transition: .18s var(--ease);
+  font: 700 11.5px "Inter"; color: var(--acc-d); transition: .18s var(--ease);
 }
 .map-switch:hover:not(:disabled), .map-switch[aria-expanded="true"] { background: var(--acc-l); border-color: var(--acc-l2); }
 .map-switch:disabled { cursor: default; color: var(--mut); }
@@ -108,11 +108,11 @@ html, body {
   max-height: min(440px, 70vh); overflow-y: auto;
 }
 #map-menu[hidden] { display: none; }
-.map-menu-head { font: 700 9.5px "Manrope"; text-transform: uppercase; letter-spacing: 1.3px; color: var(--dim); padding: 6px 8px 8px; }
+.map-menu-head { font: 700 9.5px "Inter"; text-transform: uppercase; letter-spacing: 1.3px; color: var(--dim); padding: 6px 8px 8px; }
 .map-menu-item {
   width: 100%; display: flex; align-items: center; gap: 10px; text-align: left;
   padding: 9px 10px; border-radius: 10px; border: 1px solid transparent;
-  background: none; cursor: pointer; font-family: "Manrope"; color: var(--ink);
+  background: none; cursor: pointer; font-family: "Inter"; color: var(--ink);
 }
 .map-menu-item:hover, .map-menu-item:focus-visible { background: var(--card2); border-color: var(--line2); outline: none; }
 .map-menu-item.on { background: var(--acc-l); border-color: var(--acc-l2); }
@@ -124,7 +124,7 @@ html, body {
 .map-menu-new {
   width: 100%; margin-top: 6px; padding: 10px; border-radius: 10px; cursor: pointer;
   border: 1px dashed var(--acc); background: var(--acc-l); color: var(--acc-d);
-  font: 700 12px "Manrope";
+  font: 700 12px "Inter";
 }
 .map-menu-new:hover { background: var(--acc-l2); }
 
@@ -133,14 +133,14 @@ html, body {
   background: var(--acc-l); border: 1px solid var(--acc-l2); border-radius: 14px; }
 .admin-head-ic { width: 36px; height: 36px; border-radius: 11px; flex: 0 0 auto; display: grid; place-items: center;
   background: var(--acc); color: #fff; }
-.admin-head h2 { margin: 0; font: 800 14px "Manrope"; color: var(--ink); }
+.admin-head h2 { margin: 0; font: 800 14px "Inter"; color: var(--ink); }
 .admin-head p { margin: 2px 0 0; font-size: 10.5px; color: var(--mut); }
 .user-row { padding: 10px 11px; margin-bottom: 7px; background: var(--card); border: 1px solid var(--line2);
   border-radius: 12px; box-shadow: var(--shadow-card); }
 .user-row.open { border-color: var(--acc); }
 .user-top { display: flex; align-items: center; gap: 10px; }
 .user-av { width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto; display: grid; place-items: center;
-  background: var(--card2); border: 1px solid var(--line2); font: 800 12px "Manrope"; color: var(--acc-d); }
+  background: var(--card2); border: 1px solid var(--line2); font: 800 12px "Inter"; color: var(--acc-d); }
 .user-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .user-main b { font-size: 12.5px; color: var(--ink); display: flex; align-items: center; gap: 6px; }
 .user-main small { font-size: 10.5px; color: var(--mut); }
@@ -181,7 +181,7 @@ html, body {
 .mf-label span { font-weight: 500; color: var(--dim); }
 .mf-input {
   width: 100%; box-sizing: border-box; background: var(--card2); border: 1px solid var(--line2);
-  color: var(--ink); padding: 9px 11px; border-radius: 10px; font: 13px "Manrope"; outline: none;
+  color: var(--ink); padding: 9px 11px; border-radius: 10px; font: 13px "Inter"; outline: none;
 }
 .mf-input:focus { border-color: var(--acc); }
 .mf-input:disabled { opacity: .6; }
@@ -243,7 +243,7 @@ html, body {
 .side-tab {
   flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center;
   gap: 5px; padding: 9px 2px 10px;
-  font-family: "Manrope"; font-size: 10px; font-weight: 700;
+  font-family: "Inter"; font-size: 10px; font-weight: 700;
   letter-spacing: 0;
   color: var(--mut); background: none; border: none; border-radius: 13px;
   cursor: pointer;
@@ -260,7 +260,7 @@ html, body {
 
 /* ── TAB SECTION LABELS ──────────────────────────────────────────────── */
 .tab-section-title {
-  font-family: "Manrope"; font-size: 9.5px; font-weight: 700;
+  font-family: "Inter"; font-size: 9.5px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 1.3px;
   color: var(--dim); margin: 2px 0 13px;
   display: flex; align-items: center; gap: 9px;
@@ -279,7 +279,7 @@ html, body {
   list-style: none; cursor: pointer; user-select: none;
   display: flex; align-items: center; gap: 9px;
   padding: 14px 16px; margin: 0; border-radius: 16px;
-  font-family: "Manrope"; font-size: 13px; font-weight: 600;
+  font-family: "Inter"; font-size: 13px; font-weight: 600;
   color: var(--mut);
   transition: color .15s;
 }
@@ -339,7 +339,7 @@ html, body {
 .ruler-hint {
   position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 1150;
   padding: 7px 14px; border-radius: 100px; background: var(--ink); color: #eef1f8;
-  font: 600 12px "Manrope"; box-shadow: var(--shadow); pointer-events: none; white-space: nowrap;
+  font: 600 12px "Inter"; box-shadow: var(--shadow); pointer-events: none; white-space: nowrap;
 }
 .ruler-hint[hidden] { display: none; }
 .ruler-hint b { color: #fff; }
@@ -347,7 +347,7 @@ html, body {
 .ruler-label > span, .ruler-label .ruler-total {
   display: inline-block; white-space: nowrap; padding: 2px 7px; border-radius: 7px;
   background: var(--card); color: var(--ink); border: 1px solid var(--line2);
-  font: 700 11px/16px "Manrope"; box-shadow: var(--shadow-card);
+  font: 700 11px/16px "Inter"; box-shadow: var(--shadow-card);
 }
 .ruler-label.last { display: inline-flex !important; align-items: center; gap: 3px; }
 .ruler-label.last .ruler-total { background: var(--acc-d); color: #fff; border-color: var(--acc-d); font-size: 12px; }
@@ -382,7 +382,7 @@ html, body {
   min-width: 178px; max-width: 255px; border: 1px solid var(--line2); border-radius: 100px;
   background: var(--card); color: var(--mut); padding: 7px 14px;
   display: flex; align-items: center; gap: 8px; cursor: pointer; text-align: left;
-  font: 600 12px "Manrope"; transition: .2s var(--ease);
+  font: 600 12px "Inter"; transition: .2s var(--ease);
 }
 .city-filter-trigger:hover, #city-filter.open .city-filter-trigger { color: var(--ink); border-color: var(--acc); transform: translateY(-1px); }
 .city-filter-icon { color: var(--acc); display: flex; flex: 0 0 auto; }
@@ -403,21 +403,21 @@ html, body {
 #city-filter-popover[hidden] { display: none; }
 .city-filter-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .city-filter-head > div { display: grid; gap: 3px; }
-.city-filter-head b { font-family: "Manrope"; font-size: 12px; font-weight: 700; }
+.city-filter-head b { font-family: "Inter"; font-size: 12px; font-weight: 700; }
 #city-filter-subtitle { color: var(--dim); font-size: 10px; }
-.city-filter-clear { border: 0; background: none; color: var(--acc-d); cursor: pointer; font: 600 12px "Manrope"; padding: 2px 0; white-space: nowrap; }
+.city-filter-clear { border: 0; background: none; color: var(--acc-d); cursor: pointer; font: 600 12px "Inter"; padding: 2px 0; white-space: nowrap; }
 .city-filter-clear:hover { color: var(--ink); }
 .city-filter-search {
   display: flex; align-items: center; gap: 7px; border: 1px solid var(--line2);
   border-radius: 10px; padding: 8px 10px; color: var(--dim); background: var(--card2); margin-bottom: 10px;
 }
-.city-filter-search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font: 12px "Manrope"; }
+.city-filter-search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font: 12px "Inter"; }
 .city-filter-search input::placeholder { color: var(--dim); }
 #city-filter-popover .cities { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; max-height: min(330px, 46vh); overflow-y: auto; padding: 2px; scrollbar-width: thin; }
 .city-option {
   min-width: 0; border: 1px solid var(--line2); border-radius: 100px; padding: 7px 14px;
   background: var(--card); color: var(--mut); cursor: pointer; display: flex; align-items: center; gap: 7px;
-  text-align: left; font-family: "Manrope"; font-size: 12px; font-weight: 600; transition: .2s var(--ease);
+  text-align: left; font-family: "Inter"; font-size: 12px; font-weight: 600; transition: .2s var(--ease);
 }
 .city-option:hover { color: var(--ink); border-color: var(--acc); transform: translateY(-1px); }
 .city-option.on { background: var(--acc); border-color: var(--acc); color: #fff; box-shadow: 0 3px 10px rgba(18,173,193,.3); }
@@ -433,7 +433,7 @@ html, body {
 @media (prefers-reduced-motion: reduce) { #city-bar.is-flying .city-filter-trigger { animation: none; } }
 .city-bar-sep { width: 1px; height: 20px; background: var(--line2); margin: 0 5px; flex: 0 0 auto; }
 .city-extra-btn {
-  font-family: "Manrope"; font-size: 11px; font-weight: 700; white-space: nowrap;
+  font-family: "Inter"; font-size: 11px; font-weight: 700; white-space: nowrap;
   color: var(--mut); background: var(--card); border: 1px solid var(--line2);
   border-radius: 100px; padding: 5px 13px; cursor: pointer;
   transition: .2s var(--ease); flex: 0 0 auto;
@@ -455,7 +455,7 @@ html, body {
 /* ── SECTION HEADERS (inner labels) ──────────────────────────────────── */
 .sec {
   margin: 6px 0 11px;
-  font-family: "Manrope"; font-size: 10px;
+  font-family: "Inter"; font-size: 10px;
   letter-spacing: 1.2px; text-transform: uppercase;
   color: var(--dim);
   display: flex; align-items: center; gap: 9px;
@@ -468,7 +468,7 @@ html, body {
 /* ── CITY BUTTONS ────────────────────────────────────────────────────── */
 .cities { display: flex; flex-wrap: wrap; gap: 7px; }
 .cities button {
-  font-family: "Manrope"; font-size: 12px; font-weight: 600;
+  font-family: "Inter"; font-size: 12px; font-weight: 600;
   color: var(--mut); background: var(--card);
   border: 1px solid var(--line2); border-radius: 100px;
   padding: 7px 14px; cursor: pointer;
@@ -512,7 +512,7 @@ html, body {
 .lyr-actions { display: flex; gap: 7px; margin-top: 11px; }
 .lyr-act {
   flex: 1; padding: 8px 4px;
-  font-family: "Manrope"; font-weight: 700; font-size: 11px; white-space: nowrap;
+  font-family: "Inter"; font-weight: 700; font-size: 11px; white-space: nowrap;
   color: var(--mut); background: var(--card);
   border: 1px solid var(--line2); border-radius: 9px;
   cursor: pointer; transition: .18s var(--ease);
@@ -526,7 +526,7 @@ html, body {
 .lyr-top .nm { flex: 1; font-size: 13px; font-weight: 700; color: var(--ink); }
 .lyr-top .nm small {
   display: block; font-weight: 500; font-size: 9.5px;
-  color: var(--dim); font-family: "Manrope"; margin-top: 3px;
+  color: var(--dim); font-family: "Inter"; margin-top: 3px;
 }
 .lyr-ctl {
   display: flex; align-items: center; gap: 10px;
@@ -563,7 +563,7 @@ html, body {
 #tag-note {
   position: absolute; left: calc(var(--side-w) + 42px); bottom: 14px; z-index: 1100;
   background: rgba(28,36,52,.88); color: #fff; backdrop-filter: blur(8px);
-  border-radius: 10px; padding: 6px 11px; font-family: "Manrope";
+  border-radius: 10px; padding: 6px 11px; font-family: "Inter";
   font-size: 10.5px; font-weight: 600; box-shadow: var(--shadow-sm);
   pointer-events: none;
 }
@@ -579,7 +579,7 @@ html, body {
   display: flex; align-items: center; gap: 7px; min-width: 0;
   padding: 6px 8px; cursor: pointer; text-align: left;
   background: var(--card); border: 1px solid var(--line2); border-radius: 9px;
-  font-family: "Manrope"; font-size: 10.5px; font-weight: 600; color: var(--mut);
+  font-family: "Inter"; font-size: 10.5px; font-weight: 600; color: var(--mut);
   transition: .16s var(--ease);
 }
 .ramp-chip i {
@@ -649,7 +649,7 @@ input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
 input[type=color]::-webkit-color-swatch { border: none; border-radius: 5px; }
 
 select {
-  font-family: "Manrope"; font-size: 12px;
+  font-family: "Inter"; font-size: 12px;
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line2); border-radius: 9px;
   padding: 7px 9px; cursor: pointer;
@@ -702,7 +702,7 @@ input[type=range].full { width: 100%; }
 .pt-label {
   position: absolute; white-space: nowrap; box-sizing: border-box;
   height: 18px; padding: 0 6px 0 5px;
-  font: 600 11px/16px "Manrope", system-ui, sans-serif; color: var(--ink);
+  font: 600 11px/16px "Inter", system-ui, sans-serif; color: var(--ink);
   background: color-mix(in srgb, var(--card) 90%, transparent);
   border: 1px solid var(--line2); border-left: 3px solid var(--acc);
   border-radius: 6px; box-shadow: var(--shadow-card);
@@ -719,7 +719,7 @@ input[type=range].full { width: 100%; }
   gap: 7px; margin-bottom: 12px;
 }
 .rec-basis button {
-  font-family: "Manrope"; font-size: 12px; font-weight: 600;
+  font-family: "Inter"; font-size: 12px; font-weight: 600;
   color: var(--mut); background: var(--card);
   border: 1px solid var(--line2); border-radius: 100px;
   padding: 9px 4px; cursor: pointer; transition: .2s var(--ease);
@@ -744,7 +744,7 @@ input[type=range].full { width: 100%; }
   font-size: 19px; box-shadow: 0 4px 14px rgba(20,184,125,.3);
 }
 .rec-summary .big {
-  font-family: "Manrope"; font-weight: 800;
+  font-family: "Inter"; font-weight: 800;
   font-size: 24px; color: var(--rec-ink); line-height: 1;
 }
 .rec-summary .lbl {
@@ -768,7 +768,7 @@ input[type=range].full { width: 100%; }
 }
 .ctrl label { font-size: 12.5px; color: var(--mut); }
 .ctrl .val {
-  font-family: "Manrope"; font-size: 12px;
+  font-family: "Inter"; font-size: 12px;
   color: var(--rec); font-weight: 700;
 }
 .ctrl .val.blue { color: var(--acc); }
@@ -792,7 +792,7 @@ input[type=range].full { width: 100%; }
 .rec-rank {
   width: 28px; height: 28px; border-radius: 50%; flex: 0 0 auto;
   background: linear-gradient(135deg, #17D08D, var(--rec-d));
-  color: #fff; font-family: "Manrope"; font-weight: 800; font-size: 12px;
+  color: #fff; font-family: "Inter"; font-weight: 800; font-size: 12px;
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 3px 10px rgba(20,184,125,.3);
 }
@@ -803,15 +803,15 @@ input[type=range].full { width: 100%; }
 }
 .rec-main .meta {
   font-size: 9.5px; color: var(--mut);
-  font-family: "Manrope"; margin-top: 3px;
+  font-family: "Inter"; margin-top: 3px;
 }
 .rec-main .meta .hi { color: var(--rec-ink); }
 .rec-demand { text-align: right; flex: 0 0 auto; }
 .rec-demand .dv {
-  font-family: "Manrope"; font-weight: 800;
+  font-family: "Inter"; font-weight: 800;
   font-size: 15px; color: var(--rec-ink); line-height: 1;
 }
-.rec-demand .dl { font-size: 9px; color: var(--dim); font-family: "Manrope"; margin-top: 3px; }
+.rec-demand .dl { font-size: 9px; color: var(--dim); font-family: "Inter"; margin-top: 3px; }
 
 /* expand/collapse */
 .rec-expand-wrap {
@@ -825,7 +825,7 @@ input[type=range].full { width: 100%; }
 .rec-toggle {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   width: 100%; margin-top: 10px; padding: 11px 14px;
-  font-family: "Manrope"; font-weight: 700; font-size: 12px;
+  font-family: "Inter"; font-weight: 700; font-size: 12px;
   color: var(--rec-ink);
   background: var(--rec-l);
   border: 1px solid rgba(20,184,125,.22); border-radius: 12px;
@@ -839,7 +839,7 @@ input[type=range].full { width: 100%; }
 .btn {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   width: 100%;
-  font-family: "Manrope"; font-weight: 700; font-size: 13px; letter-spacing: .2px;
+  font-family: "Inter"; font-weight: 700; font-size: 13px; letter-spacing: .2px;
   color: #fff;
   background: linear-gradient(135deg, #17D08D, var(--rec-d));
   border: none; border-radius: 12px; padding: 12px 16px;
@@ -866,7 +866,7 @@ input[type=range].full { width: 100%; }
 .share-btn {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   padding: 11px 8px; border-radius: 11px;
-  font-family: "Manrope"; font-weight: 700; font-size: 11.5px;
+  font-family: "Inter"; font-weight: 700; font-size: 11.5px;
   cursor: pointer; transition: .2s var(--ease); border: 1px solid;
 }
 .share-btn.export {
@@ -897,7 +897,7 @@ input[type=range].full { width: 100%; }
 }
 .filebox:hover { border-color: var(--acc); color: var(--ink); background: var(--acc-l); }
 .filebox b { color: var(--acc); }
-.fname { font-size: 11px; color: var(--rec-ink); margin: -4px 2px 10px; font-family: "Manrope"; }
+.fname { font-size: 11px; color: var(--rec-ink); margin: -4px 2px 10px; font-family: "Inter"; }
 
 /* ── FOOTER ──────────────────────────────────────────────────────────── */
 .foot {
@@ -921,7 +921,7 @@ input[type=range].full { width: 100%; }
   position: absolute; top: 14px; right: 14px; z-index: 1100;
   background: rgba(255,255,255,.95); backdrop-filter: blur(8px);
   border: 1px solid var(--line2); border-radius: 12px;
-  padding: 8px 13px; font-family: "Manrope";
+  padding: 8px 13px; font-family: "Inter";
   font-size: 11px; color: var(--mut);
   box-shadow: var(--shadow-sm);
 }
@@ -932,7 +932,7 @@ input[type=range].full { width: 100%; }
   position: absolute; top: 54px; right: 14px; z-index: 1100;
   background: rgba(255,255,255,.95); backdrop-filter: blur(10px);
   border: 1px solid var(--line2); border-radius: 12px;
-  padding: 8px 13px; font-family: "Manrope";
+  padding: 8px 13px; font-family: "Inter";
   font-size: 10.5px; color: var(--mut);
   box-shadow: var(--shadow-sm);
   display: flex; align-items: center; gap: 7px;
@@ -963,7 +963,7 @@ input[type=range].full { width: 100%; }
   width: 100%; display: flex; align-items: center; gap: 8px; margin: 8px 0;
   padding: 8px 11px; border-radius: 10px; cursor: pointer;
   background: var(--card); border: 1px solid var(--line2); color: var(--mut);
-  font: 700 11.5px "Manrope"; text-align: left; transition: .16s var(--ease);
+  font: 700 11.5px "Inter"; text-align: left; transition: .16s var(--ease);
 }
 .rp-list-toggle:hover { color: var(--acc-d); border-color: var(--acc); background: var(--acc-l); }
 .rp-list-toggle span { flex: 1; }
@@ -1013,7 +1013,7 @@ input[type=range].full { width: 100%; }
 .rp-edit {
   display: block; width: 100%; margin-top: 9px; padding: 8px; cursor: pointer;
   border-radius: 9px; border: 1px solid var(--line2); background: var(--card2);
-  font-family: "Manrope"; font-size: 11.5px; font-weight: 700; color: var(--mut);
+  font-family: "Inter"; font-size: 11.5px; font-weight: 700; color: var(--mut);
 }
 .rp-edit:hover { color: var(--acc); border-color: var(--acc); background: var(--acc-l); }
 
@@ -1029,7 +1029,7 @@ body.geo-picking #map { cursor: crosshair; }
 .rp-card {
   width: min(520px, 100%); max-height: 88vh; overflow: auto;
   background: var(--card); border: 1px solid var(--line2); border-radius: 20px;
-  box-shadow: var(--shadow); padding: 22px; font-family: "Manrope";
+  box-shadow: var(--shadow); padding: 22px; font-family: "Inter";
 }
 .rp-card h3 { margin: 0 0 16px; font-size: 16px; font-weight: 800; color: var(--ink); }
 .rp-key-warn {
@@ -1044,13 +1044,13 @@ body.geo-picking #map { cursor: crosshair; }
 .rp-key-row input {
   flex: 1; min-width: 0; padding: 8px 11px; border-radius: 9px; outline: none;
   border: 1px solid var(--line2); background: var(--card); color: var(--ink);
-  font-family: "Manrope"; font-size: 12.5px;
+  font-family: "Inter"; font-size: 12.5px;
 }
 .rp-key-row input:focus { border-color: var(--acc); }
 .rp-key-row button {
   flex: 0 0 auto; padding: 8px 14px; border-radius: 9px; cursor: pointer;
   border: 0; background: var(--acc); color: #fff;
-  font-family: "Manrope"; font-size: 11.5px; font-weight: 700;
+  font-family: "Inter"; font-size: 11.5px; font-weight: 700;
 }
 .rp-key-row button:hover { background: var(--acc-d); }
 
@@ -1066,7 +1066,7 @@ body.geo-picking #map { cursor: crosshair; }
 .rp-field input, .rp-field textarea {
   width: 100%; padding: 9px 11px; border-radius: 10px; outline: none; resize: vertical;
   border: 1px solid var(--line2); background: var(--card2); color: var(--ink);
-  font-family: "Manrope"; font-size: 12.5px;
+  font-family: "Inter"; font-size: 12.5px;
 }
 .rp-field input:focus, .rp-field textarea:focus { border-color: var(--acc); background: var(--card); }
 /* Общий стиль полей растягивал выбор своего оттенка в пустую полосу на всю
@@ -1075,7 +1075,7 @@ body.geo-picking #map { cursor: crosshair; }
 .rp-geo {
   display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
   padding: 8px 12px; border-radius: 10px; border: 1px solid var(--acc); background: var(--acc-l);
-  font-family: "Manrope"; font-size: 11.5px; font-weight: 700; color: var(--acc-d);
+  font-family: "Inter"; font-size: 11.5px; font-weight: 700; color: var(--acc-d);
 }
 .rp-geo:hover { background: var(--acc-l2); }
 .rp-geo-hint { display: block; margin-top: 5px; font-size: 10px; color: var(--dim); }
@@ -1083,7 +1083,7 @@ body.geo-picking #map { cursor: crosshair; }
 .rp-color-auto {
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
   padding: 7px 11px; border-radius: 9px; border: 1px solid var(--line2); background: var(--card2);
-  font-family: "Manrope"; font-size: 11px; font-weight: 700; color: var(--mut);
+  font-family: "Inter"; font-size: 11px; font-weight: 700; color: var(--mut);
   transition: .16s var(--ease);
 }
 /* Кружок показывает цвет выбранного слоя — видно, что именно наследуется */
@@ -1107,7 +1107,7 @@ body.geo-picking #map { cursor: crosshair; }
 .rp-photo-add {
   padding: 8px 12px; border-radius: 10px; cursor: pointer;
   border: 1px dashed var(--line2); background: var(--card2);
-  font-family: "Manrope"; font-size: 11.5px; font-weight: 700; color: var(--mut);
+  font-family: "Inter"; font-size: 11.5px; font-weight: 700; color: var(--mut);
 }
 .rp-photo-add:hover:not(:disabled) { color: var(--acc); border-color: var(--acc); }
 .rp-photo-add:disabled { opacity: .6; cursor: default; }
@@ -1115,7 +1115,7 @@ body.geo-picking #map { cursor: crosshair; }
 .rp-paste-hint { display: block; margin-top: 6px; font-size: 10.5px; color: var(--dim); line-height: 1.4; }
 .rp-paste-hint[hidden] { display: none; }
 .rp-paste-hint kbd {
-  font: 700 10px "Manrope"; padding: 0 4px; border-radius: 4px;
+  font: 700 10px "Inter"; padding: 0 4px; border-radius: 4px;
   border: 1px solid var(--line2); background: var(--card); color: var(--mut);
 }
 .rp-actions { display: flex; align-items: center; gap: 8px; margin-top: 18px; }
@@ -1150,7 +1150,7 @@ body.geo-picking #map { cursor: crosshair; }
 .lightbox-nav .lightbox-btn { pointer-events: auto; }
 .lightbox-count {
   position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
-  font-family: "Manrope"; font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,.8);
+  font-family: "Inter"; font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,.8);
 }
 @media (max-width: 720px) {
   .rp-grid { grid-template-columns: 1fr; }
@@ -1170,7 +1170,7 @@ body.updating #map { filter: grayscale(var(--upd-gray, 1)) contrast(.97); }
   background: rgba(255,255,255,.97); backdrop-filter: blur(10px);
   border: 1px solid rgba(18,173,193,.4); border-radius: 14px;
   padding: 9px 10px 9px 14px; box-shadow: var(--shadow);
-  font-family: "Manrope"; animation: badge-in .32s var(--ease) both;
+  font-family: "Inter"; animation: badge-in .32s var(--ease) both;
 }
 #update-banner[hidden] { display: none; }
 .upd-pulse {
@@ -1186,7 +1186,7 @@ body.updating #map { filter: grayscale(var(--upd-gray, 1)) contrast(.97); }
 .upd-banner-text b { font-size: 12px; font-weight: 700; color: var(--ink); }
 .upd-banner-text span { font-size: 10.5px; color: var(--mut); }
 .upd-apply {
-  border: 0; border-radius: 10px; cursor: pointer; font-family: "Manrope";
+  border: 0; border-radius: 10px; cursor: pointer; font-family: "Inter";
   font-size: 11.5px; font-weight: 700; color: #fff; background: var(--acc);
   padding: 8px 14px; transition: background .2s var(--ease), transform .12s var(--ease);
 }
@@ -1209,7 +1209,7 @@ body.updating #map { filter: grayscale(var(--upd-gray, 1)) contrast(.97); }
 .upd-card {
   width: min(330px, 100%); background: var(--card); border: 1px solid var(--line2);
   border-radius: 20px; box-shadow: var(--shadow); padding: 24px 22px 20px;
-  text-align: center; font-family: "Manrope";
+  text-align: center; font-family: "Inter";
   animation: badge-in .3s var(--ease) both;
 }
 .upd-pct {
@@ -1247,7 +1247,7 @@ body.updating #map { filter: grayscale(var(--upd-gray, 1)) contrast(.97); }
 .upd-actions[hidden] { display: none; }
 .upd-btn {
   flex: 1; padding: 10px 12px; border-radius: 11px; cursor: pointer;
-  font-family: "Manrope"; font-size: 12px; font-weight: 700;
+  font-family: "Inter"; font-size: 12px; font-weight: 700;
   border: 1px solid var(--line2); background: var(--card2); color: var(--ink);
   transition: background .2s var(--ease), transform .12s var(--ease);
 }
@@ -1276,14 +1276,14 @@ body.updating #map { filter: grayscale(var(--upd-gray, 1)) contrast(.97); }
 }
 .leaflet-popup-tip { background: var(--card); }
 .leaflet-popup-content { margin: 14px 16px; font-size: 12.5px; line-height: 1.55; max-width: 250px; }
-.pp-title { font-family: "Manrope"; font-weight: 700; font-size: 13.5px; margin-bottom: 8px; color: var(--ink); }
+.pp-title { font-family: "Inter"; font-weight: 700; font-size: 13.5px; margin-bottom: 8px; color: var(--ink); }
 .pp-row {
   display: flex; justify-content: space-between; gap: 18px;
   color: var(--mut); margin-top: 3px;
 }
-.pp-row b { color: var(--ink); font-family: "Manrope"; font-weight: 600; }
+.pp-row b { color: var(--ink); font-family: "Inter"; font-weight: 600; }
 .pp-tag {
-  display: inline-block; font-family: "Manrope"; font-size: 10px;
+  display: inline-block; font-family: "Inter"; font-size: 10px;
   padding: 3px 8px; border-radius: 7px; margin-top: 9px; letter-spacing: .4px;
 }
 .pp-why { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); color: var(--rec-ink); font-size: 11.5px; line-height: 1.5; }
@@ -1291,7 +1291,7 @@ body.updating #map { filter: grayscale(var(--upd-gray, 1)) contrast(.97); }
   display: flex; align-items: center; justify-content: center; gap: 6px;
   margin-top: 10px; padding: 7px 10px; border-radius: 9px;
   border: 1px solid var(--line2); background: var(--card2);
-  font: 700 11.5px "Manrope"; color: var(--acc-d) !important; text-decoration: none;
+  font: 700 11.5px "Inter"; color: var(--acc-d) !important; text-decoration: none;
   transition: .16s var(--ease);
 }
 .pp-ymaps:hover { border-color: var(--acc); background: var(--acc-l); }
@@ -1327,7 +1327,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 .core-pin {
   width: 26px; height: 26px; border-radius: 50%;
   border: 2.5px solid #fff; box-shadow: 0 3px 8px rgba(0,0,0,.45);
-  color: #fff; font-family: "Manrope"; font-weight: 800; font-size: 12px;
+  color: #fff; font-family: "Inter"; font-weight: 800; font-size: 12px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: transform .15s;
 }
@@ -1344,7 +1344,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 .rec-pin span {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  color: #fff; font-family: "Manrope"; font-weight: 800; font-size: 13px; z-index: 2;
+  color: #fff; font-family: "Inter"; font-weight: 800; font-size: 13px; z-index: 2;
 }
 .rec-pin .ring {
   position: absolute; inset: -6px; border-radius: 50%;
@@ -1360,7 +1360,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 /* ── ADD-LAYER BUTTON ────────────────────────────────────────────────── */
 .add-layer-btn {
   width: 100%; margin-top: 8px; height: 42px;
-  font-family: "Manrope"; font-weight: 700; font-size: 12px;
+  font-family: "Inter"; font-weight: 700; font-size: 12px;
   color: var(--acc); background: var(--acc-l);
   border: 1.5px dashed rgba(18,173,193,.4); border-radius: 12px;
   padding: 10px; cursor: pointer; transition: .2s var(--ease);
@@ -1407,14 +1407,14 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 }
 #layer-modal-overlay.open .layer-modal { transform: scale(1); }
 .layer-modal h3 {
-  font-family: "Manrope"; font-weight: 800; font-size: 17px;
+  font-family: "Inter"; font-weight: 800; font-size: 17px;
   margin: 0 0 6px; color: var(--ink);
 }
 .layer-modal p { font-size: 12.5px; color: var(--mut); margin: 0 0 20px; line-height: 1.5; }
 .layer-modal input[type=text] {
   width: 100%; background: var(--card2);
   border: 1.5px solid var(--line2); border-radius: 11px;
-  padding: 12px 14px; font-family: "Manrope";
+  padding: 12px 14px; font-family: "Inter";
   font-size: 14px; color: var(--ink); outline: none;
   transition: .2s; margin-bottom: 16px;
 }
@@ -1422,7 +1422,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 .modal-actions { display: flex; gap: 10px; }
 .modal-btn {
   flex: 1; padding: 12px; border-radius: 11px;
-  font-family: "Manrope"; font-weight: 700; font-size: 13px;
+  font-family: "Inter"; font-weight: 700; font-size: 13px;
   cursor: pointer; transition: .2s var(--ease); border: none;
 }
 .modal-btn.primary { background: linear-gradient(135deg, #17C4D6, var(--acc-d)); color:#fff; }
@@ -1460,20 +1460,20 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
   content: ""; position: absolute; inset: 0; margin: auto;
   width: 13px; height: 13px; border-radius: 50%; background: #fff;
 }
-.auth-logo-text h2 { font-family: "Manrope"; font-weight: 800; font-size: 17px; margin: 0; color: var(--ink); }
-.auth-logo-text p { font-size: 11px; color: var(--dim); margin: 3px 0 0; font-family: "Manrope"; }
-.auth-title { font-family: "Manrope"; font-weight: 700; font-size: 22px; color: var(--ink); margin: 0 0 6px; letter-spacing: -.3px; }
+.auth-logo-text h2 { font-family: "Inter"; font-weight: 800; font-size: 17px; margin: 0; color: var(--ink); }
+.auth-logo-text p { font-size: 11px; color: var(--dim); margin: 3px 0 0; font-family: "Inter"; }
+.auth-title { font-family: "Inter"; font-weight: 700; font-size: 22px; color: var(--ink); margin: 0 0 6px; letter-spacing: -.3px; }
 .auth-sub { font-size: 13px; color: var(--mut); margin: 0 0 28px; line-height: 1.5; }
 .auth-field { margin-bottom: 16px; }
 .auth-field label {
   display: block; font-size: 10.5px; font-weight: 600;
   color: var(--mut); letter-spacing: .6px; text-transform: uppercase;
-  font-family: "Manrope"; margin-bottom: 7px;
+  font-family: "Inter"; margin-bottom: 7px;
 }
 .auth-field input {
   width: 100%; background: var(--card2);
   border: 1.5px solid var(--line2); border-radius: 12px;
-  padding: 13px 16px; font-family: "Manrope";
+  padding: 13px 16px; font-family: "Inter";
   font-size: 14px; color: var(--ink); outline: none; transition: .2s;
 }
 .auth-field input:focus { border-color: var(--acc); background: var(--card); box-shadow: 0 0 0 3px var(--acc-l); }
@@ -1488,7 +1488,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 .auth-field input::placeholder { color: var(--dim); }
 .auth-btn {
   width: 100%; margin-top: 8px; padding: 14px;
-  font-family: "Manrope"; font-weight: 800; font-size: 14px; letter-spacing: .3px;
+  font-family: "Inter"; font-weight: 800; font-size: 14px; letter-spacing: .3px;
   color: #fff; background: linear-gradient(135deg, #17C4D6, var(--acc-d));
   border: none; border-radius: 13px; cursor: pointer; transition: .2s var(--ease);
   position: relative; overflow: hidden;
@@ -1504,7 +1504,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
   display: none; line-height: 1.5;
 }
 .auth-err.show { display: block; }
-.auth-footer { margin-top: 24px; text-align: center; font-size: 11px; color: var(--dim); font-family: "Manrope"; }
+.auth-footer { margin-top: 24px; text-align: center; font-size: 11px; color: var(--dim); font-family: "Inter"; }
 
 /* ── MOBILE ──────────────────────────────────────────────────────────── */
 @media (max-width: 780px) {
@@ -1627,7 +1627,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
   padding: 18px 20px; border-radius: 16px; cursor: pointer; text-align: left;
   background: var(--card2); border: 1.5px solid var(--line2);
   transition: border-color .2s, background .2s, transform .18s, box-shadow .2s;
-  color: var(--ink); font-family: "Manrope"; width: 100%;
+  color: var(--ink); font-family: "Inter"; width: 100%;
 }
 .mode-card:hover {
   border-color: var(--acc); background: var(--acc-l);
@@ -1637,7 +1637,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 .mode-card-edit { border-color: rgba(20,184,125,.25); background: var(--rec-l); }
 .mode-card-edit:hover { border-color: var(--rec); background: rgba(20,184,125,.12); }
 .mode-icon { font-size: 24px; line-height: 1; flex-shrink: 0; margin-top: 2px; }
-.mode-name { font-family: "Manrope"; font-weight: 700; font-size: 15px; margin-bottom: 5px; }
+.mode-name { font-family: "Inter"; font-weight: 700; font-size: 15px; margin-bottom: 5px; }
 .mode-desc { font-size: 12.5px; color: var(--mut); line-height: 1.55; }
 .map-card.locked {
   opacity: .4; cursor: not-allowed; filter: grayscale(.6);
@@ -1660,7 +1660,7 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
 .mode-badge {
   position: absolute; bottom: 50px; right: 16px; z-index: 900;
   padding: 6px 12px 6px 10px; border-radius: 20px;
-  font-size: 11.5px; font-family: "Manrope"; font-weight: 600;
+  font-size: 11.5px; font-family: "Inter"; font-weight: 600;
   display: flex; align-items: center; gap: 6px;
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   box-shadow: var(--shadow-sm);
@@ -1747,7 +1747,7 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
 .rt-excl-block { margin: 4px 0 12px; }
 .rt-excl-title {
   font-size: 11px; color: var(--mut); font-weight: 600;
-  margin-bottom: 8px; font-family: "Manrope";
+  margin-bottom: 8px; font-family: "Inter";
 }
 .rt-excl-item { padding: 5px 4px; }
 /* Охват Ташкента: город или город + область */
@@ -1766,7 +1766,7 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
 .city-scope-btn {
   padding: 8px 6px; border-radius: 9px; cursor: pointer;
   border: 1px solid var(--line2); background: var(--card2); color: var(--mut);
-  font-family: "Manrope"; font-size: 11px; font-weight: 700; white-space: nowrap;
+  font-family: "Inter"; font-size: 11px; font-weight: 700; white-space: nowrap;
   transition: .16s var(--ease);
 }
 .city-scope-btn:hover { border-color: var(--acc); color: var(--acc-d); }
@@ -1797,7 +1797,7 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
 .settings-group-label {
   font-size: 10.5px; font-weight: 700; letter-spacing: .5px;
   text-transform: uppercase; color: var(--acc);
-  font-family: "Manrope"; margin-bottom: 10px;
+  font-family: "Inter"; margin-bottom: 10px;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1831,7 +1831,7 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
   flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .cpt-count {
-  font-size: 10px; font-family: "Manrope"; color: var(--mut);
+  font-size: 10px; font-family: "Inter"; color: var(--mut);
   background: var(--side-bg2); padding: 2px 7px; border-radius: 100px;
 }
 .cpt-del {
@@ -1851,7 +1851,7 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
 }
 .cpt-upload {
   /* Keep the point data action visually identical to heat-layer actions. */
-  flex: 1; padding: 8px 4px; font-size: 11px; font-family: "Manrope";
+  flex: 1; padding: 8px 4px; font-size: 11px; font-family: "Inter";
   font-weight: 700; color: var(--mut); background: var(--card);
   border: 1px solid var(--line2); border-radius: 9px; cursor: pointer;
   transition: .18s var(--ease);
@@ -1863,7 +1863,7 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
 
 /* ── ACC BADGE (used in tab buttons) ─────────────────────────────────── */
 .acc-badge {
-  font-family: "Manrope"; font-size: 9px;
+  font-family: "Inter"; font-size: 9px;
   color: var(--acc); background: var(--acc-l);
   border: 1px solid rgba(18,173,193,.25);
   border-radius: 100px; padding: 1px 5px; flex: 0 0 auto;
@@ -1890,7 +1890,7 @@ body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
 .hm-tip {
   position: fixed; z-index: 10060; max-width: 240px;
   background: var(--ink); color: #eef1f8; border-radius: 9px;
-  padding: 7px 11px; font: 500 10.5px/1.5 "Manrope";
+  padding: 7px 11px; font: 500 10.5px/1.5 "Inter";
   box-shadow: var(--shadow); animation: hm-tip-in .14s var(--ease);
 }
 .hm-tip[hidden] { display: none; }
@@ -2038,7 +2038,7 @@ input[type=color]:focus-visible,
 .vt-ic.heat { color: var(--warn); }
 .vt.on .vt-ic.heat { background: var(--warn); border-color: var(--warn); color: #fff; }
 .vt-txt { flex: 1; min-width: 0; display: grid; gap: 1px; }
-.vt-txt b { font: 700 13px "Manrope"; color: var(--ink); }
+.vt-txt b { font: 700 13px "Inter"; color: var(--ink); }
 .vt-txt small { font-size: 10.5px; color: var(--mut); line-height: 1.35; }
 .vt .cbx { pointer-events: none; }
 
@@ -2072,9 +2072,9 @@ input[type=color]:focus-visible,
 .lc-sw:hover { transform: scale(1.08); }
 .lc-sw[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--acc), inset 0 0 0 1.5px rgba(255,255,255,.55); }
 .lc-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; }
-.lc-t { font: 700 13px "Manrope"; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lc-t { font: 700 13px "Inter"; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lc-rename {
-  flex: 1; min-width: 0; font: 700 13px "Manrope"; color: var(--ink); background: var(--card2);
+  flex: 1; min-width: 0; font: 700 13px "Inter"; color: var(--ink); background: var(--card2);
   border: 1.5px solid var(--acc); border-radius: 8px; padding: 4px 7px; outline: none;
 }
 .lc-ic {
@@ -2115,7 +2115,7 @@ input[type=color]:focus-visible,
 .lc-foot > span { flex: 1; min-width: 0; }
 .lc-link {
   display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line2); background: var(--card);
-  color: var(--mut); border-radius: 100px; padding: 3px 9px; font: 700 10.5px "Manrope"; cursor: pointer;
+  color: var(--mut); border-radius: 100px; padding: 3px 9px; font: 700 10.5px "Inter"; cursor: pointer;
 }
 .lc-link:hover { color: var(--acc-d); border-color: var(--acc); }
 .lc-link.on { background: var(--acc); color: #fff; border-color: var(--acc); }
@@ -2125,7 +2125,7 @@ body.viewer .admin-only { display: none !important; }
   width: 100%; margin-top: 6px; padding: 11px 14px; border-radius: 12px; cursor: pointer;
   display: flex; align-items: center; justify-content: center; gap: 8px;
   background: var(--ink); color: #fff; border: 1px solid var(--ink);
-  font: 700 13px "Manrope"; letter-spacing: .1px; box-shadow: var(--shadow-sm);
+  font: 700 13px "Inter"; letter-spacing: .1px; box-shadow: var(--shadow-sm);
   transition: transform .14s var(--ease), box-shadow .14s var(--ease), background .14s var(--ease);
 }
 .create-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow); filter: brightness(1.18); }
@@ -2141,18 +2141,18 @@ body.viewer .admin-only { display: none !important; }
   position: fixed; z-index: 10070; width: 286px; padding: 12px;
   background: var(--card); border: 1px solid var(--line2); border-radius: 14px; box-shadow: var(--shadow);
 }
-.pp2-h { font: 700 9.5px "Manrope"; text-transform: uppercase; letter-spacing: 1.2px; color: var(--dim); margin: 2px 0 7px; }
+.pp2-h { font: 700 9.5px "Inter"; text-transform: uppercase; letter-spacing: 1.2px; color: var(--dim); margin: 2px 0 7px; }
 .pp2-h ~ .pp2-h { margin-top: 12px; }
 .pp2-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .pp2-preset {
   display: flex; align-items: center; gap: 7px; padding: 5px 8px 5px 5px; cursor: pointer; text-align: left;
-  border: 1px solid var(--line2); border-radius: 10px; background: var(--card); font: 600 11.5px "Manrope"; color: var(--ink);
+  border: 1px solid var(--line2); border-radius: 10px; background: var(--card); font: 600 11.5px "Inter"; color: var(--ink);
 }
 .pp2-preset i { width: 26px; height: 20px; border-radius: 6px; flex: 0 0 auto; }
 .pp2-preset:hover { border-color: var(--acc); }
 .pp2-preset.on { border-color: var(--acc); background: var(--acc-l); box-shadow: 0 0 0 1px var(--acc); }
 .pp2-seg { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; gap: 3px; background: var(--card2); border: 1px solid var(--line2); border-radius: 10px; margin-bottom: 9px; }
-.pp2-seg button { border: 0; border-radius: 7px; padding: 6px; background: none; font: 700 11.5px "Manrope"; color: var(--mut); cursor: pointer; }
+.pp2-seg button { border: 0; border-radius: 7px; padding: 6px; background: none; font: 700 11.5px "Inter"; color: var(--mut); cursor: pointer; }
 .pp2-seg button.on { background: var(--card); color: var(--ink); box-shadow: var(--shadow-card); }
 .pp2-sw { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .pp2-grad { display: flex; align-items: center; gap: 8px; }
@@ -2161,7 +2161,7 @@ body.viewer .admin-only { display: none !important; }
 .pp2-gbar { flex: 1; height: 14px; border-radius: 7px; border: 1px solid var(--line2); }
 .pp2-apply {
   width: 100%; margin-top: 9px; padding: 8px; border-radius: 9px; border: 1px solid var(--acc);
-  background: var(--acc); color: #fff; font: 700 12px "Manrope"; cursor: pointer;
+  background: var(--acc); color: #fff; font: 700 12px "Inter"; cursor: pointer;
 }
 .pp2-apply:hover { background: var(--acc-d); }
 
@@ -2175,7 +2175,7 @@ body.viewer .admin-only { display: none !important; }
   width: min(440px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; padding: 20px 20px 16px;
   background: var(--card); border-radius: 18px; box-shadow: var(--shadow); animation: adv-in .2s var(--ease);
 }
-.cl-card h3 { margin: 0 0 4px; font: 800 17px "Manrope"; color: var(--ink); letter-spacing: -.2px; }
+.cl-card h3 { margin: 0 0 4px; font: 800 17px "Inter"; color: var(--ink); letter-spacing: -.2px; }
 .cl-sub { margin: 0 0 14px; font-size: 12px; color: var(--mut); line-height: 1.5; }
 .cl-label { display: block; font-size: 11px; font-weight: 700; color: var(--mut); margin: 12px 0 6px; }
 .cl-chips { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -2183,7 +2183,7 @@ body.viewer .admin-only { display: none !important; }
 #cl-fields { margin-top: 5px; }
 .cl-chip {
   display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px 4px 10px; border-radius: 100px;
-  font: 600 11.5px "Manrope"; background: var(--acc-l); color: var(--acc-d); border: 1px solid var(--acc-l2);
+  font: 600 11.5px "Inter"; background: var(--acc-l); color: var(--acc-d); border: 1px solid var(--acc-l2);
 }
 .cl-chip.fixed { padding: 4px 10px; background: var(--card2); color: var(--mut); border-color: var(--line2); }
 .cl-chip button { width: 18px; height: 18px; border-radius: 50%; border: 0; background: none; color: var(--acc-d); cursor: pointer; display: grid; place-items: center; padding: 0; }
@@ -2191,7 +2191,7 @@ body.viewer .admin-only { display: none !important; }
 .cl-add { display: flex; gap: 6px; margin-top: 8px; }
 .cl-add .lyr-act { flex: 0 0 auto; padding: 0 12px; }
 .cl-suggest { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 8px; font-size: 10.5px; color: var(--dim); }
-.cl-suggest button { border: 1px dashed var(--line2); background: none; border-radius: 100px; padding: 3px 9px; font: 600 11px "Manrope"; color: var(--mut); cursor: pointer; }
+.cl-suggest button { border: 1px dashed var(--line2); background: none; border-radius: 100px; padding: 3px 9px; font: 600 11px "Inter"; color: var(--mut); cursor: pointer; }
 .cl-suggest button:hover { border-color: var(--acc); color: var(--acc-d); }
 .cl-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .cl-done { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--rec-l); color: var(--rec-ink); margin-bottom: 10px; }
@@ -2199,7 +2199,7 @@ body.viewer .admin-only { display: none !important; }
 .cl-steps b { color: var(--ink); }
 .cl-big {
   display: block; width: 100%; margin-top: 7px; padding: 10px; border-radius: 11px; cursor: pointer;
-  border: 1px solid var(--acc); background: var(--acc); color: #fff; font: 700 12.5px "Manrope";
+  border: 1px solid var(--acc); background: var(--acc); color: #fff; font: 700 12.5px "Inter";
 }
 .cl-big:hover { background: var(--acc-d); }
 .cl-big.ghost { background: var(--card); color: var(--acc-d); }
@@ -2216,15 +2216,15 @@ body.viewer .admin-only { display: none !important; }
 
 /* ── АДРЕСКА: компактные шаги ─────────────────────────────────────────── */
 .addr-intro { display: grid; gap: 3px; margin: 0 0 12px; }
-.addr-intro b { font: 800 15px "Manrope"; color: var(--ink); letter-spacing: -.2px; }
+.addr-intro b { font: 800 15px "Inter"; color: var(--ink); letter-spacing: -.2px; }
 .addr-intro span { font-size: 11.5px; color: var(--mut); line-height: 1.45; }
 #tab-analysis .addr-step { padding: 11px 12px; border-radius: 14px; margin-bottom: 9px; border-color: var(--line2); }
-#tab-analysis .addr-step-label { text-transform: none; letter-spacing: 0; font: 700 12.5px "Manrope"; color: var(--ink); margin-bottom: 8px; }
+#tab-analysis .addr-step-label { text-transform: none; letter-spacing: 0; font: 700 12.5px "Inter"; color: var(--ink); margin-bottom: 8px; }
 #tab-analysis .addr-num { width: 20px; height: 20px; font-size: 10.5px; background: var(--ink); }
 .pick-list { display: grid; gap: 4px; }
 .pick-row {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; cursor: pointer; text-align: left;
-  border: 1px solid var(--line2); border-radius: 10px; background: var(--card); font-family: "Manrope";
+  border: 1px solid var(--line2); border-radius: 10px; background: var(--card); font-family: "Inter";
   transition: border-color .14s var(--ease), background .14s var(--ease);
 }
 .pick-row[hidden] { display: none; }
@@ -2241,7 +2241,7 @@ body.viewer .admin-only { display: none !important; }
 .pick-n { flex: 0 0 auto; font-size: 10.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
 .pick-more {
   display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; padding: 3px 4px; border: 0; background: none;
-  font: 700 11.5px "Manrope"; color: var(--acc-d); cursor: pointer;
+  font: 700 11.5px "Inter"; color: var(--acc-d); cursor: pointer;
 }
 .pick-more svg { transition: transform .2s var(--ease); }
 .pick-more[aria-expanded="true"] svg { transform: rotate(180deg); }
@@ -2250,10 +2250,80 @@ body.viewer .admin-only { display: none !important; }
 .addr-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
 .addr-act {
   display: flex; align-items: center; justify-content: center; gap: 7px; padding: 11px 10px; border-radius: 12px; cursor: pointer;
-  background: var(--ink); color: #fff; border: 1px solid var(--ink); font: 700 12.5px "Manrope"; box-shadow: var(--shadow-sm);
+  background: var(--ink); color: #fff; border: 1px solid var(--ink); font: 700 12.5px "Inter"; box-shadow: var(--shadow-sm);
   transition: transform .14s var(--ease), filter .14s var(--ease);
 }
 .addr-act:hover { transform: translateY(-1px); filter: brightness(1.18); }
 .addr-act.ghost { background: var(--card); color: var(--ink); border-color: var(--line2); box-shadow: var(--shadow-card); }
 .addr-act.ghost:hover { filter: none; border-color: var(--acc); color: var(--acc-d); }
 .addr-act.ghost.on { border-color: var(--danger); color: var(--danger); }
+
+/* ════════════════════════════════════════════════════════════════════════
+   ЭЛЕМЕНТЫ НА КАРТЕ (2026-10): шрифт Inter, карточка счётчика и статуса,
+   легенда со значками и сворачиванием.
+   ════════════════════════════════════════════════════════════════════════ */
+html, body { font-feature-settings: 'cv11', 'ss01'; -webkit-font-smoothing: antialiased; }
+.brand-text h1, .tab-section-title, .admin-head h2, .cl-card h3, .addr-intro b { letter-spacing: -.01em; }
+.val, .sl-val, .lc-sl b, .legend-count, .ms-num b, .pick-n, .ci-pop .v, .ci-tile .v { font-variant-numeric: tabular-nums; }
+
+.map-stat {
+  position: absolute; top: 14px; right: 14px; z-index: 1100;
+  display: grid; gap: 6px; padding: 9px 12px 9px; min-width: 150px;
+  background: rgba(255,255,255,.88); backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,.7); border-radius: 14px;
+  box-shadow: 0 0 0 1px var(--line2), var(--shadow-sm);
+}
+.ms-num { display: flex; align-items: baseline; gap: 7px; }
+.ms-num b { font: 800 20px/1 "Inter"; color: var(--ink); letter-spacing: -.02em; }
+.ms-num span { font: 500 11px "Inter"; color: var(--mut); }
+.map-stat .sync-badge {
+  position: static; display: flex; align-items: center; gap: 6px; padding: 5px 0 0;
+  background: none; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none;
+  font: 500 10.5px "Inter"; color: var(--mut); animation: none;
+}
+.map-stat .sync-badge.ok, .map-stat .sync-badge.err { border-color: var(--line); }
+.map-stat .sync-badge.err { color: var(--danger); }
+.map-stat .sync-dot { width: 7px; height: 7px; box-shadow: 0 0 0 3px rgba(20,184,125,.15); }
+.map-stat .sync-badge.err .sync-dot { box-shadow: 0 0 0 3px rgba(233,86,75,.15); }
+.map-stat .sync-badge.syncing .sync-dot { box-shadow: 0 0 0 3px rgba(242,169,59,.18); }
+
+#layer-legend {
+  padding: 0; gap: 0; min-width: 190px; max-width: 260px; overflow: hidden;
+  background: rgba(255,255,255,.88); backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,.7); border-radius: 14px;
+  box-shadow: 0 0 0 1px var(--line2), var(--shadow-sm);
+}
+.legend-head {
+  display: flex; align-items: center; gap: 7px; width: 100%; padding: 9px 12px; cursor: pointer;
+  border: 0; background: none; color: var(--mut); text-align: left; font-family: "Inter";
+}
+.legend-head:hover { color: var(--ink); }
+.legend-head .legend-title { margin: 0; flex: 0 0 auto; }
+.legend-n { font: 700 10px "Inter"; padding: 1px 6px; border-radius: 100px; background: var(--card2); color: var(--mut); border: 1px solid var(--line2); }
+.legend-head svg { margin-left: auto; transition: transform .2s var(--ease); transform: rotate(180deg); }
+#layer-legend.folded .legend-head svg { transform: none; }
+.legend-body { display: grid; gap: 7px; padding: 0 12px 11px; max-height: 40vh; overflow-y: auto; }
+#layer-legend.folded .legend-body { display: none; }
+.legend-item { gap: 8px; font-size: 12px; }
+.legend-ramp { width: 22px; height: 8px; border-radius: 100px; border: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
+.legend-pin { width: 22px; display: grid; place-items: center; flex: 0 0 auto; }
+.legend-pin svg { filter: drop-shadow(0 1px 1.5px rgba(15,23,42,.3)); }
+.legend-dot { width: 10px; height: 10px; margin: 0 6px; }
+.legend-name { flex: 1; max-width: none; font-weight: 600; color: var(--ink); }
+.legend-count {
+  font: 700 10.5px "Inter"; color: var(--mut); padding: 1px 7px; border-radius: 100px;
+  background: var(--card2); border: 1px solid var(--line);
+}
+
+.mode-badge.mode-edit, .mode-badge.mode-view {
+  background: rgba(255,255,255,.88); backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,.7); box-shadow: 0 0 0 1px var(--line2), var(--shadow-sm);
+  font: 600 11.5px "Inter";
+}
+.mode-badge.mode-edit { color: var(--rec-ink); }
+#tag-note { font-family: "Inter"; border-radius: 100px; padding: 5px 12px; }
+
+@media (max-width: 780px) {
+  .map-stat { top: 14px; left: 70px; right: auto; min-width: 0; padding: 7px 10px; }
+  .ms-num b { font-size: 16px; }
+}

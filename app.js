@@ -653,7 +653,7 @@ function renderIncome() {
                     { className: 'tt', direction: 'top', offset: [0, -12] })
        .bindPopup(`<div class="pp-title">${z.n}. ${z.name}</div>
                    <div class="pp-row"><span>Уровень</span><b>${TIER_NAME[z.tier]}</b></div>
-                   <div class="pp-row"><span>Ориентиры</span><b style="font-family:Manrope;font-weight:500;text-align:right">${z.pl}</b></div>
+                   <div class="pp-row"><span>Ориентиры</span><b style="font-family:Inter;font-weight:500;text-align:right">${z.pl}</b></div>
                    <div class="pp-why">${CX[z.tier]}</div>${yandexLinkHtml(z.lat, z.lon)}`)
        .addTo(coresGroup);
     });
@@ -899,6 +899,8 @@ function updateCountBadge() {
   customPtLayers.forEach(l => { if (l.visible) total += shownCount(l); });
   const el = document.getElementById('b-count');
   if (el) el.textContent = total.toLocaleString('ru-RU');
+  const lbl = document.getElementById('b-count-label');
+  if (lbl) lbl.textContent = plural(total, 'точка', 'точки', 'точек') + ' на карте';
 }
 
 function updateLayerLegend() {
@@ -920,7 +922,7 @@ function updateLayerLegend() {
   });
   customPtLayers.forEach(l => {
     if (l.visible && l.recs && l.recs.length && shownCount(l)) {
-      items.push({ color: l.color, name: l.name, count: shownCount(l) });
+      items.push({ color: l.color, pin: pinSvg(l.icon || DEFAULT_PIN_ICON, l.color, l.color2, 16).html, name: l.name, count: shownCount(l) });
     }
   });
   if (recShow && lastRecs.length) items.push({ color: '#14B87D', name: 'Рекомендации' });
@@ -932,14 +934,26 @@ function updateLayerLegend() {
   }
   if (!items.length) { el.style.display = 'none'; return; }
   el.style.display = '';
-  el.innerHTML = '<div class="legend-title">Легенда</div>' + items.map(it => {
+  const folded = legendFolded();
+  el.classList.toggle('folded', folded);
+  el.innerHTML = `<button type="button" class="legend-head" aria-expanded="${!folded}" title="${folded ? 'Развернуть легенду' : 'Свернуть легенду'}">
+      <span class="legend-title">Легенда</span><span class="legend-n">${items.length}</span>${uiIcon('chevron', 13)}</button>
+    <div class="legend-body">` + items.map(it => {
     const mark = it.ramp
-      ? `<div class="legend-ramp" style="background:${it.ramp}"></div>`
-      : `<div class="legend-dot" style="background:${it.color}"></div>`;
+      ? `<span class="legend-ramp" style="background:${it.ramp}"></span>`
+      : it.pin ? `<span class="legend-pin">${it.pin}</span>`
+      : `<span class="legend-dot" style="background:${safeColor(it.color, '#888')}"></span>`;
     const count = it.count ? `<span class="legend-count">${it.count.toLocaleString('ru-RU')}</span>` : '';
-    const tag = it.tags ? '<span class="legend-tag" title="Ярлыки включены">🏷</span>' : '';
-    return `<div class="legend-item">${mark}<span class="legend-name">${esc(it.name)}</span>${tag}${count}</div>`;
-  }).join('');
+    return `<div class="legend-item">${mark}<span class="legend-name" title="${esc(it.name)}">${esc(it.name)}</span>${count}</div>`;
+  }).join('') + '</div>';
+  el.querySelector('.legend-head').addEventListener('click', () => {
+    const f = !legendFolded();
+    try { localStorage.setItem('hm_legend_folded', f ? '1' : ''); } catch (_) {}
+    updateLayerLegend();
+  });
+}
+function legendFolded() {
+  try { return localStorage.getItem('hm_legend_folded') === '1'; } catch (_) { return false; }
 }
 
 /* ── ЯРЛЫКИ: тачпоинты тепловых слоёв ────────────────────────────────── */
@@ -973,7 +987,7 @@ function tagPopupHtml(d, r) {
   rows.push([volUnitOf(d) ? 'Значение, %' : 'Значение', fmtVol(d, r.vol)]);
   return `<div class="pp-title">${esc(r.name || 'Точка без названия')}</div>` +
     rows.map(([k, v]) =>
-      `<div class="pp-row"><span>${esc(k)}</span><b style="font-family:Manrope;font-weight:600;text-align:right">${esc(String(v))}</b></div>`
+      `<div class="pp-row"><span>${esc(k)}</span><b style="font-family:Inter;font-weight:600;text-align:right">${esc(String(v))}</b></div>`
     ).join('') + extraRowsHtml(r) +
     `<span class="pp-tag" style="background:var(--acc-l);color:var(--acc-d);border:1px solid rgba(18,173,193,.35)">${esc(d.name)}</span>` +
     yandexLinkHtml(r.lat, r.lon);
@@ -2596,7 +2610,7 @@ function renderCustomPoints() {
         m.on('popupopen', e => wireManualPopup(e.popup, l, r, m));
       } else {
         const parts = [r.name ? `<div class="pp-title">${esc(r.name)}</div>` : ''];
-        if (r.addr)  parts.push(`<div class="pp-row"><span>Адрес</span><b style="font-family:Manrope;font-weight:500;text-align:right">${esc(r.addr)}</b></div>`);
+        if (r.addr)  parts.push(`<div class="pp-row"><span>Адрес</span><b style="font-family:Inter;font-weight:500;text-align:right">${esc(r.addr)}</b></div>`);
         if (r.hours) parts.push(`<div class="pp-row"><span>Часы</span><b>${esc(r.hours)}</b></div>`);
         if (r.code)  parts.push(`<div class="pp-row"><span>Код</span><b>${esc(r.code)}</b></div>`);
         parts.push(extraRowsHtml(r));
@@ -2622,11 +2636,11 @@ map.createPane('ptlabels');
 map.getPane('ptlabels').style.zIndex = 640;          // над маркерами (600), под всплывающими подсказками (650)
 map.getPane('ptlabels').style.pointerEvents = 'none';
 const lblBox = L.DomUtil.create('div', 'pt-labels', map.getPane('ptlabels'));
-const LABEL_FONT = '600 11px Manrope, system-ui, sans-serif';
+const LABEL_FONT = '600 11px Inter, system-ui, sans-serif';
 const LABEL_H = 18, LABEL_PAD = 15, LABEL_MAX = 28, LABEL_GAP = 2;
 const _lblCtx = document.createElement('canvas').getContext('2d');
 const _lblWidth = new Map();
-const MAP_OVERLAYS = '#city-bar, #layer-legend, #tag-note, #sync-badge, #mode-badge, #update-banner, #zoom-ctl, #side-reopen, .badge';
+const MAP_OVERLAYS = '#city-bar, #layer-legend, #tag-note, #map-stat, #mode-badge, #update-banner, #zoom-ctl, #side-reopen, #ruler-hint';
 let _lblFrame = 0;
 
 function labelText(name) {
@@ -2642,7 +2656,7 @@ function labelWidth(text) {
   }
   return w;
 }
-// Шрифт Manrope догружается позже первой отрисовки — ширины надо перемерить.
+// Шрифт Inter догружается позже первой отрисовки — ширины надо перемерить.
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { _lblWidth.clear(); scheduleLabels(); });
 
 function scheduleLabels() {
@@ -3016,7 +3030,7 @@ function manualPopupHtml(layer, r) {
   return `<div class="pp-title">${esc(r.name || 'Точка')}</div>
     ${thumbs}
     ${rows.map(([k, v]) =>
-      `<div class="pp-row"><span>${esc(k)}</span><b style="font-family:Manrope;font-weight:600;text-align:right">${esc(String(v))}</b></div>`).join('')}
+      `<div class="pp-row"><span>${esc(k)}</span><b style="font-family:Inter;font-weight:600;text-align:right">${esc(String(v))}</b></div>`).join('')}
     ${r.comment ? `<div class="rp-comment">${esc(r.comment)}</div>` : ''}
     <span class="pp-tag rp-tag" style="background:${esc(r.color || layer.color)}22;color:var(--ink);border:1px solid ${esc(r.color || layer.color)}">${esc(layer.name)}</span>
     ${yandexLinkHtml(r.lat, r.lon)}
@@ -3789,7 +3803,7 @@ function mergeFields(cur, add) {
 function extraRowsHtml(r) {
   if (!r || !r.x) return '';
   return Object.entries(r.x).map(([k, v]) =>
-    `<div class="pp-row"><span>${esc(k)}</span><b style="font-family:Manrope;font-weight:600;text-align:right">${esc(String(v))}</b></div>`).join('');
+    `<div class="pp-row"><span>${esc(k)}</span><b style="font-family:Inter;font-weight:600;text-align:right">${esc(String(v))}</b></div>`).join('');
 }
 
 function rebuildUpTarget() {

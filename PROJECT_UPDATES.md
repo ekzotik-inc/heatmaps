@@ -733,3 +733,18 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   7, selection works, collapsed list keeps selected rows, step 2 likewise.
 - Cache version `20261024f`.
 
+## 2026-10-24 — Map overlays and typography
+
+- Font switched from Manrope to **Inter** (rsms/inter, OFL) app-wide, with
+  `cv11`/`ss01` and tabular figures for numbers. Point-label measurement uses
+  Inter too.
+- The point counter and the save status are one frosted card in the top
+  right: large number + «точек на карте» (proper Russian plural), status dot
+  and «Сохранено / Обновлено …» under a hairline.
+- Legend: frosted card with a header (count, fold chevron — remembered per
+  browser), heat layers as gradient bars, point layers as their actual pins,
+  counts in small pills, scrolls when long.
+- Mode badge and tag note restyled to match. Label obstacles now include the
+  new stat card and the ruler hint.
+- Cache version `20261024g`.
+
