@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.1/maplibre-gl.css"/>
-  <link rel="stylesheet" href="style.css?v=20261025i"/>
+  <link rel="stylesheet" href="style.css?v=20261025j"/>
 </head>
 <body>
 
@@ -257,9 +257,10 @@
               <option value="gte">≥</option>
               <option value="gt">&gt;</option>
             </select>
-            <span class="val" id="v-rt-radius">1.0 км</span>
+            <span class="dist-ctl"><input type="number" class="dist-num" id="n-rt-radius" min="0" step="any" inputmode="decimal" aria-label="Расстояние до ориентира"/><select class="dist-unit" id="u-rt-radius" aria-label="Единица расстояния"><option value="m">м</option><option value="km">км</option></select></span>
           </div>
-          <input type="range" class="full" id="s-rt-radius" min="200" max="10000" step="100" value="1000"/>
+          <input type="range" class="full" id="s-rt-radius" min="0" max="1000" step="1" value="0" aria-label="Расстояние до ориентира"/>
+          <div class="dist-scale" aria-hidden="true"><span>10 м</span><span>1 км</span><span>300 км</span></div>
         </div>
 
         <!-- Step 3: Exclusions -->
@@ -275,9 +276,10 @@
               <option value="gt">&gt;</option>
               <option value="gte">≥</option>
             </select>
-            <span class="val" id="v-rt-excl">150 м</span>
+            <span class="dist-ctl"><input type="number" class="dist-num" id="n-rt-excl" min="0" step="any" inputmode="decimal" aria-label="Расстояние для исключения"/><select class="dist-unit" id="u-rt-excl" aria-label="Единица расстояния"><option value="m">м</option><option value="km">км</option></select></span>
           </div>
-          <input type="range" class="full" id="s-rt-excl" min="50" max="1000" step="50" value="150"/>
+          <input type="range" class="full" id="s-rt-excl" min="0" max="1000" step="1" value="0" aria-label="Расстояние для исключения"/>
+          <div class="dist-scale" aria-hidden="true"><span>10 м</span><span>1 км</span><span>300 км</span></div>
           <div class="addr-hint" id="rt-excl-hint"></div>
         </div>
 
@@ -745,7 +747,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20261025i'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20261025j'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();

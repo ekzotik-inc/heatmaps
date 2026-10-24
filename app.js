@@ -177,7 +177,49 @@ function hav(a, b, c, d) {
 // no points of ours loaded yet). Show a dash instead of «1000000000000 км».
 function fmtD(m) {
   if (m == null || !isFinite(m)) return '—';
+  if (m >= 100000) return Math.round(m / 1000).toLocaleString('ru-RU') + ' км';
   return m >= 1000 ? (m / 1000).toFixed(1) + ' км' : Math.round(m) + ' м';
+}
+
+/* ── РАССТОЯНИЕ БЕЗ ОГРАНИЧЕНИЙ (адресная программа) ───────────────────
+   Владелец: «не нужно никаких ограничений в км». Значение вводится числом
+   в м или км — любое больше нуля; ползунок рядом логарифмический, 10 м …
+   300 км: в малых расстояниях точный, большие проходит быстро. Если
+   вписано больше 300 км, ползунок просто стоит в конце. */
+const DIST_MIN = 10, DIST_MAX = 300000;
+function distFromSlider(p) {
+  const m = DIST_MIN * Math.pow(DIST_MAX / DIST_MIN, p / 1000);
+  const step = m < 1000 ? 10 : m < 10000 ? 50 : m < 100000 ? 500 : 5000;
+  return Math.max(DIST_MIN, Math.round(m / step) * step);
+}
+function distToSlider(m) {
+  return Math.round(1000 * Math.log(Math.min(DIST_MAX, Math.max(DIST_MIN, m)) / DIST_MIN) / Math.log(DIST_MAX / DIST_MIN));
+}
+function syncDistCtl(k, m) {
+  const sl = document.getElementById('s-' + k), num = document.getElementById('n-' + k), unit = document.getElementById('u-' + k);
+  if (sl) { sl.value = distToSlider(m); fillSlider(sl); }
+  if (num && document.activeElement !== num) {
+    const km = m >= 1000;
+    num.value = km ? String(+(m / 1000).toFixed(3)) : String(Math.round(m));
+    if (unit) unit.value = km ? 'km' : 'm';
+  }
+}
+function wireDistCtl(k, set, get) {
+  const sl = document.getElementById('s-' + k), num = document.getElementById('n-' + k), unit = document.getElementById('u-' + k);
+  if (!sl || !num || !unit) return;
+  sl.addEventListener('input', () => { const m = distFromSlider(+sl.value); set(m); syncDistCtl(k, m); });
+  const fromInput = () => {
+    const v = parseFloat(String(num.value).replace(',', '.'));
+    if (!isFinite(v) || v <= 0) return;           // пустое/ноль — ждём ввода
+    const m = v * (unit.value === 'km' ? 1000 : 1);
+    set(m);
+    if (sl) { sl.value = distToSlider(m); fillSlider(sl); }
+  };
+  num.addEventListener('input', fromInput);
+  // Ушли из поля — показываем то, что реально действует (ноль/пусто не принимаются).
+  num.addEventListener('change', () => { fromInput(); num.blur(); syncDistCtl(k, get()); });
+  // Сменили единицу — то же число в новой единице: «2» + «км» = 2 км.
+  unit.addEventListener('change', fromInput);
 }
 
 /* ── SPATIAL INDEX (nearest-point lookups) ────────────────────────────────
@@ -6756,9 +6798,9 @@ function syncControls() {
   $('rec-show').classList.toggle('on', recShow);
   buildRecBasisSel();
   syncBoundsBadge();
-  $('s-rt-radius').value  = rtRadius;     $('v-rt-radius').textContent = fmtD(rtRadius);
+  syncDistCtl('rt-radius', rtRadius);
   $('op-rt-radius').value = rtRadiusOp;
-  $('s-rt-excl').value    = rtExclRadius; $('v-rt-excl').textContent   = fmtD(rtExclRadius);
+  syncDistCtl('rt-excl', rtExclRadius);
   $('op-rt-excl').value   = rtExclOp;
   syncExclHint();
   buildAddrSrcSel();
@@ -6974,13 +7016,9 @@ function wireEvents() {
   $('btn-addr-preview').addEventListener('click', previewAddrOnMap);
 
 
-  $('s-rt-radius').addEventListener('input', e => {
-    rtRadius = +e.target.value; $('v-rt-radius').textContent = fmtD(rtRadius); fillSlider(e.target); saveState();
-  });
+  wireDistCtl('rt-radius', m => { rtRadius = m; saveState(); }, () => rtRadius);
   $('op-rt-radius').addEventListener('change', e => { rtRadiusOp = e.target.value; saveState(); });
-  $('s-rt-excl').addEventListener('input', e => {
-    rtExclRadius = +e.target.value; $('v-rt-excl').textContent = fmtD(rtExclRadius); fillSlider(e.target); syncExclHint(); saveState();
-  });
+  wireDistCtl('rt-excl', m => { rtExclRadius = m; syncExclHint(); saveState(); }, () => rtExclRadius);
   $('op-rt-excl').addEventListener('change', e => { rtExclOp = e.target.value; syncExclHint(); saveState(); });
 
   // Share / import state

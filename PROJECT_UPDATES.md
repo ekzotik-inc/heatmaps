@@ -999,3 +999,20 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   point layer, no overlap with the legend or the city bar, scales follow the
   Пятна/Зоны switch and the «Зона плотности» toggle; UI audit stays clean.
 - Cache version `20261025i`.
+
+## 2026-10-26 — Address program: distances without limits
+
+- Owner: «ближе чем» stopped at 1 km (and «Расстояние до» at 10 km) — no
+  limits wanted.
+- Both distances now have a number field with a unit (м / км) that takes any
+  value above zero, plus a logarithmic slider from 10 m to 300 km (precise in
+  metres, quick over long distances). A typed value beyond 300 km is kept and
+  the slider simply sits at the end. Changing the unit re-reads the same
+  number («2» + «км» = 2 km); zero or empty is not accepted and the field
+  returns to the value in force.
+- `fmtD` prints whole kilometres from 100 km up.
+- Verified in a browser: defaults 1 km / 150 m, 25 km typed into «ближе
+  чем», 1200 km accepted with the slider at the end, slider middle ≈ 1.75 km,
+  left end 10 m, zero rejected, state keeps 1 200 000 m, the address filter
+  runs; UI audit clean.
+- Cache version `20261025j`.

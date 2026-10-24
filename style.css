@@ -2673,3 +2673,24 @@ small, .vt-txt small { font-size: 11px; }
   /* легенда на телефоне скрыта — шкалы прижаты к низу карты */
   .zone-scales { left: 24px; bottom: 130px; width: 180px; padding: 9px 11px; gap: 10px; }
 }
+
+/* Расстояние в адресной программе: число без ограничений + единица */
+.dist-ctl {
+  margin-left: auto; display: inline-flex; align-items: stretch; height: 32px;
+  border: 1px solid var(--line2); border-radius: 9px; background: var(--card); overflow: hidden;
+  transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
+}
+.dist-ctl:focus-within { border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-l); }
+.dist-num {
+  width: 76px; border: 0; padding: 0 8px; background: none; text-align: right;
+  font: 600 13px "Inter"; color: var(--ink); font-variant-numeric: tabular-nums; -moz-appearance: textfield;
+}
+.dist-num::-webkit-outer-spin-button, .dist-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.dist-num:focus-visible, .dist-unit:focus-visible { outline: none; }
+.dist-unit {
+  border: 0; border-left: 1px solid var(--line2); background: var(--card2); padding: 0 8px;
+  font: 600 12px "Inter"; color: var(--mut); cursor: pointer;
+}
+.dist-scale { position: relative; display: flex; justify-content: space-between; margin-top: 4px; font: 500 11px "Inter"; color: var(--dim); }
+/* «1 км» — там, где он на логарифмической шкале (44.7 %), под центром кружка */
+.dist-scale span:nth-child(2) { position: absolute; left: calc(8.5px + (100% - 17px) * .447); transform: translateX(-50%); }
