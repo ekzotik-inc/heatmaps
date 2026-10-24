@@ -960,3 +960,27 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   The same audit is clean at 375, 768 and 1440 px; six tab labels fit without
   truncation at 360–1440 px.
 - Cache version `20261025g`.
+
+## 2026-10-26 — Density zones («как на погодной карте») for all layers
+
+- Owner showed a weather dashboard with smooth nested contour zones and asked
+  for the same effect on his layers, with a selectable palette.
+- Heat layers: new «Вид: Пятна / Зоны» switch under «Размер пятна». In zones
+  mode leaflet.heat spots are replaced by 6 nested smoothed bands of point
+  density: a wide pale edge, a saturated core, soft fill (SVG blur) and thin
+  outlines. Point layers: «Зона плотности» switch in the layer settings.
+- How: Gaussian kernel density (d3-contour 4.0.2 + d3-array 3.2.4 from
+  jsdelivr, 23 KB, loaded only when zones are on). Kernel = «Размер пятна» ×
+  30 m, so shapes keep their geography when zooming. Thresholds run from 7 %
+  to 85 % of the whole layer's peak density (binned estimate, not the visible
+  part), so colours don't jump while panning; verified: same bands and
+  colours at zoom 12 and 13. «Интенсивность» drives fill saturation.
+- Palette: each layer's own — the 4 presets, own colour or own gradient. A
+  fifth preset «Светофор» (green → yellow → orange → red, ColorBrewer RdYlGn)
+  matches the reference picture. Point layers now remember a chosen preset
+  (`ramp`) so their zone uses the full palette, not just two colours.
+- Zones follow the city filter and «Границы» (same filtered records), the
+  «Тепловая карта» switch and the blend mode; counters and legend unchanged.
+- State: `heatStyle`, point layer `density` and `ramp` — snapshot, apply,
+  fingerprint.
+- Cache version `20261025h`.

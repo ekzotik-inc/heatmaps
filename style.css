@@ -2646,3 +2646,9 @@ small, .vt-txt small { font-size: 11px; }
 .cbx.sm.on::after { transform: translateX(16px); }
 .lc-link { min-height: 26px; padding: 4px 10px; }
 .lnk { min-height: 28px; align-items: center; color: var(--acc-d); }
+
+/* Вид тепловой карты: пятна / зоны */
+.spot-ctl .style-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.spot-ctl .style-row label { white-space: nowrap; }
+.heat-style { flex: 0 1 200px; }
+.zone-svg { pointer-events: none; overflow: visible; }

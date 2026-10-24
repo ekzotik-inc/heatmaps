@@ -77,6 +77,7 @@ const HEAT_RAMPS = {
   forest:  { 0.10: '#e8f6e3', 0.32: '#a8ddb5', 0.55: '#43a2ca', 0.78: '#0868ac', 1.0: '#084081' },
   rose:    { 0.10: '#fde0dd', 0.32: '#fa9fb5', 0.55: '#dd3497', 0.78: '#7a0177', 1.0: '#49006a' },
   mono:    { 0.10: '#e8ecf2', 0.32: '#b7c0cd', 0.55: '#78879c', 0.78: '#3f4c60', 1.0: '#161d28' }, // нейтральная подложка
+  eco:     { 0.10: '#d9f0c4', 0.32: '#a6d96a', 0.55: '#fee08b', 0.78: '#fdae61', 1.0: '#d73027' }, // зелёный → жёлтый → красный (RdYlGn)
 };
 const RAMP_NAMES = {
   custom:  'Свой цвет',
@@ -92,6 +93,7 @@ const RAMP_NAMES = {
   forest:  'Зелёно-синяя',
   rose:    'Розово-пурпурная',
   mono:    'Серая',
+  eco:     'Светофор',
 };
 // Быстрые цвета для «своего цвета» и для слоёв точек: намеренно далеко
 // разнесённые оттенки, чтобы включённые слои не сливались друг с другом.
@@ -115,6 +117,7 @@ const PRESET_RAMPS = [
   { id: 'cool',    name: 'Холодный' },
   { id: 'viridis', name: 'Изумрудный' },
   { id: 'rose',    name: 'Пурпурный' },
+  { id: 'eco',     name: 'Светофор' },   // зоны «как на погодной карте»
 ];
 // Цвет приходит из сохранённого состояния и попадает в SVG/стили — только hex.
 function safeColor(c, fallback = '#12ADC1') {
@@ -397,6 +400,9 @@ let heatKeys = [];
 let heatBoost = 1;           // общая яркость убрана из интерфейса; держим 1 для старых состояний
 // Что показывать для включённых тепловых слоёв: пятна плотности и/или метки точек.
 let showHeatAll = true;
+// Вид тепловых слоёв: 'spots' — пятна leaflet.heat; 'zones' — сглаженные
+// пояса плотности (как на погодных картах), цвета — палитра слоя.
+let heatStyle = 'spots';
 let showPointsAll = false;
 let heatBlend = 'multiply';   // multiply makes overlapping layers mix like ink on a light basemap
 let heatRadius = 28;
@@ -946,7 +952,7 @@ function renderHeat() {
       d._heatMaxCache = new Map();
       d._heatMaxCacheSource = sourceRef;
     }
-    const renderKey = [selKey, d.intensity || 1, heatRadius, d.ramp || '', d.color || '', d.opacity == null ? 1 : d.opacity].join('|');
+    const renderKey = [selKey, d.intensity || 1, heatRadius, d.ramp || '', d.color || '', d.opacity == null ? 1 : d.opacity, heatStyle].join('|');
     const legendKey = [d.name || '', d.color || '', d.visible ? 1 : 0, d.recs.length].join('|');
     if (d._legendKey !== legendKey) {
       d._legendKey = legendKey;
@@ -957,13 +963,16 @@ function renderHeat() {
     if (!d.visible) {
       if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; needsUiRefresh = true; }
       d._heatCache = null;
+      d._zone = null;
       d._shownCount = 0;
       return;
     }
+    // В режиме «Зоны» пятен leaflet.heat нет — живым считается слой с зоной.
+    const alive = heatStyle === 'zones' ? !!d._zone : layerAlive;
     // Reuse the existing Leaflet heat layer when neither the source records nor
     // the visual/filter inputs changed. This is the hot path for all-cities
     // selection and avoids rebuilding canvases during repeated UI updates.
-    if (cached && cached.sourceRef === sourceRef && cached.key === renderKey && layerAlive) {
+    if (cached && cached.sourceRef === sourceRef && cached.key === renderKey && alive) {
       total += cached.count;
       d._shownCount = cached.count;
       return;
@@ -1001,6 +1010,13 @@ function renderHeat() {
     total += recs.length;
     d._shownCount = recs.length;   // ровно столько нарисовано — это же число в легенде
     d._pts = pts;
+    if (heatStyle === 'zones') {
+      if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
+      d._zone = { recs, pts };
+      d._heatCache = { sourceRef, key: renderKey, count: recs.length };
+      return;
+    }
+    d._zone = null;
     // Sparse layers get a wider brush so isolated points read as heat, not specks.
     const rMul = Math.min(Math.max(Math.pow(600 / Math.max(recs.length, 1), 0.18), 1), 1.6);
     const rad = Math.round(heatRadius * rMul);
@@ -1028,7 +1044,181 @@ function renderHeat() {
   updateCountBadge();
   if (needsUiRefresh) updateLayerLegend();
   renderTags(); // ярлыки следуют за видимостью слоёв и фильтром городов
+  scheduleZones();
 }
+
+/* ── ЗОНЫ ПЛОТНОСТИ ──────────────────────────────────────────────────────
+   Вместо пятен — сглаженные вложенные пояса, как на погодных картах: по
+   точкам слоя строится плотность (ядро Гаусса, d3-contour), и она режется
+   на 6 уровней. Нижний — широкий бледный край, верхний — яркое ядро; цвета
+   берутся из палитры слоя (готовые наборы или свой цвет/градиент).
+   Работает для тепловых слоёв (режим «Зоны» в «Размере пятна») и для любого
+   слоя точек (переключатель «Зона плотности» в настройках слоя).
+   Размер зоны задаётся в метрах (ползунок «Размер пятна» × 30 м), поэтому
+   форма не «рассыпается» при зуме; пороги — от максимума плотности всего
+   слоя, поэтому цвета не прыгают при сдвиге карты. Рисуется SVG поверх
+   области карты с запасом: при зуме Leaflet масштабирует его сам, после —
+   перестраиваем. */
+map.createPane('zones'); map.getPane('zones').style.zIndex = 430;
+map.getPane('zones').style.pointerEvents = 'none';
+const zoneRoot = L.layerGroup().addTo(map);
+const ZONE_BANDS = 6, ZONE_M_PER_PX = 30;
+let _contourLibP = null;
+function ensureContourLib() {
+  if (window.d3 && window.d3.contourDensity) return Promise.resolve();
+  if (_contourLibP) return _contourLibP;
+  const load = src => new Promise((res, rej) => {
+    const sc = document.createElement('script');
+    sc.src = src; sc.onload = res; sc.onerror = () => rej(new Error('load failed: ' + src));
+    document.head.appendChild(sc);
+  });
+  _contourLibP = load('https://cdn.jsdelivr.net/npm/d3-array@3.2.4/dist/d3-array.min.js')
+    .then(() => load('https://cdn.jsdelivr.net/npm/d3-contour@4.0.2/dist/d3-contour.min.js'))
+    .catch(e => { _contourLibP = null; throw e; });
+  return _contourLibP;
+}
+// Цвет палитры в точке t ∈ [0,1] — линейно между опорными цветами.
+function sampleGrad(g, t) {
+  const stops = Object.keys(g).map(Number).sort((a, b) => a - b);
+  if (t <= stops[0]) return g[stops[0]];
+  for (let i = 1; i < stops.length; i++) {
+    if (t <= stops[i]) return mixHex(g[stops[i - 1]], g[stops[i]], (t - stops[i - 1]) / (stops[i] - stops[i - 1]));
+  }
+  return g[stops[stops.length - 1]];
+}
+function layerZoneGrad(l) {
+  if (l.ramp && HEAT_RAMPS[l.ramp]) return HEAT_RAMPS[l.ramp];
+  return l.color2 ? grad2(safeColor(l.color), safeColor(l.color2)) : heatGrad(safeColor(l.color));
+}
+function zoneSources() {
+  const out = [];
+  if (heatStyle === 'zones' && showHeatAll) {
+    heatKeys.forEach(k => {
+      const d = DS[k];
+      if (!d || !d.visible || !d._zone || !d._zone.pts.length) return;
+      out.push({ key: 'h:' + k, pts: d._zone.pts, grad: gradOf(d), opacity: d.opacity == null ? 1 : d.opacity, blend: true, boost: d.intensity || 1 });
+    });
+  }
+  customPtLayers.forEach(l => {
+    if (!l.visible || !l.density || !(l._shownRecs || []).length) return;
+    out.push({ key: 'p:' + l.id, pts: l._shownRecs.map(r => [r.lat, r.lon, 1]), grad: layerZoneGrad(l), opacity: 1, blend: false, boost: 1 });
+  });
+  return out;
+}
+// Максимум плотности слоя в «точках под ядром» — по всему слою, а не по
+// видимой части: иначе пороги и цвета менялись бы при каждом сдвиге карты.
+// Ячейки размером с ядро, пик ≈ ячейка + 0.61 × соседи по стороне + 0.37 × углы.
+const _zoneMax = new Map();
+function zoneLayerMax(src, sigmaM) {
+  const key = src.key + '|' + Math.round(sigmaM);
+  const hit = _zoneMax.get(key);
+  if (hit && hit.pts === src.pts) return hit.max;
+  const cell = sigmaM / 111320, bins = new Map();
+  src.pts.forEach(p => {
+    const k = Math.floor(p[0] / cell) + ':' + Math.floor(p[1] / (cell / Math.max(.2, Math.cos(p[0] * Math.PI / 180))));
+    bins.set(k, (bins.get(k) || 0) + p[2]);
+  });
+  let max = 0;
+  bins.forEach((v, k) => {
+    const [a, b] = k.split(':').map(Number);
+    let s = v;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      if (!i && !j) continue;
+      const n = bins.get((a + i) + ':' + (b + j));
+      if (n) s += n * (i && j ? .37 : .61);
+    }
+    if (s > max) max = s;
+  });
+  _zoneMax.set(key, { pts: src.pts, max });
+  return max;
+}
+// Пороги от 7 % до 85 % максимума слоя, гуще к краю: внешний пояс очерчивает
+// всю область присутствия, внутренние — ядра. Ниже ~0.3 «точки под ядром»
+// не опускаемся: иначе одиночная точка рисует огромный бледный круг.
+function zoneThresholds(maxD) {
+  const hi = Math.max(.85 * maxD, .3), lo = Math.max(.3, .07 * maxD);
+  if (hi / lo < 1.6) return [lo];
+  return Array.from({ length: ZONE_BANDS }, (_, i) => lo + (hi - lo) * Math.pow(i / (ZONE_BANDS - 1), 1.35));
+}
+function ringsToPath(coords) {
+  let d = '';
+  coords.forEach(poly => poly.forEach(ring => {
+    ring.forEach((c, i) => { d += (i ? 'L' : 'M') + c[0].toFixed(1) + ' ' + c[1].toFixed(1); });
+    d += 'Z';
+  }));
+  return d;
+}
+let _zoneRaf = 0, _zoneToken = 0;
+function scheduleZones() {
+  if (_zoneRaf) return;
+  _zoneRaf = requestAnimationFrame(() => { _zoneRaf = 0; renderZones(); });
+}
+async function renderZones() {
+  const token = ++_zoneToken;
+  const sources = zoneSources();
+  if (!sources.length) { zoneRoot.clearLayers(); return; }
+  try { await ensureContourLib(); } catch (_) {
+    toast('Не удалось загрузить построитель зон — проверьте интернет', 'err');
+    return;
+  }
+  if (token !== _zoneToken) return;           // пока грузилось, карта уже изменилась
+  const zoom = map.getZoom();
+  const bounds = map.getBounds().pad(.3);
+  const nw = map.latLngToLayerPoint(bounds.getNorthWest());
+  const se = map.latLngToLayerPoint(bounds.getSouthEast());
+  const W = Math.ceil(se.x - nw.x), H = Math.ceil(se.y - nw.y);
+  const mpp = 40075016.686 * Math.cos(map.getCenter().lat * Math.PI / 180) / (256 * Math.pow(2, zoom));
+  const sigmaPx = Math.min(160, Math.max(8, heatRadius * ZONE_M_PER_PX / mpp));
+  const sigmaM = sigmaPx * mpp;
+  let cell = Math.pow(2, Math.max(1, Math.floor(Math.log2(sigmaPx / 4))));
+  while ((W / cell) * (H / cell) > 260000) cell *= 2;
+  const reach = 3 * sigmaPx;
+  const layers = [];
+  sources.forEach(src => {
+    const pts = [];
+    for (const p of src.pts) {
+      const q = map.latLngToLayerPoint([p[0], p[1]]);
+      const x = q.x - nw.x, y = q.y - nw.y;
+      if (x < -reach || y < -reach || x > W + reach || y > H + reach) continue;
+      pts.push([x, y, p[2]]);
+    }
+    if (!pts.length) return;
+    const thresholds = zoneThresholds(zoneLayerMax(src, sigmaM));
+    // d3 даёт плотность «точек на пиксель²»; × 2πσ² — «точек под ядром»,
+    // та же единица, что у порогов, и она не зависит от зума.
+    const norm = 2 * Math.PI * sigmaPx * sigmaPx;
+    const contours = window.d3.contourDensity()
+      .x(p => p[0]).y(p => p[1]).weight(p => p[2])
+      .size([W, H]).cellSize(cell).bandwidth(sigmaPx)
+      .thresholds(thresholds.map(t => t / norm))(pts);
+    if (!contours.length) return;
+    const n = contours.length;
+    const bands = contours.map((c, i) => {
+      const color = sampleGrad(src.grad, .22 + .78 * (n > 1 ? i / (n - 1) : 1));
+      return { d: ringsToPath(c.coordinates), color };
+    });
+    layers.push({ src, bands });
+  });
+  if (token !== _zoneToken) return;
+  zoneRoot.clearLayers();
+  const blur = Math.max(1.5, Math.min(6, sigmaPx / 10)).toFixed(1);
+  layers.forEach(({ src, bands }, li) => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.setAttribute('class', 'zone-svg');
+    svg.style.opacity = String(src.opacity);
+    if (src.blend && heatBlend !== 'normal') svg.style.mixBlendMode = heatBlend;
+    const fid = 'zsoft' + li;
+    // Пороги считаются от максимума слоя, поэтому «Интенсивность» в зонах —
+    // это насыщенность заливки, а не размер поясов.
+    const fk = Math.min(1.8, Math.max(.5, Math.sqrt(src.boost || 1)));
+    svg.innerHTML = `<defs><filter id="${fid}" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="${blur}"/></filter></defs>` +
+      `<g filter="url(#${fid})">${bands.map((b, i) => `<path d="${b.d}" fill="${b.color}" fill-opacity="${Math.min(.9, (i ? .2 : .34) * fk).toFixed(2)}" fill-rule="evenodd"/>`).join('')}</g>` +
+      `<g fill="none" stroke-linejoin="round">${bands.map(b => `<path d="${b.d}" stroke="${darken(b.color, .12)}" stroke-opacity=".55" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`).join('')}</g>`;
+    L.svgOverlay(svg, bounds, { pane: 'zones', interactive: false }).addTo(zoneRoot);
+  });
+}
+map.on('moveend', () => { if (zoneSources().length || zoneRoot.getLayers().length) scheduleZones(); });
 
 /* Одно число — один смысл: «сколько точек этого слоя сейчас на карте».
    Раньше бейдж считал отфильтрованные записи, легенда — весь размер слоя
@@ -1706,10 +1896,16 @@ async function setShowPoints(on) {
   }
   renderTags(true); updateLayerLegend(); saveState();
 }
+function syncHeatStyleBtns() {
+  document.querySelectorAll('[data-hstyle]').forEach(b => {
+    const on = b.dataset.hstyle === heatStyle;
+    b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on));
+  });
+}
 function setShowHeat(on) {
   showHeatAll = on;
   syncViewToggles();
-  restyleHeatCanvases(); updateLayerLegend(); saveState();
+  restyleHeatCanvases(); scheduleZones(); updateLayerLegend(); saveState();
 }
 
 function buildHeatUI() {
@@ -2914,6 +3110,7 @@ function renderCustomPoints() {
   });
   updateLayerLegend();
   scheduleLabels();
+  scheduleZones();   // зоны плотности слоёв точек следуют за фильтром и видимостью
 }
 
 /* ── НАЗВАНИЯ ТОЧЕК НА КАРТЕ ─────────────────────────────────────────────
@@ -4329,6 +4526,10 @@ function buildCustomPtUI() {
           <span>Названия на карте</span>
         </div>
         <div class="lc-opt">
+          <div class="cbx sm cpt-dens-cbx${l.density ? ' on' : ''}" data-cpdens="${id}" role="switch" tabindex="0" aria-checked="${l.density ? 'true' : 'false'}" aria-label="Зона плотности слоя «${esc(l.name)}»"></div>
+          <span>Зона плотности <span class="tip-icon" data-tip="Сглаженные пояса вокруг скоплений точек, как на погодной карте. Цвета — палитра слоя (квадрат цвета слева от названия), размер — «Размер пятна» на вкладке «Карта».">ⓘ</span></span>
+        </div>
+        <div class="lc-opt">
           <div class="cbx sm green cpt-rad-cbx${l.radiusOn ? ' on' : ''}" data-cprad="${id}" role="switch" tabindex="0" aria-checked="${l.radiusOn ? 'true' : 'false'}" aria-label="Радиус охвата для «${esc(l.name)}»"></div>
           <span>Радиус охвата</span>
         </div>
@@ -4408,12 +4609,14 @@ function buildCustomPtUI() {
   box.querySelectorAll('[data-cppaint]').forEach(sw => {
     sw.addEventListener('click', () => {
       const l = customPtLayers.find(x => x.id === sw.dataset.cppaint); if (!l) return;
-      openPaintPop(sw, { ramp: l.color2 ? 'custom2' : 'custom', color: l.color, color2: l.color2 }, (p, live) => {
+      openPaintPop(sw, { ramp: l.ramp || (l.color2 ? 'custom2' : 'custom'), color: l.color, color2: l.color2 }, (p, live) => {
         if (p.ramp === 'custom' || p.ramp === 'custom2') {
           l.color = p.color; l.color2 = p.ramp === 'custom2' ? p.color2 : '';
+          l.ramp = '';
         } else {
           const g = HEAT_RAMPS[p.ramp] || heatGrad(l.color);
           l.color = g[0.55]; l.color2 = g[1.0];
+          l.ramp = p.ramp;   // зона плотности берёт палитру целиком, а не два цвета
         }
         sw.style.background = l.color2 ? `linear-gradient(135deg, ${safeColor(l.color)}, ${safeColor(l.color2)})` : safeColor(l.color);
         const card = sw.closest('.cpt-layer');
@@ -4448,6 +4651,15 @@ function buildCustomPtUI() {
       l.labels = !l.labels;
       el.classList.toggle('on', l.labels); el.setAttribute('aria-checked', l.labels ? 'true' : 'false');
       syncLabelAllBtn(); scheduleLabels(); saveState();
+    });
+  });
+
+  box.querySelectorAll('[data-cpdens]').forEach(el => {
+    el.addEventListener('click', () => {
+      const l = customPtLayers.find(x => x.id === el.dataset.cpdens); if (!l) return;
+      l.density = !l.density;
+      el.classList.toggle('on', l.density); el.setAttribute('aria-checked', String(l.density));
+      scheduleZones(); saveState();
     });
   });
 
@@ -4933,12 +5145,12 @@ function buildStateSnapshot() {
     // «Границы»: свои зоны (геометрия — только контуры), выбор и режим отбора.
     distOpacity, boundLayers: boundLayers.map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, zones: l.zones })),
     boundSel: boundSel.slice(), boundFilter: { ...boundFilter },
-    showHeatAll, showPointsAll,
+    showHeatAll, showPointsAll, heatStyle,
     cityScope,
     addrSrcKeys, addrRefKeys, rtRadius, rtRadiusOp, rtExclRadius, rtExclOp, rtExclKeys,
     // recs ручных слоёв несут карточку и идентификаторы фото — байты снимков
     // живут на сервере и в состояние не попадают.
-    customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, color2: l.color2 || '', icon: l.icon || '', fields: l.fields || [], manual: !!l.manual, visible: l.visible, shape: l.shape, size: l.size, opacity: l.opacity, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, labels: !!l.labels, recs: l.recs })),
+    customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, color2: l.color2 || '', icon: l.icon || '', fields: l.fields || [], manual: !!l.manual, visible: l.visible, shape: l.shape, size: l.size, opacity: l.opacity, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, labels: !!l.labels, density: !!l.density, ramp: l.ramp || '', recs: l.recs })),
   };
 }
 
@@ -5071,6 +5283,7 @@ function applySnapshot(st) {
   // его нельзя было бы вернуть назад.
   heatBoost = 1;
   if (typeof st.showHeatAll === 'boolean') showHeatAll = st.showHeatAll;
+  heatStyle = st.heatStyle === 'zones' ? 'zones' : 'spots';
   // Раньше ярлыки включались у каждого слоя отдельно — переносим в общий флаг.
   if (typeof st.showPointsAll === 'boolean') showPointsAll = st.showPointsAll;
   else if (st.layers && Object.values(st.layers).some(l => l && l.showTags)) showPointsAll = true;
@@ -6297,7 +6510,7 @@ function stateFingerprint(snapshot) {
   const custom = (snapshot.customPtLayers || []).map(layer => [
     layer.id, layer.name, layer.color, layer.visible, layer.shape, layer.manual,
     layer.color2 || '', layer.icon || '', JSON.stringify(layer.fields || []),
-    layer.size, layer.opacity, !!layer.labels,
+    layer.size, layer.opacity, !!layer.labels, !!layer.density, layer.ramp || '',
     layer.radiusOn, layer.radiusM, layer.radiusColor, layer.radiusOpacity,
     Array.isArray(layer.recs) ? layer.recs.length : 0,
     // Правка карточки ручной точки не меняет их количество. Без этого отпечаток
@@ -6314,6 +6527,7 @@ function stateFingerprint(snapshot) {
     recBasis: snapshot.recBasis, recShow: snapshot.recShow,
     heatBoost: snapshot.heatBoost, heatBlend: snapshot.heatBlend,
     showHeatAll: snapshot.showHeatAll !== false, showPointsAll: !!snapshot.showPointsAll,
+    heatStyle: snapshot.heatStyle || 'spots',
     heatRadius: snapshot.heatRadius, districtsOn: snapshot.districtsOn,
     distOpacity: snapshot.distOpacity, boundSel: snapshot.boundSel || [], boundFilter: snapshot.boundFilter || null,
     // Геометрию зон целиком не сравниваем: зоны не правятся по вершинам, их
@@ -6494,6 +6708,7 @@ function syncControls() {
   $('s-top').value         = topN;  $('v-top').textContent  = topN;
   $('s-heat-radius').value = heatRadius; $('v-heat-radius').textContent = heatRadius + ' px';
   $('heat-blend').value    = heatBlend;
+  syncHeatStyleBtns();
   $('rec-show').classList.toggle('on', recShow);
   buildRecBasisSel();
   syncBoundsBadge();
@@ -6539,10 +6754,17 @@ function wireEvents() {
     fillSlider(e.target); renderHeat();
   });
 
+  // Вид тепловой карты: пятна или зоны плотности
+  document.querySelectorAll('[data-hstyle]').forEach(b => b.addEventListener('click', () => {
+    if (heatStyle === b.dataset.hstyle) return;
+    heatStyle = b.dataset.hstyle;
+    syncHeatStyleBtns(); renderHeat(); saveState();
+  }));
+
   // Blend mode (fast path)
   $('heat-blend').addEventListener('change', e => {
     heatBlend = e.target.value;
-    restyleHeatCanvases();
+    restyleHeatCanvases(); scheduleZones();
   });
 
   // Создать слой: название и поля → шаблон → загрузка
