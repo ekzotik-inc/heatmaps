@@ -2694,3 +2694,9 @@ small, .vt-txt small { font-size: 11px; }
 .dist-scale { position: relative; display: flex; justify-content: space-between; margin-top: 4px; font: 500 11px "Inter"; color: var(--dim); }
 /* «1 км» — там, где он на логарифмической шкале (44.7 %), под центром кружка */
 .dist-scale span:nth-child(2) { position: absolute; left: calc(8.5px + (100% - 17px) * .447); transform: translateX(-50%); }
+
+/* Строка легенды с пометкой: название, под ним «за городом» */
+.legend-name2 { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.legend-name2 .ln-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend-name2 .ln-t::first-letter { text-transform: uppercase; }
+.legend-note { font: 500 11px "Inter"; color: var(--mut); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -422,6 +422,12 @@ function recInCities(r) {
 }
 // Единая проверка «точка видна при текущем отборе»: города + «Границы».
 function recInSelection(r) { return recInCities(r) && boundsHold(r); }
+// Подпись для точек за пределами текущего отбора (легенда адрески).
+function outsideSelectionLabel() {
+  if (boundsActive()) return boundFilter.mode === 'out' ? 'внутри выбранных зон' : 'вне выбранных зон';
+  if (hasCityFilter() && !allCitiesSelected()) return 'за городом';
+  return 'за пределами отбора';
+}
 function selectionActive() { return (hasCityFilter() && !allCitiesSelected()) || boundsActive(); }
 function selectionKey() {
   return (hasCityFilter() && !allCitiesSelected() ? selectedCities.join('|') : '*') + '#' + boundFilterKey();
@@ -1357,7 +1363,15 @@ function updateLayerLegend() {
   // синие ориентиры) — без строк в легенде было непонятно, что это за точки.
   if (addrPreview) {
     items.push({ color: '#FF8C00', name: 'Адресная программа', count: addrPreview.count });
-    if (addrPreview.refs) items.push({ color: '#6C8EFF', name: addrPreview.refLabel, count: addrPreview.refs });
+    const outName = outsideSelectionLabel();
+    (addrPreview.refLayers || []).forEach(g => {
+      const l = customPtLayers.find(x => x.id === g.id);
+      // Слой выключен — его метки не нарисованы, ориентиры внутри видны
+      // только синими кружками: тогда они тоже идут своей строкой.
+      const layerShown = !!(l && l.visible && shownCount(l));
+      if (g.inside && !layerShown) items.push({ color: '#6C8EFF', name: g.name, count: g.inside });
+      if (g.outside) items.push({ color: '#6C8EFF', name: g.name, note: outName, count: g.outside });
+    });
   }
   // Выбранные районы и свои зоны: имя и площадь каждой, ниже — сумма.
   const zones = activeBoundZones();
@@ -1379,7 +1393,11 @@ function updateLayerLegend() {
       : it.pin ? `<span class="legend-pin">${it.pin}</span>`
       : `<span class="legend-dot" style="background:${safeColor(it.color, '#888')}"></span>`;
     const count = it.count ? `<span class="legend-count">${it.count.toLocaleString('ru-RU')}</span>` : '';
-    return `<div class="legend-item">${mark}<span class="legend-name" title="${esc(it.name)}">${esc(it.name)}</span>${count}</div>`;
+    // Пометка («за городом») — второй строкой: в одну строку её обрезала бы ширина легенды.
+    const name = it.note
+      ? `<span class="legend-name legend-name2" title="${esc(it.name + ' — ' + it.note)}"><span class="ln-t">${esc(it.name)}</span><span class="legend-note">${esc(it.note)}</span></span>`
+      : `<span class="legend-name" title="${esc(it.name)}">${esc(it.name)}</span>`;
+    return `<div class="legend-item">${mark}${name}${count}</div>`;
   }).join('') + zoneHtml + '</div>';
   el.querySelector('.legend-head').addEventListener('click', () => {
     const f = !legendFolded();
@@ -5892,7 +5910,7 @@ function addrRefPoints() {
   addrRefLayers().forEach(l => {
     for (const r of l.recs) {
       const key = (+r.lat).toFixed(5) + '|' + (+r.lon).toFixed(5);
-      if (!byCoord.has(key)) byCoord.set(key, { ...r, _layerName: l.name });
+      if (!byCoord.has(key)) byCoord.set(key, { ...r, _layerName: l.name, _layerId: l.id });
     }
   });
   return [...byCoord.values()];
@@ -6053,14 +6071,26 @@ async function previewAddrOnMap() {
     addrLayer.addLayer(m);
   });
 
-  addrPreview = { count: points.length, refs: usedRefs.size, refLabel: refLabel };
+  // Ориентиры для легенды — по слоям и отдельно «внутри отбора / за ним».
+  // Те, что внутри, уже есть на карте меткой своего слоя (его строка в
+  // легенде), поэтому отдельной строкой идут только те, что за городом, —
+  // ориентир берётся ближайший, и он может лежать за границей отбора.
+  const refLayers = new Map();
+  usedRefs.forEach(ref => {
+    const id = ref._layerId || '';
+    if (!refLayers.has(id)) refLayers.set(id, { id, name: ref._layerName || refLabel, inside: 0, outside: 0 });
+    refLayers.get(id)[recInSelection(ref) ? 'inside' : 'outside']++;
+  });
+  addrPreview = { count: points.length, refs: usedRefs.size, refLabel: refLabel, refLayers: [...refLayers.values()] };
   updateLayerLegend();
   syncAddrPreviewBtn();
 
   const allPts = [...points.map(p => [p.lat, p.lon]),
                   ...[...usedRefs.values()].map(r => [r.lat, r.lon])];
   map.flyToBounds(L.latLngBounds(allPts).pad(.12), { duration: .7, maxZoom: 16 });
-  toast(`На карте: ${points.length} точек · ${usedRefs.size} ориентиров`, 'ok');
+  const nOut = addrPreview.refLayers.reduce((a, g) => a + g.outside, 0);
+  toast(`На карте: ${points.length} ${plural(points.length, 'точка', 'точки', 'точек')} · ${usedRefs.size} ${plural(usedRefs.size, 'ориентир', 'ориентира', 'ориентиров')}` +
+        (nOut ? `, из них ${nOut} ${outsideSelectionLabel()}` : ''), 'ok', 4000);
 }
 
 async function exportRetraffic() {

@@ -1016,3 +1016,24 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   left end 10 m, zero rejected, state keeps 1 200 000 m, the address filter
   runs; UI audit clean.
 - Cache version `20261025j`.
+
+## 2026-10-26 — Address program legend: references inside vs outside the city
+
+- Owner's case: Tashkent in «Только город» mode; the address program used one
+  reference point outside the city (the nearest Bonds point lay beyond the
+  boundary). The legend showed «Bonds Touch Tashkent 10» (the layer, filtered
+  to the city) and again «Bonds Touch Tashkent 11» (all references used),
+  which read as a contradiction.
+- Now the preview keeps the used references per layer, split by
+  `recInSelection()`: those inside are already the layer's own row, so only
+  the outside ones get a row — «Bonds Touch Tashkent» with «за городом»
+  under it and their count (1). If the reference layer is switched off, its
+  inside references get their own row as well (they are drawn only as blue
+  dots then). The note reads «за городом» for the city filter, «вне выбранных
+  зон» for «Границы».
+- The toast says the same and with proper plurals: «На карте: 4 точки ·
+  4 ориентира, из них 1 за городом».
+- Verified in a browser (Samarkand, «Только город», a candidate at the edge
+  whose nearest reference lies just outside): legend 4 / 4 / «за городом 1»,
+  no row with 5; with the layer off — 3 + «за городом 1»; UI audit clean.
+- Cache version `20261025k`.
