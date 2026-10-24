@@ -984,3 +984,18 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
 - State: `heatStyle`, point layer `density` and `ramp` — snapshot, apply,
   fingerprint.
 - Cache version `20261025h`.
+
+## 2026-10-26 — Intensity scale for density zones
+
+- As in the owner's reference: for every layer drawn with zones, a scale
+  card above the legend — «Мало» … «Много» over a bar in the layer's band
+  colours, and under it an ⓘ hint plus the layer name (long names end with
+  an ellipsis, first letter capitalised). Several zone layers stack in one
+  card; no zones — no card.
+- The end labels take the palette's edge colours, darkened until they reach
+  4.5:1 on white (measured 4.8–10.5). On phones the card sits above the city
+  bar instead of the hidden legend.
+- Verified in a browser at 1300 and 390 px: two scales for a heat layer and a
+  point layer, no overlap with the legend or the city bar, scales follow the
+  Пятна/Зоны switch and the «Зона плотности» toggle; UI audit stays clean.
+- Cache version `20261025i`.

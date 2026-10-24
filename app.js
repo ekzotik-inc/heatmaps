@@ -1096,12 +1096,12 @@ function zoneSources() {
     heatKeys.forEach(k => {
       const d = DS[k];
       if (!d || !d.visible || !d._zone || !d._zone.pts.length) return;
-      out.push({ key: 'h:' + k, pts: d._zone.pts, grad: gradOf(d), opacity: d.opacity == null ? 1 : d.opacity, blend: true, boost: d.intensity || 1 });
+      out.push({ key: 'h:' + k, name: d.name, pts: d._zone.pts, grad: gradOf(d), opacity: d.opacity == null ? 1 : d.opacity, blend: true, boost: d.intensity || 1 });
     });
   }
   customPtLayers.forEach(l => {
     if (!l.visible || !l.density || !(l._shownRecs || []).length) return;
-    out.push({ key: 'p:' + l.id, pts: l._shownRecs.map(r => [r.lat, r.lon, 1]), grad: layerZoneGrad(l), opacity: 1, blend: false, boost: 1 });
+    out.push({ key: 'p:' + l.id, name: l.name, pts: l._shownRecs.map(r => [r.lat, r.lon, 1]), grad: layerZoneGrad(l), opacity: 1, blend: false, boost: 1 });
   });
   return out;
 }
@@ -1153,9 +1153,53 @@ function scheduleZones() {
   if (_zoneRaf) return;
   _zoneRaf = requestAnimationFrame(() => { _zoneRaf = 0; renderZones(); });
 }
+/* Шкала интенсивности под каждый слой с зонами (как на погодной карте):
+   «Мало» — «Много», полоса в цветах поясов, под ней ⓘ и название слоя.
+   Подписи окрашены краями палитры, но затемнены до контраста ≥ 4.5:1. */
+function relLum(hex) {
+  const c = h2r(hex), f = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); };
+  return .2126 * f(c.r) + .7152 * f(c.g) + .0722 * f(c.b);
+}
+function readableOnWhite(hex) {
+  let c = hex;
+  for (let i = 0; i < 12 && 1.05 / (relLum(c) + .05) < 4.5; i++) c = darken(c, .12);
+  return c;
+}
+function zoneScaleBar(g) {
+  const stops = [0, .2, .4, .6, .8, 1].map(t => `${sampleGrad(g, .22 + .78 * t)} ${Math.round(t * 100)}%`);
+  return `linear-gradient(90deg, ${stops.join(', ')})`;
+}
+let _zoneScaleSig = '';
+function renderZoneScales(sources) {
+  const box = document.getElementById('zone-scales');
+  if (!box) return;
+  const sig = sources.map(s => s.key + ':' + s.name + ':' + JSON.stringify(s.grad)).join('|');
+  if (sig === _zoneScaleSig) return;
+  _zoneScaleSig = sig;
+  box.hidden = !sources.length;
+  box.innerHTML = sources.map(s => `
+    <div class="zs">
+      <div class="zs-ends"><span style="color:${readableOnWhite(sampleGrad(s.grad, .3))}">Мало</span><span style="color:${readableOnWhite(sampleGrad(s.grad, 1))}">Много</span></div>
+      <i class="zs-bar" style="background:${zoneScaleBar(s.grad)}"></i>
+      <div class="zs-name"><span class="tip-icon" data-tip="Плотность точек слоя: от бледного края зоны к яркому ядру. «Много» — самые плотные места слоя, «Мало» — край, где точки ещё есть.">ⓘ</span><span class="zs-t" title="${esc(s.name)}">${esc(s.name)}</span></div>
+    </div>`).join('');
+  wireTips(box);
+  syncZoneScalesPos();
+}
+// Шкалы стоят над легендой: её высота меняется — следим.
+function syncZoneScalesPos() {
+  const lg = document.getElementById('layer-legend');
+  const h = lg && lg.style.display !== 'none' ? lg.offsetHeight : 0;
+  document.documentElement.style.setProperty('--legend-h', h + 'px');
+}
+if (window.ResizeObserver) {
+  const lg = document.getElementById('layer-legend');
+  if (lg) new ResizeObserver(syncZoneScalesPos).observe(lg);
+}
 async function renderZones() {
   const token = ++_zoneToken;
   const sources = zoneSources();
+  renderZoneScales(sources);
   if (!sources.length) { zoneRoot.clearLayers(); return; }
   try { await ensureContourLib(); } catch (_) {
     toast('Не удалось загрузить построитель зон — проверьте интернет', 'err');
@@ -3128,7 +3172,7 @@ const LABEL_FONT = '600 11px Inter, sans-serif';
 const LABEL_H = 18, LABEL_PAD = 15, LABEL_MAX = 28, LABEL_GAP = 2;
 const _lblCtx = document.createElement('canvas').getContext('2d');
 const _lblWidth = new Map();
-const MAP_OVERLAYS = '#city-bar, #layer-legend, #tag-note, #map-stat, #mode-badge, #update-banner, #zoom-ctl, #side-reopen, #ruler-hint, #bdraw-bar';
+const MAP_OVERLAYS = '#city-bar, #layer-legend, #zone-scales, #tag-note, #map-stat, #mode-badge, #update-banner, #zoom-ctl, #side-reopen, #ruler-hint, #bdraw-bar';
 let _lblFrame = 0;
 
 function labelText(name) {

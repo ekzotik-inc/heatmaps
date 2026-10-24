@@ -2652,3 +2652,24 @@ small, .vt-txt small { font-size: 11px; }
 .spot-ctl .style-row label { white-space: nowrap; }
 .heat-style { flex: 0 1 200px; }
 .zone-svg { pointer-events: none; overflow: visible; }
+
+/* Шкалы интенсивности зон — над легендой, тем же стеклом */
+.zone-scales {
+  position: absolute; z-index: 1100; left: calc(var(--side-w) + 42px);
+  bottom: calc(28px + var(--legend-h, 0px) + 10px);
+  display: flex; flex-direction: column; gap: 12px; width: 220px; padding: 11px 13px 10px;
+  background: rgba(255,255,255,.88); backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,.7); border-radius: 14px; box-shadow: 0 0 0 1px var(--line2), var(--shadow-sm);
+}
+.zone-scales[hidden] { display: none; }
+#app.side-hidden .zone-scales { left: 28px; }
+.zs-ends { display: flex; justify-content: space-between; font: 600 11.5px "Inter"; margin-bottom: 5px; }
+.zs-bar { display: block; height: 8px; border-radius: 100px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
+.zs-name { display: flex; align-items: center; gap: 6px; margin-top: 6px; min-width: 0; font: 500 11.5px "Inter"; color: var(--ink); }
+.zs-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zs-t::first-letter { text-transform: uppercase; }
+.zs-name .tip-icon { flex: 0 0 auto; }
+@media (max-width: 780px) {
+  /* легенда на телефоне скрыта — шкалы прижаты к низу карты */
+  .zone-scales { left: 24px; bottom: 130px; width: 180px; padding: 9px 11px; gap: 10px; }
+}
