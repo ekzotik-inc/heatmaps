@@ -1037,3 +1037,23 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   whose nearest reference lies just outside): legend 4 / 4 / «за городом 1»,
   no row with 5; with the layer off — 3 + «за городом 1»; UI audit clean.
 - Cache version `20261025k`.
+
+## 2026-10-26 — Boundary export follows «Только внутри / Только снаружи»
+
+- Owner: the boundary export always took the points inside the selected
+  zones, ignoring the chosen condition.
+- Now the export uses the same condition as the map. The button reads
+  «Выгрузить точки внутри / снаружи выбранных в Excel» and switches with the
+  mode.
+  - Inside: as before — sheet «Районы» with area and points per layer per
+    district, each layer sheet with a «Район» column; file
+    `tochki_v_rayonah_<date>.xlsx`.
+  - Outside: points outside all selected zones; sheet «Районы» gives the
+    count per layer outside and lists the excluded districts with their area;
+    layer sheets keep exactly the layer's template columns; file
+    `tochki_vne_rayonov_<date>.xlsx`.
+- The city filter applies in both modes.
+- Verified in a browser: district A selected — inside 6 points with
+  «Район», outside 9 points (equal to what the map shows), summary sheets as
+  described; UI audit clean.
+- Cache version `20261026a`.

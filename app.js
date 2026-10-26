@@ -3972,7 +3972,7 @@ function boundsStatusHtml() {
   const what = !boundFilter.on ? ' · отбор выключен' : nAct ? '' : ' · все скрыты';
   const area = nAct ? ' · ' + fmtArea(activeBoundZones().reduce((a, z) => a + zoneArea(z.mp), 0)) : '';
   return `Выбрано: ${zonesWord(nAll)}${nAct && nAct < nAll ? ` (на карте ${nAct})` : ''}${area}${what} <button type="button" class="lc-link" data-bzclear>Сбросить</button>` +
-    (nAct ? `<button type="button" class="create-btn ghost bz-export" data-bzexport>${uiIcon('sheet', 14)} Выгрузить точки внутри выбранных в Excel</button>` : '');
+    (nAct ? `<button type="button" class="create-btn ghost bz-export" data-bzexport>${uiIcon('sheet', 14)} Выгрузить точки ${boundFilter.mode === 'out' ? 'снаружи' : 'внутри'} выбранных в Excel</button>` : '');
 }
 function wireBoundsStatus(box) {
   const clr = box.querySelector('[data-bzclear]');
@@ -5561,13 +5561,16 @@ async function exportLayerXlsx(kind, id) {
     toast('Не удалось выгрузить слой — проверьте интернет', 'err');
   }
 }
-/* Точки внутри выбранных районов и зон: лист «Районы» (площадь и сколько
-   точек каждого слоя), затем по листу на каждый включённый слой — колонки
-   слоя плюс «Район». Фильтр городов учитывается, режим «снаружи» — нет:
-   кнопка называется «точки внутри выбранных». */
+/* Выгрузка по выбранным районам и зонам — по тому же условию, что на карте:
+   «Только внутри» — точки внутри выбранных (лист «Районы»: площадь и число
+   точек каждого слоя по районам, у точек колонка «Район»); «Только снаружи»
+   — точки вне всех выбранных (лист «Районы»: какие районы исключены, их
+   площадь и сколько точек каждого слоя осталось снаружи). Затем по листу на
+   каждый включённый слой с его колонками. Фильтр городов учитывается. */
 async function exportZonePoints() {
   const zones = activeBoundZones();
   if (!zones.length) { toast('Сначала выберите районы на карте', 'err'); return; }
+  const outside = boundFilter.mode === 'out';
   try {
     await ensureSheetLibs();
     const hk = heatKeys.filter(k => DS[k] && DS[k].visible);
@@ -5582,31 +5585,41 @@ async function exportZonePoints() {
       (layer.recs || []).forEach(r => {
         if (!recInCities(r)) return;
         const zs = zonesOf(r);
-        if (!zs.length) return;
+        if (outside ? zs.length : !zs.length) return;
         zs.forEach(z => { perZone[zones.indexOf(z)][li]++; });
         hits.push({ r, names: zs.map(z => z.name).join(', ') });
       });
-      if (hits.length) {
-        const byRec = new Map(hits.map(h => [h.r, h.names]));
-        sheets.push({ kind, layer, recs: hits.map(h => h.r), tail: { head: 'Район', val: r => byRec.get(r) || '' } });
-      }
+      if (!hits.length) return;
+      const byRec = new Map(hits.map(h => [h.r, h.names]));
+      sheets.push({ kind, layer, recs: hits.map(h => h.r), tail: outside ? null : { head: 'Район', val: r => byRec.get(r) || '' } });
     });
-    if (!sheets.length) { toast('В выбранных районах нет точек включённых слоёв', 'err', 3500); return; }
+    if (!sheets.length) {
+      toast(outside ? 'Вне выбранных районов нет точек включённых слоёв' : 'В выбранных районах нет точек включённых слоёв', 'err', 3500);
+      return;
+    }
     const used = new Set();
     const wb = XLSX.utils.book_new();
-    const sumHead = ['Район', 'Площадь, км²'].concat(layers.map(x => x.layer.name));
-    const sumRows = zones.map((z, zi) => [z.name, exportNum(zoneArea(z.mp) / 1e6)].concat(perZone[zi]));
-    if (zones.length > 1) {
-      sumRows.push(['Всего', exportNum(zones.reduce((a, z) => a + zoneArea(z.mp), 0) / 1e6)]
-        .concat(layers.map((_, li) => sheets.find(sh => sh.layer === layers[li].layer)?.recs.length || 0)));
+    const countOf = li => sheets.find(sh => sh.layer === layers[li].layer)?.recs.length || 0;
+    const area = zones.reduce((a, z) => a + zoneArea(z.mp), 0) / 1e6;
+    let sumHead, sumRows;
+    if (outside) {
+      sumHead = ['Условие', 'Площадь исключённых, км²'].concat(layers.map(x => x.layer.name));
+      sumRows = [['Точки вне выбранных районов', exportNum(area)].concat(layers.map((_, li) => countOf(li))),
+                 [],
+                 ['Исключённые районы', 'Площадь, км²']].concat(zones.map(z => [z.name, exportNum(zoneArea(z.mp) / 1e6)]));
+    } else {
+      sumHead = ['Район', 'Площадь, км²'].concat(layers.map(x => x.layer.name));
+      sumRows = zones.map((z, zi) => [z.name, exportNum(zoneArea(z.mp) / 1e6)].concat(perZone[zi]));
+      if (zones.length > 1) sumRows.push(['Всего', exportNum(area)].concat(layers.map((_, li) => countOf(li))));
     }
     const sum = XLSX.utils.aoa_to_sheet([sumHead].concat(sumRows));
-    sum['!cols'] = sumHead.map((c, i) => ({ wch: i ? Math.max(12, String(c).length + 2) : 28 }));
+    sum['!cols'] = sumHead.map((c, i) => ({ wch: i ? Math.max(12, String(c).length + 2) : 30 }));
     XLSX.utils.book_append_sheet(wb, sum, sheetName('Районы', used));
-    sheets.forEach(sh => XLSX.utils.book_append_sheet(wb, layerSheet(sh.kind, sh.layer, sh.recs, sh.tail), sheetName(sh.layer.name, used)));
-    saveXlsx(wb, `tochki_v_rayonah_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    sheets.forEach(sh => XLSX.utils.book_append_sheet(wb, layerSheet(sh.kind, sh.layer, sh.recs, sh.tail || undefined), sheetName(sh.layer.name, used)));
+    saveXlsx(wb, `${outside ? 'tochki_vne_rayonov' : 'tochki_v_rayonah'}_${new Date().toISOString().slice(0, 10)}.xlsx`);
     const n = sheets.reduce((a, sh) => a + sh.recs.length, 0);
-    toast(`Выгружено: ${n.toLocaleString('ru-RU')} ${plural(n, 'точка', 'точки', 'точек')} из ${zones.length} ${plural(zones.length, 'района', 'районов', 'районов')}`, 'ok');
+    const where = outside ? 'вне' : 'из';
+    toast(`Выгружено: ${n.toLocaleString('ru-RU')} ${plural(n, 'точка', 'точки', 'точек')} ${where} ${zones.length} ${plural(zones.length, 'района', 'районов', 'районов')}`, 'ok');
   } catch (e) {
     console.warn('Zone export failed:', e);
     toast('Не удалось выгрузить — проверьте интернет', 'err');
