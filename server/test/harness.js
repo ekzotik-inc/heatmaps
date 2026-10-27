@@ -12,7 +12,9 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 
-const SERVER = path.join(__dirname, '..', 'server.js');
+// HM_TEST_SERVER_JS — другой server.js (mutator подкладывает изменённую копию
+// в свою папку и запускает тесты оттуда).
+const SERVER = process.env.HM_TEST_SERVER_JS ? path.resolve(process.env.HM_TEST_SERVER_JS) : path.join(__dirname, '..', 'server.js');
 const PG_URL = process.env.HM_TEST_STORAGE === 'pg' ? process.env.HM_TEST_PG_URL : '';
 if (process.env.HM_TEST_STORAGE === 'pg' && !PG_URL) throw new Error('HM_TEST_STORAGE=pg needs HM_TEST_PG_URL');
 const dbByDir = new Map();
