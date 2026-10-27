@@ -37,44 +37,48 @@ const loginAttempts = new Map();
 const DATA_DIR = process.env.HM_DATA_DIR || __dirname;
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 
+// Одна учётка из JSON окружения или null, если запись неполная.
+function authAccount(username, value) {
+  const u = username.trim().toLowerCase();
+  if (!u || !value || typeof value.passwordHash !== 'string' || !AUTH_ROLES.has(value.role)) return null;
+  return { username: u, role: value.role, passwordHash: value.passwordHash };
+}
+
+// Optional isolated reset path for the Kyrgyzstan account. Render can
+// rotate this one credential without exposing or rewriting the shared
+// AUTH_USERS_JSON value that contains the other roles.
+function applyKgOverride(users, raw) {
+  try {
+    const entries = Object.entries(JSON.parse(raw));
+    if (entries.length !== 1) throw new Error('expected one user');
+    const account = authAccount(...entries[0]);
+    if (!account || account.role !== 'kg') throw new Error('expected one kg user with passwordHash');
+    for (const [existing, other] of users) {
+      if (other.role === 'kg') users.delete(existing);
+    }
+    users.set(account.username, account);
+  } catch (e) {
+    console.error('Invalid KG_AUTH_USER_JSON override:', e.message);
+  }
+}
+
 function loadAuthUsers() {
   const raw = process.env.AUTH_USERS_JSON || '';
   if (!raw) return new Map();
+  let entries;
   try {
-    const parsed = JSON.parse(raw);
-    const users = new Map();
-    for (const [username, value] of Object.entries(parsed)) {
-      const u = username.trim().toLowerCase();
-      if (!u || !value || typeof value.passwordHash !== 'string' || !AUTH_ROLES.has(value.role)) continue;
-      users.set(u, { username: u, role: value.role, passwordHash: value.passwordHash });
-    }
-    // Optional isolated reset path for the Kyrgyzstan account. Render can
-    // rotate this one credential without exposing or rewriting the shared
-    // AUTH_USERS_JSON value that contains the other roles.
-    const kgOverride = process.env.KG_AUTH_USER_JSON || '';
-    if (kgOverride) {
-      try {
-        const override = JSON.parse(kgOverride);
-        const entries = Object.entries(override);
-        if (entries.length !== 1) throw new Error('expected one user');
-        const [username, value] = entries[0];
-        const u = username.trim().toLowerCase();
-        if (!u || !value || value.role !== 'kg' || typeof value.passwordHash !== 'string') {
-          throw new Error('expected one kg user with passwordHash');
-        }
-        for (const [existing, account] of users) {
-          if (account.role === 'kg') users.delete(existing);
-        }
-        users.set(u, { username: u, role: 'kg', passwordHash: value.passwordHash });
-      } catch (e) {
-        console.error('Invalid KG_AUTH_USER_JSON override:', e.message);
-      }
-    }
-    return users;
+    entries = Object.entries(JSON.parse(raw));
   } catch (e) {
     console.error('Invalid AUTH_USERS_JSON:', e.message);
     return new Map();
   }
+  const users = new Map();
+  for (const entry of entries) {
+    const account = authAccount(...entry);
+    if (account) users.set(account.username, account);
+  }
+  if (process.env.KG_AUTH_USER_JSON) applyKgOverride(users, process.env.KG_AUTH_USER_JSON);
+  return users;
 }
 
 const AUTH_USERS = loadAuthUsers();
@@ -110,8 +114,7 @@ function verifyPassword(password, encoded) {
     const actual = crypto.scryptSync(String(password || ''), cfg.salt, cfg.hex.length / 2, {
       N: cfg.N, r: cfg.R, p: cfg.P, maxmem: SCRYPT_MAXMEM,
     });
-    const expected = Buffer.from(cfg.hex, 'hex');
-    return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+    return safeEqual(actual, Buffer.from(cfg.hex, 'hex'));
   } catch (_) {
     return false;
   }
@@ -129,6 +132,15 @@ function createDummyPasswordHash() {
   return `scrypt$${N}$${R}$${P}$${salt}$${hash}`;
 }
 const DUMMY_PASSWORD_HASH = createDummyPasswordHash();
+
+// Учётка по логину и паролю из тела запроса или null. Хэш проверяется всегда,
+// даже для неизвестного логина, — по времени ответа логины не угадать.
+function authenticate(body) {
+  const user = AUTH_USERS.get(String(body.username || '').trim().toLowerCase());
+  const passwordHash = user && parsePasswordHash(user.passwordHash) ? user.passwordHash : DUMMY_PASSWORD_HASH;
+  const passwordValid = verifyPassword(String(body.password || ''), passwordHash);
+  return user && SESSION_SECRET && passwordValid ? user : null;
+}
 
 function loginRateKeys(req, username) {
   const ip = String(req.ip || (req.socket && req.socket.remoteAddress) || 'unknown').slice(0, 128);
@@ -220,26 +232,46 @@ function readBearer(req) {
   return /^Bearer\s+/i.test(header) ? header.slice(7).trim() : '';
 }
 
-function verifySessionToken(token) {
+function safeEqual(a, b) {
+  const x = Buffer.from(a), y = Buffer.from(b);
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+
+// Разобранное тело токена, если подпись верна; иначе null.
+function signedPayload(token) {
   if (!SESSION_SECRET || !token) return null;
   const dot = token.indexOf('.');
   if (dot <= 0) return null;
-  const payload = token.slice(0, dot), signature = token.slice(dot + 1);
-  const expected = signSession(payload);
-  const a = Buffer.from(signature), b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  const payload = token.slice(0, dot);
+  if (!safeEqual(token.slice(dot + 1), signSession(payload))) return null;
   try {
-    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    if (!data.u || !data.role || !Number.isFinite(data.exp) || data.exp <= Date.now() / 1000) return null;
-    const user = AUTH_USERS.get(String(data.u).toLowerCase());
-    if (!user || user.role !== data.role) return null;
-    // Смена пароля отзывает все сессии, выданные до неё.
-    const issuedAt = Number.isFinite(data.iat) ? data.iat : (data.exp - SESSION_TTL_SEC) * 1000;
-    if (user.changedAt && issuedAt < user.changedAt) return null;
-    return { username: user.username, role: user.role };
+    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
   } catch (_) {
     return null;
   }
+}
+
+function sessionClaimsLive(data) {
+  return Boolean(data.u && data.role && Number.isFinite(data.exp) && data.exp > Date.now() / 1000);
+}
+
+// Смена пароля отзывает все сессии, выданные до неё. Старые токены без iat
+// считаются выданными за SESSION_TTL_SEC до истечения.
+function revokedByPasswordChange(user, data) {
+  const issuedAt = Number.isFinite(data.iat) ? data.iat : (data.exp - SESSION_TTL_SEC) * 1000;
+  return Boolean(user.changedAt) && issuedAt < user.changedAt;
+}
+
+function sessionUser(data) {
+  if (!sessionClaimsLive(data)) return null;
+  const user = AUTH_USERS.get(String(data.u).toLowerCase());
+  if (!user || user.role !== data.role || revokedByPasswordChange(user, data)) return null;
+  return { username: user.username, role: user.role };
+}
+
+function verifySessionToken(token) {
+  const data = signedPayload(token);
+  return data ? sessionUser(data) : null;
 }
 
 function sessionTokenFromReq(req) {
@@ -497,8 +529,7 @@ function verifyKey(req) {
   if (API_KEY && header === API_KEY) return true;
   // 2) Ключ, выданный этой сессии при входе, — обычный путь для браузера.
   const token = writeTokenFor(sessionTokenFromReq(req));
-  if (!token || header.length !== token.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(header), Buffer.from(token));
+  return Boolean(token) && safeEqual(header, token);
 }
 
 function requireSession(req, res, next) {
@@ -560,14 +591,8 @@ app.use(compression());
 // multi-instance deployment should move this counter to shared storage.
 app.post('/auth/login', express.json({ limit: '32kb' }), rateLimitLogin, (req, res) => {
   noStore(res);
-  const username = String(req.body && req.body.username || '').trim().toLowerCase();
-  const password = String(req.body && req.body.password || '');
-  const user = AUTH_USERS.get(username);
-  const passwordHash = user && parsePasswordHash(user.passwordHash)
-    ? user.passwordHash
-    : DUMMY_PASSWORD_HASH;
-  const passwordValid = verifyPassword(password, passwordHash);
-  if (!user || !SESSION_SECRET || !passwordValid) {
+  const user = authenticate(req.body || {});
+  if (!user) {
     recordLoginFailure(req);
     return res.status(401).json({ error: 'Invalid username or password' });
   }
@@ -787,6 +812,25 @@ function hashPassword(password) {
   const hash = crypto.scryptSync(String(password), salt, KEYLEN, { N, r: R, p: P, maxmem: SCRYPT_MAXMEM }).toString('hex');
   return `scrypt$${N}$${R}$${P}$${salt}$${hash}`;
 }
+function passwordProblem(password) {
+  if (password.length < PASSWORD_MIN) return `Пароль короче ${PASSWORD_MIN} символов`;
+  if (password.length > PASSWORD_MAX) return 'Пароль слишком длинный';
+  if (password.trim() !== password) return 'Пароль не должен начинаться или заканчиваться пробелом';
+  return '';
+}
+
+// Записи переопределений идут строго по очереди, как и реестр карт.
+function storePasswordOverride(username, override) {
+  const run = authChain.then(async () => {
+    const cur = (await readState(AUTH_OVERRIDES_KEY)) || {};
+    const users = { ...(cur.users || {}), [username]: override };
+    await writeState(AUTH_OVERRIDES_KEY, { users, _savedAt: new Date().toISOString() });
+    stateReadCache.delete(AUTH_OVERRIDES_KEY);
+  });
+  authChain = run.catch(() => {});
+  return run;
+}
+
 async function loadAuthOverrides() {
   const v = await readState(AUTH_OVERRIDES_KEY);
   stateReadCache.delete(AUTH_OVERRIDES_KEY);
@@ -817,21 +861,12 @@ app.post('/auth/password', requireSession, requireAdmin, async (req, res) => {
   const password = String(b.password == null ? '' : b.password);
   const user = AUTH_USERS.get(username);
   if (!user) return res.status(404).json({ error: 'Учётная запись не найдена' });
-  if (password.length < PASSWORD_MIN) return res.status(400).json({ error: `Пароль короче ${PASSWORD_MIN} символов` });
-  if (password.length > PASSWORD_MAX) return res.status(400).json({ error: 'Пароль слишком длинный' });
-  if (password.trim() !== password) return res.status(400).json({ error: 'Пароль не должен начинаться или заканчиваться пробелом' });
+  const problem = passwordProblem(password);
+  if (problem) return res.status(400).json({ error: problem });
   try {
     const passwordHash = hashPassword(password);
     const changedAt = Date.now();
-    const run = authChain.then(async () => {
-      const cur = (await readState(AUTH_OVERRIDES_KEY)) || {};
-      const users = { ...(cur.users || {}) };
-      users[username] = { passwordHash, changedAt };
-      await writeState(AUTH_OVERRIDES_KEY, { users, _savedAt: new Date().toISOString() });
-      stateReadCache.delete(AUTH_OVERRIDES_KEY);
-    });
-    authChain = run.catch(() => {});
-    await run;
+    await storePasswordOverride(username, { passwordHash, changedAt });
     user.passwordHash = passwordHash;
     user.changedAt = changedAt;
     const out = { ok: true, username, changedAt: new Date(changedAt).toISOString(), self: username === req.user.username };

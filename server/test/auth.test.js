@@ -129,6 +129,14 @@ test('accounts from the environment', async t => {
     } finally { await srv.stop(); }
   });
 
+  await t.test('AUTH_USERS_JSON that is valid JSON but not an object does not crash the server', async () => {
+    const srv = await startServer({}, { AUTH_USERS_JSON: 'null' });
+    try {
+      assert.equal((await (await srv.request('/health')).json()).authConfigured, false);
+      assert.match(srv.log(), /Invalid AUTH_USERS_JSON/);
+    } finally { await srv.stop(); }
+  });
+
   await t.test('a valid user is still refused when the session secret is missing', async () => {
     const srv = await startServer(USERS, { SESSION_SECRET: '' });
     try {
