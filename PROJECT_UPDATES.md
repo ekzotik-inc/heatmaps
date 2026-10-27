@@ -1113,3 +1113,41 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   «Курильщиков 21+ (оценка)» on the «Районы» sheet of the boundary export.
   The legend is a little wider (310 px) so the line fits.
 - Cache version `20261027b`.
+
+## 2026-10-27 — ub-mode: tests, CRAP, duplicates, mutations
+
+- Owner: add the ub-mode skill (unclebob/ub-mode) and run the whole project
+  through it. Skill in `.claude/skills/ub-mode`; tools crapper / dryer /
+  mutator are external and write to `.metrics/` (ignored).
+- Test harness (none existed): `npm test` — server suites spawn the real
+  `server.js` on a temp `HM_DATA_DIR`; browser suite drives `app.js` in
+  Chromium with a seeded test server. `npm run test:pg` — the same server
+  suites on PostgreSQL. CI runs `npm test`. Details in CONTEXT.md 17a.
+- Server: every function under CRAP 10 (was 28 above), ~97 % lines / ~91 %
+  branches on both storages, no duplicates. Large handlers split (accounts,
+  sessions, maps, layers, chunks, storage stats); registry entries
+  normalised on load; dead code the mutator exposed removed; one session
+  lookup. `HM_DATA_DIR` (optional) — folder for file storage.
+- Mutations (server): first run 300/392 killed (76.9 %); after new tests and
+  removing dead code 331/364 (91.2 %). The remaining survivors are
+  equivalent from outside (cache TTL arithmetic, time boundaries at exactly
+  "now", the PG ssl option, a sort tie-break).
+- app.js: 246 → 147 functions above CRAP 10 (70 of them have CC ≥ 10 and
+  must be split; the biggest UI builders are the backlog). Duplicate hide-by-id → one
+  helper; snapshot/apply/fingerprint split — the fingerprint now covers the
+  whole snapshot, so a new state field cannot be "forgotten" there again;
+  simple settings live in one table (`PLAIN_SETTINGS`).
+- Bugs found by the new tests and fixed:
+  - Excel export cut large numbers (1 234 567 → 1 234 570);
+  - `safeColor` accepted 5/7-digit hex; sheet names could end with a space;
+  - a layer's `volUnit` was missing from the fingerprint (re-upload with a
+    «%» header was never saved);
+  - viewers got the admin's address layers back (auto-pick refilled the
+    clean start);
+  - CSS/HTML injection through stored colours (manual point card, labels,
+    income colours, the point edit form) — colours are now checked where
+    state enters;
+  - zone rings from saved state skipped the ±180/±90 check the import had;
+  - server: no test covered that an empty `SESSION_SECRET` rejects tokens,
+    legacy-token revocation, malformed stored hashes — now covered.
+- Cache version `20261027k`.
