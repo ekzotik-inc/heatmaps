@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
+const { isDeepStrictEqual } = require('node:util');
 const { API_KEY, startServer, json, bearer } = require('../server/test/harness');
 
 let chromium;
@@ -53,6 +54,16 @@ const DATASET = {
 
 // Карта «other» получает состояние, где каждая настройка не по умолчанию.
 const RICH_STATE = require('./app-state.fixture');
+// Карта «kg» — слой больше порога, который грузится фрагментами
+// (CHUNK_LAYER_MIN_RECORDS в app.js); у части записей все текстовые поля.
+const BIG_RECS = Array.from({ length: 12500 }, (_, i) => {
+  const r = { lat: +(42.8 + (i % 500) / 10000).toFixed(5), lon: +(74.5 + Math.floor(i / 500) / 1000).toFixed(5), vol: (i % 7) + 1 };
+  if (i % 3 === 0) r.name = 'Точка ' + (i % 40);
+  if (i % 5 === 0) Object.assign(r, { addr: 'ул. ' + (i % 11), code: 'K' + i, hours: '9-18' });
+  if (i % 4 === 0) r.x = { Канал: i % 8 ? 'Розница' : 'HoReCa', Сегмент: 'S' + (i % 3) };
+  return r;
+});
+const BIG_STATE = { _app: 'hm-br', heatKeys: ['custom_big'], layers: { custom_big: { _userData: true, name: 'Большой', color: '#e31a1c', visible: true, recs: BIG_RECS } } };
 
 async function seed(api) {
   const res = await api.request('/auth/login', json({ username: 'boss', password: USERS.boss.password }));
@@ -61,6 +72,8 @@ async function seed(api) {
   assert.equal(put.status, 200, 'dataset seeded');
   const state = await api.request('/state?map=other', json(RICH_STATE, { ...bearer(token), 'X-API-Key': API_KEY }));
   assert.equal(state.status, 200, 'rich state seeded');
+  const big = await api.request('/state?map=kg', json(BIG_STATE, { ...bearer(token), 'X-API-Key': API_KEY }));
+  assert.equal(big.status, 200, 'big layer seeded');
 }
 
 // Пути снимка, изменение которых не меняет отпечаток: такая правка не ушла бы
@@ -164,7 +177,7 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     }), cases.map(c => c[0]));
     const wrong = cases
       .map(([expr, want], i) => ({ expr, want, got: got[i].err || (got[i].v === undefined ? undefined : JSON.parse(got[i].v)) }))
-      .filter(c => !require('node:util').isDeepStrictEqual(c.got, JSON.parse(JSON.stringify(c.want))));
+      .filter(c => !isDeepStrictEqual(c.got, JSON.parse(JSON.stringify(c.want))));
     assert.deepEqual(wrong, []);
     await s.close();
   });
@@ -226,6 +239,18 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
       manifest: ['М', false, 0, 42],
       after: [[], ['x'], 'city'],
     });
+    await s.close();
+  });
+
+  await t.test('a large layer arrives in chunks with every record field intact', async () => {
+    const s = await open('boss', 'kg');
+    await s.page.evaluate(() => ensureLayerRecords(['custom_big']));
+    await s.page.waitForFunction(() => DS.custom_big._recordsLoaded && !DS.custom_big._recordsLoading, null, { timeout: 60000 });
+    const recs = await s.page.evaluate(() => buildStateSnapshot().layers.custom_big.recs);
+    assert.equal(recs.length, BIG_RECS.length);
+    const wrong = recs.findIndex((r, i) => !isDeepStrictEqual(r, BIG_RECS[i]));
+    assert.equal(wrong, -1, wrong < 0 ? '' : `record ${wrong}: ${JSON.stringify(recs[wrong])} vs ${JSON.stringify(BIG_RECS[wrong])}`);
+    assert.deepEqual(s.errors, []);
     await s.close();
   });
 
