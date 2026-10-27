@@ -269,14 +269,19 @@ function isHttps(req) {
   return req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.NODE_ENV === 'production';
 }
 
+// Атрибуты куки сессии живут в одном месте: выдача и сброс обязаны совпадать,
+// иначе браузер не сочтёт сброс той же кукой.
+function writeSessionCookie(req, res, value, maxAge) {
+  const attrs = isHttps(req) ? 'SameSite=None; Secure' : 'SameSite=Lax';
+  res.setHeader('Set-Cookie', `hm_session=${value}; Max-Age=${maxAge}; Path=/; HttpOnly; ${attrs}`);
+}
+
 function setSessionCookie(req, res, token) {
-  const secure = isHttps(req);
-  res.setHeader('Set-Cookie', `hm_session=${encodeURIComponent(token)}; Max-Age=${SESSION_TTL_SEC}; Path=/; HttpOnly; SameSite=${secure ? 'None' : 'Lax'}${secure ? '; Secure' : ''}`);
+  writeSessionCookie(req, res, encodeURIComponent(token), SESSION_TTL_SEC);
 }
 
 function clearSessionCookie(req, res) {
-  const secure = isHttps(req);
-  res.setHeader('Set-Cookie', `hm_session=; Max-Age=0; Path=/; HttpOnly; SameSite=${secure ? 'None' : 'Lax'}${secure ? '; Secure' : ''}`);
+  writeSessionCookie(req, res, '', 0);
 }
 
 function noStore(res) {
