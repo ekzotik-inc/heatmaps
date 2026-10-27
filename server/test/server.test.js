@@ -32,8 +32,11 @@ test('server', async t => {
   await t.test('login over http sets a Lax HttpOnly cookie without Secure', async () => {
     const { res, body, cookie } = await login(srv, 'boss');
     assert.equal(res.status, 200);
-    assert.equal(body.role, 'admin');
+    assert.deepEqual([body.ok, body.username, body.role, body.expiresIn], [true, 'boss', 'admin', 28800]);
     assert.ok(body.writeKey);
+    const claims = JSON.parse(Buffer.from(body.token.split('.')[0], 'base64url').toString());
+    assert.ok(Math.abs(claims.exp - (Date.now() / 1000 + 28800)) < 60, 'session lives 8 hours');
+    assert.ok(Math.abs(claims.iat - Date.now()) < 60000);
     assert.equal(cookie, `hm_session=${encodeURIComponent(body.token)}; Max-Age=28800; Path=/; HttpOnly; SameSite=Lax`);
   });
 
@@ -44,6 +47,7 @@ test('server', async t => {
 
   await t.test('logout expires the cookie with the same attributes', async () => {
     const plain = await srv.request('/auth/logout', { method: 'POST' });
+    assert.deepEqual(await plain.json(), { ok: true });
     assert.equal(plain.headers.getSetCookie()[0], 'hm_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax');
     const secure = await srv.request('/auth/logout', { method: 'POST', headers: { 'X-Forwarded-Proto': 'https' } });
     assert.equal(secure.headers.getSetCookie()[0], 'hm_session=; Max-Age=0; Path=/; HttpOnly; SameSite=None; Secure');
@@ -66,7 +70,12 @@ test('server', async t => {
     const viaCookie = await srv.request('/auth/me', { headers: { Cookie: cookie.split(';')[0] } });
     assert.equal((await viaCookie.json()).username, 'boss');
     const viaBearer = await srv.request('/auth/me', { headers: bearer(body.token) });
-    assert.equal((await viaBearer.json()).writeKey, body.writeKey);
+    assert.deepEqual(await viaBearer.json(), { ok: true, username: 'boss', role: 'admin', writeKey: body.writeKey });
+    // Негодный bearer не мешает рабочей cookie: и чтение, и ключ записи от неё.
+    const mixed = { Cookie: cookie.split(';')[0], Authorization: 'Bearer junk.token' };
+    assert.equal((await (await srv.request('/auth/me', { headers: mixed })).json()).writeKey, body.writeKey);
+    const write = await srv.request('/state?map=other', json({ _app: 'hm-br' }, { ...mixed, 'X-API-Key': body.writeKey }));
+    assert.equal(write.status, 200);
   });
 
   await t.test('a viewer sees only maps open to its role and gets no write key', async () => {
@@ -91,6 +100,9 @@ test('server', async t => {
     assert.equal(badMarker.status, 400);
     const ok = await srv.request('/state?map=comdep', json(state, { ...bearer(boss.token), 'X-API-Key': boss.writeKey }));
     assert.equal(ok.status, 200);
+    const saved = await ok.json();
+    assert.equal(saved.ok, true);
+    assert.ok(Date.parse(saved.savedAt) > Date.now() - 60000);
     const back = await (await srv.request('/state?map=comdep', { headers: bearer(viewer.token) })).json();
     assert.equal(back.note, 'saved by test');
     assert.ok(await srv.stored('comdep'), 'state lands in the test storage');
@@ -108,4 +120,12 @@ test('server', async t => {
     assert.equal(again.status, 200);
     PASSWORDS.viewer = newPass;
   });
+});
+
+test('in production the session cookie is Secure even behind plain http', async () => {
+  const srv = await startServer(USERS, { NODE_ENV: 'production' });
+  try {
+    const { cookie } = await login(srv, 'boss');
+    assert.match(cookie, /; SameSite=None; Secure$/);
+  } finally { await srv.stop(); }
 });

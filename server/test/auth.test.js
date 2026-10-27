@@ -10,8 +10,13 @@ const { startServer, json, bearer, signIn } = require('./harness');
 
 const USERS = {
   boss: { role: 'admin', password: 'boss-pass-123' },
+  abby: { role: 'comdep', password: 'abby-pass-123' },
   com: { role: 'comdep', password: 'com-pass-123' },
   kgu: { role: 'kg', password: 'kg-pass-123' },
+};
+const sign = (obj, key = 'test-session-secret') => {
+  const p = Buffer.from(JSON.stringify(obj)).toString('base64url');
+  return p + '.' + crypto.createHmac('sha256', key).update(p).digest('base64url');
 };
 
 function hash(password) {
@@ -30,7 +35,7 @@ test('passwords from the admin panel', async t => {
   await t.test('the owner lists accounts, admin first, without hashes', async () => {
     const [s, j] = [(await boss.get('/auth/users')).status, await (await boss.get('/auth/users')).json()];
     assert.equal(s, 200);
-    assert.deepEqual(j.users.map(u => [u.username, u.role, u.changedAt]), [['boss', 'admin', ''], ['com', 'comdep', ''], ['kgu', 'kg', '']]);
+    assert.deepEqual(j.users.map(u => [u.username, u.role, u.changedAt]), [['boss', 'admin', ''], ['abby', 'comdep', ''], ['com', 'comdep', ''], ['kgu', 'kg', '']], 'admin first, then by name');
     assert.equal(j.min, 8);
     assert.doesNotMatch(JSON.stringify(j), /scrypt/);
     const com = await signIn(srv, 'com', USERS.com.password);
@@ -43,12 +48,17 @@ test('passwords from the admin panel', async t => {
     assert.equal((await change(boss, 'com', 'x'.repeat(129)))[0], 400);
     assert.equal((await change(boss, 'com', ' padded-pass '))[0], 400);
     assert.equal((await change(boss, 'com', undefined))[0], 400);
+    assert.equal((await change(boss, 'abby', 'x'.repeat(128)))[0], 200, '128 characters is allowed');
+    assert.equal((await change(boss, 'abby', 'eight888'))[0], 200, '8 characters is allowed');
+    const stored = await srv.readStored('auth_overrides');
+    assert.match(stored.users.abby.passwordHash, /^scrypt\$16384\$8\$1\$[0-9a-f]{32}\$[0-9a-f]{64}$/, 'stored in the create-password-hash.js format');
   });
 
   await t.test('changing your own password keeps you signed in with a new session', async () => {
     const [s, j] = await change(boss, 'BOSS', 'boss-pass-456');
     assert.equal(s, 200);
-    assert.equal(j.self, true);
+    assert.deepEqual([j.ok, j.username, j.self], [true, 'boss', true]);
+    assert.ok(Date.parse(j.changedAt) > Date.now() - 60000);
     assert.ok(j.token && j.writeKey);
     assert.equal((await boss.get('/auth/me')).status, 401, 'old session is revoked');
     const me = await srv.request('/auth/me', { headers: bearer(j.token) });
@@ -63,13 +73,22 @@ test('passwords from the admin panel', async t => {
     assert.ok(list.users.find(u => u.username === 'com').changedAt);
   });
 
+  await t.test('tokens without iat count as issued 8 hours before expiry', async () => {
+    assert.equal((await change(boss, 'kgu', 'kg-pass-456'))[0], 200);
+    const now = Date.now() / 1000;
+    const before = sign({ u: 'kgu', role: 'kg', exp: Math.floor(now) + 3600 });
+    const after = sign({ u: 'kgu', role: 'kg', exp: Math.ceil(now) + 28800 + 2 });
+    assert.equal((await srv.request('/auth/me', { headers: bearer(before) })).status, 401, 'issued 7 h ago — before the change');
+    assert.equal((await srv.request('/auth/me', { headers: bearer(after) })).status, 200, 'issued now — after the change');
+  });
+
   await t.test('changed passwords survive a restart', async () => {
     const again = await startServer(USERS, {}, { dir: srv.dir });
     try {
       assert.equal((await login(again, 'com', 'com-pass-456')).status, 200);
       assert.equal((await login(again, 'com', USERS.com.password)).status, 401);
-      assert.equal((await login(again, 'kgu', USERS.kgu.password)).status, 200, 'untouched accounts keep env passwords');
-      assert.match(again.log(), /Password overrides applied: 2/);
+      assert.equal((await login(again, 'kgu', 'kg-pass-456')).status, 200);
+      assert.match(again.log(), /Password overrides applied: 4/);
     } finally { await again.stop(); }
   });
 });
@@ -80,7 +99,11 @@ test('login rate limit', async () => {
     for (let i = 0; i < 5; i += 1) assert.equal((await login(srv, 'com', 'wrong-' + i)).status, 401);
     const blocked = await login(srv, 'com', USERS.com.password);
     assert.equal(blocked.status, 429);
-    assert.ok(Number(blocked.headers.get('retry-after')) > 0);
+    const retry = Number(blocked.headers.get('retry-after'));
+    assert.ok(retry >= 1 && retry <= 900, `retry after ${retry} s, window is 15 min`);
+    assert.equal((await blocked.json()).retryAfter, retry);
+    for (let i = 0; i < 5; i += 1) await login(srv, 'xabby', 'wrong');
+    assert.equal((await login(srv, 'abby', USERS.abby.password)).status, 200, 'a similar login has its own bucket');
     assert.equal((await login(srv, 'boss', USERS.boss.password)).status, 200, 'other accounts are not blocked');
     for (let i = 0; i < 2; i += 1) await login(srv, 'kgu', 'wrong');
     assert.equal((await login(srv, 'kgu', USERS.kgu.password)).status, 200);
@@ -97,6 +120,7 @@ test('accounts from the environment', async t => {
         oldkg: { role: 'kg', passwordHash: hash('old-kg-pass') },
         hacker: { role: 'root', passwordHash: hash('x') },
         nohash: { role: 'comdep' },
+        nullish: null,
         ' ': { role: 'comdep', passwordHash: hash('x') },
       }),
       KG_AUTH_USER_JSON: JSON.stringify({ NewKG: { role: 'kg', passwordHash: hash('new-kg-pass') } }),
@@ -107,6 +131,7 @@ test('accounts from the environment', async t => {
       assert.equal((await login(srv, 'oldkg', 'old-kg-pass')).status, 401);
       assert.equal((await login(srv, 'newkg', 'new-kg-pass')).status, 200);
       assert.equal((await login(srv, 'hacker', 'x')).status, 401);
+      assert.equal((await login(srv, ' ', 'x')).status, 401, 'a blank login is never an account');
     } finally { await srv.stop(); }
   });
 
@@ -140,10 +165,12 @@ test('accounts from the environment', async t => {
     } finally { await srv.stop(); }
   });
 
-  await t.test('a valid user is still refused when the session secret is missing', async () => {
+  await t.test('without a session secret no login and no token is accepted', async () => {
     const srv = await startServer(USERS, { SESSION_SECRET: '' });
     try {
       assert.equal((await login(srv, 'boss', USERS.boss.password)).status, 401);
+      const forged = sign({ u: 'boss', role: 'admin', iat: Date.now(), exp: Date.now() / 1000 + 3600 }, '');
+      assert.equal((await srv.request('/auth/me', { headers: bearer(forged) })).status, 401, 'token signed with an empty key');
     } finally { await srv.stop(); }
   });
 
@@ -172,7 +199,6 @@ test('sessions, CORS and headers', async t => {
       const p = Buffer.from(JSON.stringify({ u: 'boss', role: 'admin', exp: 1 })).toString('base64url');
       return p + '.' + crypto.createHmac('sha256', 'test-session-secret').update(p).digest('base64url');
     })();
-    const sign = obj => { const p = Buffer.from(JSON.stringify(obj)).toString('base64url'); return p + '.' + crypto.createHmac('sha256', 'test-session-secret').update(p).digest('base64url'); };
     for (const token of [forged, payload, '.' + sig, expired, sign({ u: 'boss', role: 'comdep', exp: 9e9 }), sign({ u: 'ghost', role: 'admin', exp: 9e9 }), sign({ role: 'admin', exp: 9e9 }), 'bm90IGpzb24.' + crypto.createHmac('sha256', 'test-session-secret').update('bm90IGpzb24').digest('base64url')]) {
       assert.equal((await srv.request('/auth/me', { headers: bearer(token) })).status, 401, token.slice(0, 20));
     }
@@ -213,6 +239,7 @@ test('stored password overrides: only valid ones for known accounts apply', asyn
   fs.writeFileSync(path.join(dir, 'state.auth_overrides.json'), JSON.stringify({ users: {
     ghost: { passwordHash: hash('ghost-pass-1') },
     com: { passwordHash: 'not-a-hash' },
+    abby: { passwordHash: 'bcrypt$16384$8$1$salt$abcd' },
     kgu: null,
     boss: { passwordHash: hash('stored-pass-1'), changedAt: 'garbage' },
   } }));
@@ -238,5 +265,23 @@ test('stored password overrides: only valid ones for known accounts apply', asyn
   } finally {
     await srv2.stop();
     fs.rmSync(empty, { recursive: true, force: true });
+  }
+});
+
+test('stored overrides with a malformed hash are ignored', async () => {
+  const bad = ['scrypt$x$8$1$salt$abcd', 'scrypt$16384$y$1$salt$abcd', 'scrypt$16384$8$z$salt$abcd',
+    'scrypt$16384$8$1$$abcd', 'scrypt$16384$8$1$salt$zz', 'scrypt$16384$8$1$salt', 'bcrypt$16384$8$1$salt$abcd'];
+  const users = Object.fromEntries(bad.map((_, i) => ['u' + i, { role: 'comdep', password: 'env-pass-' + i }]));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hm-overrides-'));
+  fs.writeFileSync(path.join(dir, 'state.auth_overrides.json'), JSON.stringify({
+    users: Object.fromEntries(bad.map((h, i) => ['u' + i, { passwordHash: h, changedAt: Date.now() }])),
+  }));
+  const srv = await startServer(users, {}, { dir });
+  try {
+    assert.doesNotMatch(srv.log(), /Password overrides applied/);
+    for (let i = 0; i < bad.length; i += 1) assert.equal((await login(srv, 'u' + i, 'env-pass-' + i)).status, 200, bad[i]);
+  } finally {
+    await srv.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

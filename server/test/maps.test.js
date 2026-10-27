@@ -47,6 +47,9 @@ test('maps', async t => {
     assert.deepEqual([stats.photos, stats.photoBytes > 0], srv.storage === 'postgresql' ? [1, true] : [0, false]);
     const [s, j] = await create({ name: 'Самарканд <b>', desc: 'тест', icon: '🏙', country: 'uz', viewers: ['comdep', 'hacker'], copyFrom: 'comdep' });
     assert.equal(s, 200);
+    assert.equal(j.ok, true);
+    assert.match(j.map.id, /^m[0-9a-z]+[0-9a-f]{6}$/);
+    assert.ok(Date.parse(j.map.createdAt) > Date.now() - 60000);
     assert.equal(j.map.name, 'Самарканд b');
     assert.deepEqual(j.map.viewers, ['comdep']);
     assert.equal(j.map.icon, '🏙');
@@ -70,9 +73,12 @@ test('maps', async t => {
     const [, kg] = await create({ name: 'Ош', country: 'kg', icon: 'слишком длинный значок' });
     assert.equal(kg.map.country, 'kg');
     assert.equal(kg.map.icon, '🗺', 'over-long icon falls back');
-    const [, uz] = await create({ name: 'Где-то', country: 'zz' });
+    const [, uz] = await create({ name: 'Где-то', country: 'zz', icon: 'abcd' });
     assert.equal(uz.map.country, 'uz');
     assert.deepEqual(uz.map.viewers, []);
+    assert.equal(uz.map.icon, 'abcd', 'four characters fit');
+    assert.equal((await create({ name: 'Пять', icon: 'abcde' }))[1].map.icon, '🗺');
+    assert.notEqual(kg.map.id, uz.map.id, 'ids are unique');
   });
 
   await t.test('only the owner with a write key can create maps', async () => {
@@ -88,6 +94,8 @@ test('maps', async t => {
     assert.equal((await update({ id, name: 'ОШ' }))[0], 409);
     let [s, j] = await update({ id, name: 'Самарканд', desc: 'новое', icon: '📍', viewers: ['kg'], country: 'kg' });
     assert.equal(s, 200);
+    assert.equal(j.ok, true);
+    assert.equal((await update({ id, country: 'zz' }))[1].map.country, 'kg', 'unknown country is ignored');
     assert.deepEqual([j.map.name, j.map.desc, j.map.icon, j.map.viewers, j.map.country], ['Самарканд', 'новое', '📍', ['kg'], 'kg']);
     assert.equal((await com.get('/state/meta?map=' + id)).status, 403, 'comdep lost access');
     assert.equal((await kgu.get('/state/meta?map=' + id)).status, 200, 'kg gained access');
@@ -96,6 +104,10 @@ test('maps', async t => {
     assert.ok(j.map.viewers.includes('comdep'), 'base map keeps its own role');
     assert.equal(j.map.country, 'uz', 'base map country is fixed');
     assert.equal(j.map.icon, '🗂');
+    [, j] = await update({ id: 'comdep', viewers: ['kg'], icon: '📍' });
+    assert.deepEqual([j.map.viewers, j.map.icon, j.map.name], [['comdep', 'kg'], '📍', 'Коммерция']);
+    assert.equal((await kgu.get('/state/meta?map=comdep')).status, 200, 'kg now sees the base map');
+    await update({ id: 'comdep', viewers: [], icon: '🗂' });
     [, j] = await update({ id: 'comdep', desc: '' });
     assert.equal(j.map.desc, '');
   });
@@ -107,7 +119,7 @@ test('maps', async t => {
     assert.equal((await remove({ id: m.id, confirm: 'не то' }))[0], 400);
     const before = await srv.photoCount();
     assert.ok(await srv.stored(m.id));
-    assert.equal((await remove({ id: m.id, confirm: 'самарканд' }))[0], 200);
+    assert.deepEqual(await remove({ id: m.id, confirm: 'самарканд' }), [200, { ok: true }]);
     assert.equal(await srv.stored(m.id), false);
     assert.equal(await srv.photoCount(), before - 1);
     assert.equal((await boss.get('/state/meta?map=' + m.id)).status, 400);
@@ -131,7 +143,7 @@ test('maps', async t => {
   await t.test('no more than 40 new maps', async () => {
     const have = (await mapsOf(boss)).filter(m => !m.base).length;
     for (let i = have; i < 40; i += 1) assert.equal((await create({ name: 'Карта ' + i }))[0], 200);
-    assert.equal((await create({ name: 'Лишняя' }))[0], 409);
+    assert.deepEqual(await create({ name: 'Лишняя' }), [409, { error: 'Достигнут предел: 40 новых карт' }]);
   });
 });
 
@@ -157,6 +169,21 @@ test('legacy registry entries are filled in at load', async () => {
     const kgu = await signIn(srv, 'kgu', USERS.kgu.password);
     assert.deepEqual((await (await kgu.get('/maps')).json()).maps.map(m => m.id), ['kg', 'mfull']);
     assert.equal((await kgu.get('/state?map=mold')).status, 403);
+  } finally {
+    await srv.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a photo whose map is gone from the registry is not served', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hm-orphan-'));
+  const id = 'a'.repeat(32);
+  fs.mkdirSync(path.join(dir, 'photos'));
+  fs.writeFileSync(path.join(dir, 'photos', id + '.json'), JSON.stringify({ id, map: 'ghost', mime: 'image/png', b64: Buffer.from('x').toString('base64') }));
+  const srv = await startServer(USERS, {}, { dir });
+  try {
+    const boss = await signIn(srv, 'boss', USERS.boss.password);
+    assert.equal((await boss.get('/photo/' + id)).status, 403);
   } finally {
     await srv.stop();
     fs.rmSync(dir, { recursive: true, force: true });

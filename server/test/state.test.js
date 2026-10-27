@@ -25,6 +25,7 @@ test('state', async t => {
     assert.equal((await boss.post('/data', { cig: {} })).status, 400);
     assert.equal((await com.post('/data', { _app: 'hm-data' })).status, 403);
     const saved = await (await boss.post('/data', { _app: 'hm-data', cig: { recs: [] } })).json();
+    assert.equal(saved.ok, true);
     const [, meta] = await getJson(com, '/data/meta');
     assert.deepEqual(meta, { _app: 'hm-data-meta', _revision: saved.savedAt, _v: 1 });
     assert.deepEqual((await getJson(com, '/data'))[1].cig, { recs: [] });
@@ -39,7 +40,7 @@ test('state', async t => {
 
   let revision;
   await t.test('meta strips records and keeps or derives layer stats', async () => {
-    const recs = [1, 5, 2, 9, 3].map(v => ({ lat: 41, lon: 69, vol: v }));
+    const recs = [1, 5, 2, 9, 3, 0, 'x'].map(v => ({ lat: 41, lon: 69, vol: v }));
     const res = await boss.post('/state?map=comdep', {
       _app: 'hm-br', heatKeys: ['a', 'b', 'c'],
       layers: { a: { name: 'A', recs }, b: { name: 'B', recs: [], stats: { n: 7 } }, c: null },
@@ -48,7 +49,7 @@ test('state', async t => {
     const [, meta] = await getJson(com, '/state/meta?map=comdep');
     assert.equal(meta._meta, true);
     assert.equal(meta._revision, revision);
-    assert.deepEqual(meta.layers.a, { name: 'A', recordCount: 5, stats: { n: 5, sum: 20, max: 9, p50: 3, p90: 9 } });
+    assert.deepEqual(meta.layers.a, { name: 'A', recordCount: 7, stats: { n: 7, sum: 20, max: 9, p50: 2, p90: 9 } }, 'zero and junk values count as 0');
     assert.deepEqual(meta.layers.b, { name: 'B', recordCount: 0, stats: { n: 7 } });
     assert.deepEqual(meta.layers.c, { recordCount: 0, stats: { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 } });
     assert.deepEqual((await getJson(com, '/state/revision?map=comdep'))[1], { revision, empty: false });
@@ -57,15 +58,19 @@ test('state', async t => {
   await t.test('one layer: records and stats, unknown layer is 404', async () => {
     const [, layer] = await getJson(com, '/state/layer?map=comdep&layer=a');
     assert.equal(layer._app, 'hm-layer');
-    assert.equal(layer.recs.length, 5);
+    assert.equal(layer._revision, revision);
+    assert.equal(layer.recs.length, 7);
     assert.equal(layer.stats.max, 9);
     assert.equal((await getJson(com, '/state/layer?map=comdep&layer=c'))[0], 404);
     assert.equal((await getJson(com, '/state/layer?map=comdep&layer=zzz'))[0], 404);
     assert.equal((await getJson(com, '/state/layer?map=comdep&layer=layers'))[0], 404);
+    await boss.post('/state?map=kg', { _app: 'hm-br', layers: { a: { recs: [] } } });
+    assert.equal((await getJson(boss, '/state/layer?map=kg&layer=a'))[0], 404, 'a layer not listed in heatKeys');
+    assert.equal((await getJson(boss, '/state/layer/chunk?map=kg&layer=a'))[0], 404);
   });
 
   await t.test('layer chunks: compact rows, dictionaries, paging and clamps', async () => {
-    const recs = Array.from({ length: 1200 }, (_, i) => rec(i, i === 0 ? { x: { Канал: 'HoReCa' }, code: 'C1', hours: '9-18' } : {}));
+    const recs = Array.from({ length: 1200 }, (_, i) => rec(i, i === 0 ? { x: { Канал: 'HoReCa' }, code: 'C1', hours: '9-18' } : i === 1 ? { x: 'not an object' } : {}));
     recs[5] = null;
     await boss.post('/state?map=comdep', { _app: 'hm-br', heatKeys: ['big', 'nolist'], layers: { big: { recs }, nolist: { recs: 'oops' } } });
     const [, first] = await getJson(com, '/state/layer/chunk?map=comdep&layer=big&limit=10');
@@ -74,7 +79,8 @@ test('state', async t => {
     assert.deepEqual(first.rows[0], [41.12346, 69.98765, 0, 0, -1, 0, 0, 0]);
     assert.deepEqual(first.rows[5], [0, 0, 0, -1, -1, -1, -1, -1], 'missing record becomes an empty row');
     assert.deepEqual(first.dictionaries.name, ['n0', 'n1', 'n2']);
-    assert.deepEqual(first.dictionaries.x, ['{"Канал":"HoReCa"}']);
+    assert.deepEqual(first.dictionaries.x, ['{"Канал":"HoReCa"}'], 'a non-object x is dropped');
+    assert.equal(first.rows[1][7], -1);
     const [, last] = await getJson(com, '/state/layer/chunk?map=comdep&layer=big&offset=1000&limit=99999');
     assert.deepEqual([last.offset, last.limit, last.rows.length, last.nextOffset], [1000, 5000, 200, null]);
     const [, past] = await getJson(com, '/state/layer/chunk?map=comdep&layer=big&offset=5000');
@@ -127,10 +133,11 @@ test('state', async t => {
     assert.equal((await send('data:image/gif;base64,R0lG'))[0], 415);
     assert.equal((await send('data:image/png;base64,='))[0], 400, 'empty image');
     assert.equal((await send('data:image/png;base64,' + Buffer.alloc(4 * 1024 * 1024 + 1).toString('base64')))[0], 413);
+    assert.equal((await send('data:image/png;base64,' + Buffer.alloc(4 * 1024 * 1024, 1).toString('base64')))[0], 200, 'exactly 4 MB fits');
     const bytes = Buffer.from('jpeg-ish');
     const [s, j] = await send('data:image/JPEG;base64,' + bytes.toString('base64'));
     assert.equal(s, 200);
-    assert.equal(j.bytes, bytes.length);
+    assert.deepEqual([j.ok, j.bytes], [true, bytes.length]);
     assert.equal((await send('data:image/jpeg;base64,' + bytes.toString('base64')))[1].id, j.id, 'same bytes, same id');
     const img = await com.get('/photo/' + j.id);
     assert.equal(img.status, 200);

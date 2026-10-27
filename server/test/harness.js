@@ -55,9 +55,15 @@ async function databaseFor(dir) {
   await withDb(new URL(PG_URL).pathname.slice(1) || 'postgres', c => c.query(`CREATE DATABASE ${name}`));
   await withDb(name, async c => {
     await c.query('CREATE TABLE app_state (key TEXT PRIMARY KEY, json TEXT NOT NULL, updated_at TEXT NOT NULL)');
+    await c.query('CREATE TABLE photos (id TEXT PRIMARY KEY, map TEXT NOT NULL, mime TEXT NOT NULL, bytes BYTEA NOT NULL, created_at TEXT NOT NULL)');
     for (const f of fs.readdirSync(dir)) {
       const m = f.match(/^state\.(.+)\.json$/);
       if (m) await c.query('INSERT INTO app_state VALUES ($1, $2, $3)', [m[1], fs.readFileSync(path.join(dir, f), 'utf8'), new Date().toISOString()]);
+    }
+    const photos = path.join(dir, 'photos');
+    for (const f of fs.existsSync(photos) ? fs.readdirSync(photos) : []) {
+      const ph = JSON.parse(fs.readFileSync(path.join(photos, f), 'utf8'));
+      await c.query('INSERT INTO photos VALUES ($1, $2, $3, $4, $5)', [ph.id, ph.map, ph.mime, Buffer.from(ph.b64, 'base64'), new Date().toISOString()]);
     }
   });
   dbByDir.set(dir, name);
@@ -92,9 +98,10 @@ async function startServer(users, extraEnv = {}, opts = {}) {
     child.on('exit', code => reject(new Error(`server exited ${code}:\n${log}`)));
   });
   const base = `http://127.0.0.1:${port}`;
-  const exited = () => new Promise(resolve => {
+  const exited = () => new Promise((resolve, reject) => {
     child.removeAllListeners('exit');
-    child.on('exit', resolve);
+    // Штатная остановка — код 0; иное — поломка остановки сервера.
+    child.on('exit', code => (code === 0 ? resolve() : reject(new Error(`server exited with ${code}:\n${log}`))));
     // Выход по SIGTERM штатный (process.exit) — c8 успевает записать покрытие.
     child.kill('SIGTERM');
   });
@@ -108,6 +115,10 @@ async function startServer(users, extraEnv = {}, opts = {}) {
     stored: key => (pg
       ? withDb(pg.name, async c => (await c.query('SELECT 1 FROM app_state WHERE key = $1', [key])).rows.length > 0)
       : fs.existsSync(path.join(dir, `state.${key}.json`))),
+    // Сохранённое под ключом состояние (разобранный JSON) или null.
+    readStored: key => (pg
+      ? withDb(pg.name, async c => { const r = await c.query('SELECT json FROM app_state WHERE key = $1', [key]); return r.rows.length ? JSON.parse(r.rows[0].json) : null; })
+      : (fs.existsSync(path.join(dir, `state.${key}.json`)) ? JSON.parse(fs.readFileSync(path.join(dir, `state.${key}.json`), 'utf8')) : null)),
     photoCount: () => (pg
       ? withDb(pg.name, async c => Number((await c.query('SELECT count(*) AS n FROM photos')).rows[0].n))
       : (fs.existsSync(path.join(dir, 'photos')) ? fs.readdirSync(path.join(dir, 'photos')).length : 0)),
