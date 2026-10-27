@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { startServer, json, bearer, signIn } = require('./harness');
 
@@ -39,6 +40,11 @@ test('maps', async t => {
     const state = { _app: 'hm-br', heatKeys: ['h1'], layers: { h1: { name: 'L', recs: [{ lat: 41, lon: 69, vol: 1 }] } },
       customPtLayers: [{ recs: [{ photos: [{ id: photoId }, { id: 'missing-photo' }, null] }, null] }, null] };
     assert.equal((await boss.post('/state?map=comdep', state)).status, 200);
+    const stats = (await mapsOf(boss)).find(m => m.id === 'comdep').stats;
+    assert.ok(stats.bytes > 100, 'stored size is reported');
+    assert.ok(Date.parse(stats.updatedAt) > Date.now() - 60000);
+    // Фото считает только PostgreSQL; файловое хранилище их не считает (0).
+    assert.deepEqual([stats.photos, stats.photoBytes > 0], srv.storage === 'postgresql' ? [1, true] : [0, false]);
     const [s, j] = await create({ name: 'Самарканд <b>', desc: 'тест', icon: '🏙', country: 'uz', viewers: ['comdep', 'hacker'], copyFrom: 'comdep' });
     assert.equal(s, 200);
     assert.equal(j.map.name, 'Самарканд b');
@@ -99,11 +105,11 @@ test('maps', async t => {
     assert.equal((await remove({ id: 'nope' }))[0], 404);
     assert.equal((await remove({ id: 'comdep', confirm: 'Коммерция' }))[0], 400, 'base maps stay');
     assert.equal((await remove({ id: m.id, confirm: 'не то' }))[0], 400);
-    const before = fs.readdirSync(path.join(srv.dir, 'photos')).length;
-    assert.ok(fs.existsSync(path.join(srv.dir, `state.${m.id}.json`)));
+    const before = await srv.photoCount();
+    assert.ok(await srv.stored(m.id));
     assert.equal((await remove({ id: m.id, confirm: 'самарканд' }))[0], 200);
-    assert.equal(fs.existsSync(path.join(srv.dir, `state.${m.id}.json`)), false);
-    assert.equal(fs.readdirSync(path.join(srv.dir, 'photos')).length, before - 1);
+    assert.equal(await srv.stored(m.id), false);
+    assert.equal(await srv.photoCount(), before - 1);
     assert.equal((await boss.get('/state/meta?map=' + m.id)).status, 400);
     assert.equal((await boss.get('/photo/' + photoId)).status, 200, 'source map photo stays');
   });
@@ -130,8 +136,6 @@ test('maps', async t => {
 });
 
 test('legacy registry entries are filled in at load', async () => {
-  const fs = require('node:fs');
-  const os = require('node:os');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hm-legacy-'));
   fs.writeFileSync(path.join(dir, 'state.maps.json'), JSON.stringify({ maps: [
     { id: 'mold', name: 'Старая' },

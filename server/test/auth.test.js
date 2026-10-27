@@ -3,6 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { startServer, json, bearer, signIn } = require('./harness');
 
 const USERS = {
@@ -206,9 +209,6 @@ test('sessions, CORS and headers', async t => {
 });
 
 test('stored password overrides: only valid ones for known accounts apply', async () => {
-  const fs = require('node:fs');
-  const os = require('node:os');
-  const path = require('node:path');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hm-overrides-'));
   fs.writeFileSync(path.join(dir, 'state.auth_overrides.json'), JSON.stringify({ users: {
     ghost: { passwordHash: hash('ghost-pass-1') },

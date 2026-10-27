@@ -7,7 +7,9 @@
     "lint": "eslint app.js",
     "check": "node --check app.js",
     "test": "node --test server/test/*.test.js test/*.test.js",
-    "coverage": "c8 --reporter=lcov --reporter=text-summary --include=server/server.js node --test server/test/*.test.js test/*.test.js"
+    "coverage": "c8 --reporter=lcov --reporter=text-summary --include=server/server.js npm run -s test:all",
+    "test:pg": "HM_TEST_STORAGE=pg node --test server/test/*.test.js",
+    "test:all": "node --test server/test/*.test.js test/*.test.js && if [ -n \"$HM_TEST_PG_URL\" ]; then npm run -s test:pg; else echo \"HM_TEST_PG_URL is not set: PostgreSQL run skipped\"; fi"
   },
   "devDependencies": {
     "c8": "^10.1.3",

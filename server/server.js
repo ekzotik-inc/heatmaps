@@ -915,23 +915,29 @@ app.post('/auth/password', requireSession, requireAdmin, async (req, res) => {
 // ---------------------------------------------------------------------------
 // Карты: список, создание, правка, удаление (последние три — только владелец).
 // ---------------------------------------------------------------------------
+// Размер и время состояния, число и объём фото. В выборке состояния только
+// ключи из ids; фото могут остаться от карт вне списка — их пропускаем.
+async function dbStorageStats(out, ids) {
+  const r = await db.query('SELECT key, updated_at, length(json) AS bytes FROM app_state WHERE key = ANY($1::text[])', [ids]);
+  r.rows.forEach(row => Object.assign(out[row.key], { bytes: Number(row.bytes), updatedAt: row.updated_at }));
+  const p = await db.query('SELECT map, count(*)::int AS n, coalesce(sum(length(bytes)), 0)::bigint AS b FROM photos GROUP BY map');
+  p.rows.filter(row => out[row.map]).forEach(row => Object.assign(out[row.map], { photos: row.n, photoBytes: Number(row.b) }));
+}
+
+// Файловое хранилище фото не считает — только размер и время файла состояния.
+function fileStorageStats(out, ids) {
+  ids.forEach(id => {
+    try {
+      const st = fs.statSync(stateFileFor(id));
+      Object.assign(out[id], { bytes: st.size, updatedAt: st.mtime.toISOString() });
+    } catch (_) {}
+  });
+}
+
 async function mapStorageStats(ids) {
-  const out = {};
-  ids.forEach(id => { out[id] = { bytes: 0, updatedAt: '', photos: 0, photoBytes: 0 }; });
+  const out = Object.fromEntries(ids.map(id => [id, { bytes: 0, updatedAt: '', photos: 0, photoBytes: 0 }]));
   try {
-    if (db) {
-      const r = await db.query('SELECT key, updated_at, length(json) AS bytes FROM app_state WHERE key = ANY($1::text[])', [ids]);
-      r.rows.forEach(row => { if (out[row.key]) { out[row.key].bytes = Number(row.bytes) || 0; out[row.key].updatedAt = row.updated_at || ''; } });
-      const p = await db.query('SELECT map, count(*)::int AS n, coalesce(sum(length(bytes)), 0)::bigint AS b FROM photos GROUP BY map');
-      p.rows.forEach(row => { if (out[row.map]) { out[row.map].photos = row.n; out[row.map].photoBytes = Number(row.b) || 0; } });
-    } else {
-      ids.forEach(id => {
-        try {
-          const st = fs.statSync(stateFileFor(id));
-          out[id].bytes = st.size; out[id].updatedAt = st.mtime.toISOString();
-        } catch (_) {}
-      });
-    }
+    await (db ? dbStorageStats(out, ids) : fileStorageStats(out, ids));
   } catch (e) {
     console.error('Map stats error:', e.message);
   }
@@ -1022,24 +1028,25 @@ function newMapEntry(b, name) {
   };
 }
 
+async function addMapTo(list, m, copyFrom) {
+  if (list.filter(x => !BASE_IDS.has(x.id)).length >= MAX_CUSTOM_MAPS) {
+    throw httpError(409, 'Достигнут предел: ' + MAX_CUSTOM_MAPS + ' новых карт');
+  }
+  if (nameTaken(m.name)) throw httpError(409, 'Карта с таким названием уже есть');
+  if (copyFrom) await copyMapState(copyFrom, m.id);
+  list.push(m);
+  return m;
+}
+
 app.post('/maps', requireSession, requireAdmin, async (req, res) => {
   noStore(res);
   const b = req.body || {};
   const name = cleanText(b.name, 60);
   if (!name) return res.status(400).json({ error: 'Укажите название карты' });
-  const copyFrom = b.copyFrom ? String(b.copyFrom) : '';
+  const copyFrom = String(b.copyFrom || '');
   if (copyFrom && !findMap(copyFrom)) return res.status(400).json({ error: 'Карта-образец не найдена' });
   try {
-    const created = await updateRegistry(async list => {
-      if (list.filter(m => !BASE_IDS.has(m.id)).length >= MAX_CUSTOM_MAPS) {
-        throw httpError(409, 'Достигнут предел: ' + MAX_CUSTOM_MAPS + ' новых карт');
-      }
-      if (nameTaken(name)) throw httpError(409, 'Карта с таким названием уже есть');
-      const m = newMapEntry(b, name);
-      if (copyFrom) await copyMapState(copyFrom, m.id);
-      list.push(m);
-      return m;
-    });
+    const created = await updateRegistry(list => addMapTo(list, newMapEntry(b, name), copyFrom));
     res.json({ ok: true, map: publicMap({ ...created, base: false }) });
   } catch (e) {
     sendRegistryError(res, e, 'Map create error:', 'Не удалось создать карту');

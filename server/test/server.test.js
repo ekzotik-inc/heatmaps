@@ -21,10 +21,10 @@ test('server', async t => {
   const srv = await startServer(USERS);
   t.after(() => srv.stop());
 
-  await t.test('health reports file storage and configured auth', async () => {
+  await t.test('health reports the storage and configured auth', async () => {
     const body = await (await srv.request('/health')).json();
     assert.equal(body.ok, true);
-    assert.equal(body.storage, 'file');
+    assert.equal(body.storage, srv.storage);
     assert.equal(body.authConfigured, true);
     assert.equal(body.writeAuthConfigured, true);
   });
@@ -93,7 +93,8 @@ test('server', async t => {
     assert.equal(ok.status, 200);
     const back = await (await srv.request('/state?map=comdep', { headers: bearer(viewer.token) })).json();
     assert.equal(back.note, 'saved by test');
-    assert.ok(fs.existsSync(path.join(srv.dir, 'state.comdep.json')), 'state lands in HM_DATA_DIR');
+    assert.ok(await srv.stored('comdep'), 'state lands in the test storage');
+    if (srv.storage === 'file') assert.ok(fs.existsSync(path.join(srv.dir, 'state.comdep.json')), 'file storage uses HM_DATA_DIR');
   });
 
   await t.test('changing a password revokes sessions issued before it', async () => {
