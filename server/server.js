@@ -123,15 +123,7 @@ function verifyPassword(password, encoded) {
 // Unknown usernames must perform the same expensive password work as known
 // usernames. The random hash is generated once per process and never logged or
 // accepted as a real credential.
-function createDummyPasswordHash() {
-  const N = 16384, R = 8, P = 1, KEYLEN = 32;
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.scryptSync(crypto.randomBytes(32), salt, KEYLEN, {
-    N, r: R, p: P, maxmem: SCRYPT_MAXMEM,
-  }).toString('hex');
-  return `scrypt$${N}$${R}$${P}$${salt}$${hash}`;
-}
-const DUMMY_PASSWORD_HASH = createDummyPasswordHash();
+const DUMMY_PASSWORD_HASH = hashPassword(crypto.randomBytes(32).toString('hex'));
 
 // Учётка по логину и паролю из тела запроса или null. Хэш проверяется всегда,
 // даже для неизвестного логина, — по времени ответа логины не угадать.
@@ -143,8 +135,8 @@ function authenticate(body) {
 }
 
 function loginRateKeys(req, username) {
-  const ip = String(req.ip || (req.socket && req.socket.remoteAddress) || 'unknown').slice(0, 128);
-  const account = String(username || '').trim().toLowerCase().slice(0, 128) || '<empty>';
+  const ip = String(req.ip).slice(0, 128);
+  const account = String(username || '').trim().toLowerCase().slice(0, 128);
   // Keep an account bucket as well as the IP+account bucket. A managed proxy
   // can rotate the observed edge IP between requests; the account bucket keeps
   // the limiter effective without trusting a client-supplied header.
@@ -177,10 +169,10 @@ function rateLimitLogin(req, res, next) {
   next();
 }
 
+// req.loginRateKeys ставит rateLimitLogin — он стоит перед обработчиком входа.
 function recordLoginFailure(req) {
   const now = Date.now();
-  const keys = req.loginRateKeys || loginRateKeys(req, req.body && req.body.username);
-  for (const key of keys) {
+  for (const key of req.loginRateKeys) {
     const entry = loginAttempts.get(key);
     if (!entry || entry.resetAt <= now) {
       loginAttempts.set(key, { failures: 1, resetAt: now + LOGIN_WINDOW_MS, lastSeen: now });
@@ -193,8 +185,7 @@ function recordLoginFailure(req) {
 }
 
 function clearLoginFailures(req) {
-  const keys = req.loginRateKeys || loginRateKeys(req, req.body && req.body.username);
-  for (const key of keys) loginAttempts.delete(key);
+  for (const key of req.loginRateKeys) loginAttempts.delete(key);
 }
 
 function b64url(value) {
@@ -274,17 +265,15 @@ function verifySessionToken(token) {
   return data ? sessionUser(data) : null;
 }
 
-function sessionTokenFromReq(req) {
-  const bearer = readBearer(req);
-  if (bearer && verifySessionToken(bearer)) return bearer;
-  const cookie = readCookie(req, 'hm_session');
-  return cookie && verifySessionToken(cookie) ? cookie : '';
-}
-
-function readSession(req) {
-  // Prefer the explicit bearer token for GitHub Pages ↔ Render, then fall back
-  // to the HttpOnly cookie for same-site or browsers that retain third-party cookies.
-  return verifySessionToken(readBearer(req)) || verifySessionToken(readCookie(req, 'hm_session'));
+// { user, token } живой сессии или null. Prefer the explicit bearer token for
+// GitHub Pages ↔ Render, then fall back to the HttpOnly cookie for same-site
+// or browsers that retain third-party cookies.
+function sessionFromReq(req) {
+  for (const token of [readBearer(req), readCookie(req, 'hm_session')]) {
+    const user = verifySessionToken(token);
+    if (user) return { user, token };
+  }
+  return null;
 }
 
 // Ключ записи, привязанный к конкретной сессии. Владелец больше не вводит его
@@ -292,13 +281,12 @@ function readSession(req) {
 // вычислить без SESSION_SECRET, поэтому заголовок остаётся защитой от CSRF —
 // чужая страница не сможет его подставить, даже если браузер пошлёт cookie.
 function writeTokenFor(sessionToken) {
-  if (!SESSION_SECRET || !sessionToken) return '';
-  return crypto.createHmac('sha256', SESSION_SECRET)
-    .update('write|').update(sessionToken).digest('base64url').slice(0, 43);
+  return crypto.createHmac('sha256', SESSION_SECRET).update('write|').update(sessionToken).digest('base64url');
 }
 
+// С 'trust proxy' req.secure уже учитывает X-Forwarded-Proto от прокси Render.
 function isHttps(req) {
-  return req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.NODE_ENV === 'production';
+  return req.secure || process.env.NODE_ENV === 'production';
 }
 
 // Атрибуты куки сессии живут в одном месте: выдача и сброс обязаны совпадать,
@@ -333,7 +321,7 @@ const CHUNK_CACHE_MAX_ENTRIES = 16;
 const layerChunkCache = new Map();
 
 function clearLayerChunkCache(map) {
-  const prefix = String(map || '') + '|';
+  const prefix = map + '|';
   for (const key of layerChunkCache.keys()) {
     if (key.startsWith(prefix)) layerChunkCache.delete(key);
   }
@@ -342,9 +330,7 @@ function clearLayerChunkCache(map) {
 function putLayerChunkCache(key, value) {
   layerChunkCache.set(key, { value, at: Date.now() });
   while (layerChunkCache.size > CHUNK_CACHE_MAX_ENTRIES) {
-    const oldest = layerChunkCache.keys().next().value;
-    if (oldest == null) break;
-    layerChunkCache.delete(oldest);
+    layerChunkCache.delete(layerChunkCache.keys().next().value);
   }
 }
 
@@ -548,17 +534,18 @@ function verifyKey(req) {
   // 1) Статический ключ из окружения — для скриптов и внешней автоматизации.
   if (API_KEY && header === API_KEY) return true;
   // 2) Ключ, выданный этой сессии при входе, — обычный путь для браузера.
-  const token = writeTokenFor(sessionTokenFromReq(req));
-  return Boolean(token) && safeEqual(header, token);
+  const session = sessionFromReq(req);
+  return Boolean(session) && safeEqual(header, writeTokenFor(session.token));
 }
 
 function requireSession(req, res, next) {
-  const user = readSession(req);
-  if (!user) {
+  const session = sessionFromReq(req);
+  if (!session) {
     noStore(res);
     return res.status(401).json({ error: 'Authentication required' });
   }
-  req.user = user;
+  req.user = session.user;
+  req.sessionToken = session.token;
   next();
 }
 
@@ -598,7 +585,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'Content-Encoding'],
 }));
 app.use((err, _req, res, next) => {
-  if (err && String(err.message || '').startsWith('CORS:')) {
+  if (String(err.message).startsWith('CORS:')) {
     noStore(res);
     return res.status(403).json({ error: 'Origin not allowed' });
   }
@@ -642,14 +629,14 @@ app.get('/auth/me', requireSession, (req, res) => {
   // иначе владельцу пришлось бы вводить его вручную на каждой перезагрузке.
   res.json({
     ok: true, username: req.user.username, role: req.user.role,
-    writeKey: req.user.role === 'admin' ? writeTokenFor(sessionTokenFromReq(req)) : '',
+    writeKey: req.user.role === 'admin' ? writeTokenFor(req.sessionToken) : '',
   });
 });
 
 // Check the owner key before parsing multi-megabyte state bodies.
 app.use((req, res, next) => {
+  // /auth/login и /auth/logout отвечают раньше и сюда не доходят.
   if (req.method !== 'POST') return next();
-  if (req.path === '/auth/login' || req.path === '/auth/logout') return next();
   if (verifyKey(req)) return next();
   res.status(401).json({ error: 'Invalid or missing X-API-Key header' });
 });
@@ -760,7 +747,7 @@ async function writePhoto(id, map, mime, buf) {
     );
     return;
   }
-  if (!fs.existsSync(PHOTO_DIR)) fs.mkdirSync(PHOTO_DIR, { recursive: true });
+  fs.mkdirSync(PHOTO_DIR, { recursive: true });
   fs.writeFileSync(path.join(PHOTO_DIR, `${id}.json`), JSON.stringify({ id, map, mime, b64: buf.toString('base64') }), 'utf8');
 }
 async function readPhoto(id) {
@@ -990,7 +977,7 @@ async function copyPhotoTo(id, toId) {
 // карту (идентификатор снимка зависит от карты, а доступ проверяется по ней).
 async function copyMapState(fromId, toId) {
   const src = await readState(fromId);
-  if (!src) return false;
+  if (!src) return;
   const next = JSON.parse(JSON.stringify(src));
   const remap = new Map();
   for (const ph of statePhotoRefs(next)) {
@@ -999,7 +986,6 @@ async function copyMapState(fromId, toId) {
   }
   next._savedAt = new Date().toISOString();
   await writeState(toId, next);
-  return true;
 }
 
 function httpError(status, message) {
