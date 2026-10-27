@@ -1,83 +1,24 @@
-// Сервер как «чёрный ящик»: каждый набор поднимает настоящий server.js на
-// свободном порту с временной папкой данных и ходит в него по HTTP, как
-// браузер. Ничего не пишется рядом с server.js и в боевые хранилища.
+// Сервер как «чёрный ящик»: настоящий server.js (harness.js) и запросы по
+// HTTP, как из браузера.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { spawn } = require('node:child_process');
-const crypto = require('node:crypto');
 const fs = require('node:fs');
-const net = require('node:net');
-const os = require('node:os');
 const path = require('node:path');
+const { API_KEY, startServer, json, bearer } = require('./harness');
 
-const SERVER = path.join(__dirname, '..', 'server.js');
-const API_KEY = 'test-static-key-0123456789abcdef';
 const PASSWORDS = { boss: 'boss-pass-123', viewer: 'viewer-pass-123' };
-
-function hash(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hex = crypto.scryptSync(password, salt, 32, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }).toString('hex');
-  return `scrypt$16384$8$1$${salt}$${hex}`;
-}
-
-const USERS = JSON.stringify({
-  boss: { role: 'admin', passwordHash: hash(PASSWORDS.boss) },
-  viewer: { role: 'comdep', passwordHash: hash(PASSWORDS.viewer) },
-});
-
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const s = net.createServer();
-    s.unref();
-    s.on('error', reject);
-    s.listen(0, () => { const { port } = s.address(); s.close(() => resolve(port)); });
-  });
-}
-
-async function startServer() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hm-server-test-'));
-  const port = await freePort();
-  const env = { ...process.env, PORT: String(port), HM_DATA_DIR: dir, API_KEY,
-    SESSION_SECRET: 'test-session-secret', AUTH_USERS_JSON: USERS, ALLOWED_ORIGINS: '' };
-  delete env.NODE_ENV;
-  delete env.DATABASE_URL;
-  delete env.KG_AUTH_USER_JSON;
-  const child = spawn(process.execPath, [SERVER], { env, stdio: ['ignore', 'pipe', 'pipe'] });
-  let log = '';
-  await new Promise((resolve, reject) => {
-    const onData = chunk => {
-      log += chunk;
-      if (log.includes('running on port')) resolve();
-    };
-    child.stdout.on('data', onData);
-    child.stderr.on('data', onData);
-    child.on('exit', code => reject(new Error(`server exited ${code}:\n${log}`)));
-  });
-  const base = `http://127.0.0.1:${port}`;
-  return {
-    dir,
-    request: (p, opts = {}) => fetch(base + p, { redirect: 'manual', ...opts }),
-    stop: () => new Promise(resolve => {
-      child.removeAllListeners('exit');
-      child.on('exit', () => { fs.rmSync(dir, { recursive: true, force: true }); resolve(); });
-      child.kill('SIGTERM');
-    }),
-  };
-}
-
-function json(body, headers = {}) {
-  return { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) };
-}
+const USERS = {
+  boss: { role: 'admin', password: PASSWORDS.boss },
+  viewer: { role: 'comdep', password: PASSWORDS.viewer },
+};
 
 async function login(srv, username, headers = {}) {
   const res = await srv.request('/auth/login', json({ username, password: PASSWORDS[username] }, headers));
   return { res, body: await res.json(), cookie: res.headers.getSetCookie()[0] || '' };
 }
 
-const bearer = token => ({ Authorization: `Bearer ${token}` });
-
 test('server', async t => {
-  const srv = await startServer();
+  const srv = await startServer(USERS);
   t.after(() => srv.stop());
 
   await t.test('health reports file storage and configured auth', async () => {

@@ -6,8 +6,8 @@
   "scripts": {
     "lint": "eslint app.js",
     "check": "node --check app.js",
-    "test": "node --test server/test/*.test.js",
-    "coverage": "c8 --reporter=lcov --reporter=text-summary --include=server/server.js node --test server/test/*.test.js"
+    "test": "node --test server/test/*.test.js test/*.test.js",
+    "coverage": "c8 --reporter=lcov --reporter=text-summary --include=server/server.js node --test server/test/*.test.js test/*.test.js"
   },
   "devDependencies": {
     "c8": "^10.1.3",
