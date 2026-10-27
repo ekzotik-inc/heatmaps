@@ -1057,3 +1057,40 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   «Район», outside 9 points (equal to what the map shows), summary sheets as
   described; UI audit clean.
 - Cache version `20261026a`.
+
+## 2026-10-27 — Fresh city figures and current Tashkent district boundaries
+
+- Owner: make sure city information and district boundaries are current.
+- City reference (`UZ_STATS`, `KG_STATS`) — only official figures, dated:
+  - Uzbekistan population: Tashkent 3 278 512 on 01.10.2026 including the
+    2026 census; Namangan 731.3k, Samarkand 607.6k, Andijan 506.0k on
+    01.04.2026; all other cities on 01.01.2026 from the Nacstat dataset
+    2.01.02.0001 (siat.stat.uz). Gone: Wikipedia 2016/2024, GoldenPages and
+    «оценка» values. The census added +2.1 % nationally; city-level census
+    results (except Tashkent) are not published yet. Denau is not published
+    separately — its card shows the urban population of Denau district and
+    says so.
+  - Uzbekistan wages: Jan–Jun 2026 by region (national 7.09 mln sum).
+  - Kyrgyzstan: Bishkek 1 358.6k and Osh 484.9k on 01.01.2026; other towns
+    keep the latest 2025 official estimates (2026 town figures not published,
+    noted in the card); wages Jan–Aug 2026 by region.
+  - Smoking: WHO 2024 estimates (2025 report) — unchanged, still the latest.
+  - Fixed claims that became wrong: Samarkand is the 3rd city (after Tashkent
+    and Namangan), not the 2nd; Bukhara's wage is above most regions but not
+    «close to the national average»; Naryn's wage is 3rd among regions, not
+    «above the national average».
+- Tashkent districts: the polygons in `/data` predate the 2021–2022 city
+  expansion (Sergeli 33 km² vs ~50 km² officially; the city 416 km² vs
+  0.43 thousand km² by Nacstat for 2026). New `district-bounds.js` — current
+  OSM boundaries of all 12 districts (simplified to ≈5 m, 438 km² in total,
+  neighbours overlap < 0.1 km²) plus district population on 01.01.2026. They
+  replace the base geometry in `applyData` by name; income tier stays from the
+  base. The misspelt «Сергилийский» becomes «Сергелийский», saved selections
+  are migrated. District tooltips show population. City boundaries in
+  `city-bounds.js` were checked: OSM has not changed them since the
+  23.10.2026 extract.
+- Verified in a browser: all 12 districts take the new geometry, a point in
+  the new part of Sergeli counts as «в городе», tooltip «178,7 тыс. жителей
+  (01.01.2026)», selection migration, new figures in the city card; boundary,
+  zone, export and address suites pass; UI audit clean.
+- Cache version `20261027a`, `district-bounds.js?v=20261027a`.
