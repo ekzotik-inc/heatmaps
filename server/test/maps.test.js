@@ -128,3 +128,33 @@ test('maps', async t => {
     assert.equal((await create({ name: 'Лишняя' }))[0], 409);
   });
 });
+
+test('legacy registry entries are filled in at load', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hm-legacy-'));
+  fs.writeFileSync(path.join(dir, 'state.maps.json'), JSON.stringify({ maps: [
+    { id: 'mold', name: 'Старая' },
+    { id: 'mfull', name: 'Полная', desc: 'd', icon: '📍', country: 'kg', viewers: ['kg'], createdAt: '2026-01-01T00:00:00.000Z' },
+    { id: 'comdep', name: 'Ком' },
+    null,
+    { id: 5 },
+  ] }));
+  const srv = await startServer(USERS, {}, { dir });
+  try {
+    const boss = await signIn(srv, 'boss', USERS.boss.password);
+    const maps = (await (await boss.get('/maps')).json()).maps;
+    const by = id => maps.find(m => m.id === id);
+    assert.deepEqual(maps.map(m => m.id), ['comdep', 'other', 'kg', 'mold', 'mfull']);
+    const { stats, ...old } = by('mold');
+    assert.deepEqual(old, { id: 'mold', name: 'Старая', desc: '', icon: '🗺', country: 'uz', viewers: [], base: false, createdAt: '' });
+    assert.equal(by('mfull').country, 'kg');
+    assert.deepEqual([by('comdep').name, by('comdep').desc, by('comdep').createdAt], ['Ком', 'Карта коммерческого отдела', '']);
+    const kgu = await signIn(srv, 'kgu', USERS.kgu.password);
+    assert.deepEqual((await (await kgu.get('/maps')).json()).maps.map(m => m.id), ['kg', 'mfull']);
+    assert.equal((await kgu.get('/state?map=mold')).status, 403);
+  } finally {
+    await srv.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

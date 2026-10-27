@@ -411,7 +411,7 @@ function allMaps() {
     const e = byId.get(b.id) || {};
     // Роль исходной карты всегда видит свою карту — убрать её нельзя.
     const viewers = [...new Set([b.id, ...cleanViewers(e.viewers || b.viewers)])];
-    return { ...b, name: e.name || b.name, desc: e.desc != null ? e.desc : b.desc, icon: e.icon || b.icon, viewers, base: true };
+    return { ...b, name: e.name || b.name, desc: e.desc != null ? e.desc : b.desc, icon: e.icon || b.icon, viewers, base: true, createdAt: '' };
   });
   const custom = mapRegistry.filter(m => !BASE_IDS.has(m.id)).map(m => ({ ...m, base: false }));
   return base.concat(custom);
@@ -420,16 +420,28 @@ function findMap(id) {
   return allMaps().find(m => m.id === id) || null;
 }
 function canAccessMap(user, map) {
-  if (!user || !map) return false;
-  return user.role === 'admin' || user.role === map.id || (map.viewers || []).includes(user.role);
+  if (!map) return false;
+  return user.role === 'admin' || user.role === map.id || map.viewers.includes(user.role);
 }
 function mapKey(req) {
   const m = (req.query.map || '').toString();
   return findMap(m) ? m : null;
 }
+// Запись новой карты из хранилища с заполненными полями: старые записи могли
+// храниться без части из них. Правки исходных карт хранятся частично — их
+// дополняет allMaps() значениями из BASE_MAPS.
+function normalizeCustomMap(m) {
+  return {
+    ...m, name: cleanText(m.name, 60) || m.id, desc: cleanText(m.desc, 120), icon: cleanIcon(m.icon, '🗺'),
+    country: MAP_COUNTRIES.has(m.country) ? m.country : 'uz', viewers: cleanViewers(m.viewers),
+    createdAt: String(m.createdAt || ''),
+  };
+}
+
 async function loadMapRegistry() {
   const v = await readState(MAP_REGISTRY_KEY);
-  mapRegistry = Array.isArray(v && v.maps) ? v.maps.filter(m => m && typeof m.id === 'string') : [];
+  const stored = Array.isArray(v && v.maps) ? v.maps.filter(m => m && typeof m.id === 'string') : [];
+  mapRegistry = stored.map(m => (BASE_IDS.has(m.id) ? m : normalizeCustomMap(m)));
   stateReadCache.delete(MAP_REGISTRY_KEY);   // дальше источник правды — переменная
 }
 // Записи реестра идут строго по очереди: два быстрых «создать» не должны
@@ -454,11 +466,14 @@ function stateFileFor(key) {
 // каждая когда-либо открытая карта оставалась в памяти до перезапуска
 // (~12 МБ на карту размером с Com Dep), и с ростом числа карт сервер упёрся
 // бы в 512 МБ.
+function stateCacheTtl(key) {
+  return key === 'dataset' ? DATA_CACHE_TTL_MS : STATE_CACHE_TTL_MS;
+}
+
 function pruneStateCache() {
   const now = Date.now();
   for (const [k, v] of stateReadCache) {
-    const ttl = k === 'dataset' ? DATA_CACHE_TTL_MS : STATE_CACHE_TTL_MS;
-    if (now - v.at >= ttl) stateReadCache.delete(k);
+    if (now - v.at >= stateCacheTtl(k)) stateReadCache.delete(k);
   }
   for (const [k, v] of layerChunkCache) {
     if (now - v.at >= CHUNK_CACHE_TTL_MS) layerChunkCache.delete(k);
@@ -466,36 +481,41 @@ function pruneStateCache() {
 }
 setInterval(pruneStateCache, 60_000).unref();
 
+// `key` is the PRIMARY KEY of app_state.
+async function readStateRow(key) {
+  try {
+    const r = await db.query('SELECT json FROM app_state WHERE key = $1', [key]);
+    return r.rows.length ? JSON.parse(r.rows[0].json) : null;
+  } catch (e) {
+    console.error('DB read error:', e.message);
+    return null;
+  }
+}
+
+function readStateFile(key) {
+  try {
+    const f = stateFileFor(key);
+    return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : null;
+  } catch (e) {
+    console.error('Failed to read state file:', e.message);
+    return null;
+  }
+}
+
+async function readStoredState(key) {
+  const value = db ? await readStateRow(key) : readStateFile(key);
+  if (value) stateReadCache.set(key, { value, at: Date.now() });
+  return value;
+}
+
+// Concurrent reads for the same map are coalesced so startup/meta/chunk
+// requests share one DB query.
 async function readState(key) {
   pruneStateCache();
   const hit = stateReadCache.get(key);
-  const ttl = key === 'dataset' ? DATA_CACHE_TTL_MS : STATE_CACHE_TTL_MS;
-  if (hit && Date.now() - hit.at < ttl) return hit.value;
+  if (hit && Date.now() - hit.at < stateCacheTtl(key)) return hit.value;
   if (stateReadInFlight.has(key)) return stateReadInFlight.get(key);
-  const pending = (async () => {
-    let value = null;
-    if (db) {
-      try {
-        // `key` is the PRIMARY KEY of app_state; concurrent reads for the same
-        // map are coalesced so startup/meta/chunk requests share one DB query.
-        const r = await db.query('SELECT json FROM app_state WHERE key = $1', [key]);
-        value = r.rows.length ? JSON.parse(r.rows[0].json) : null;
-      } catch (e) {
-        console.error('DB read error:', e.message);
-        value = null;
-      }
-    } else {
-      try {
-        const f = stateFileFor(key);
-        if (fs.existsSync(f)) value = JSON.parse(fs.readFileSync(f, 'utf8'));
-      } catch (e) {
-        console.error('Failed to read state file:', e.message);
-        value = null;
-      }
-    }
-    if (value) stateReadCache.set(key, { value, at: Date.now() });
-    return value;
-  })();
+  const pending = readStoredState(key);
   stateReadInFlight.set(key, pending);
   try {
     return await pending;
@@ -757,19 +777,26 @@ async function readPhoto(id) {
   } catch (_) { return null; }
 }
 
+// { mime, buf } из data URL или { status, error }. Buffer.from(…, 'base64')
+// не бросает на мусоре — его отсекает регулярное выражение.
+function parsePhotoDataUrl(data) {
+  const m = data.match(/^data:([a-z/+-]+);base64,([A-Za-z0-9+/=]+)$/i);
+  if (!m) return { status: 400, error: 'Expected a base64 data URL' };
+  const mime = m[1].toLowerCase();
+  if (!PHOTO_MIMES.has(mime)) return { status: 415, error: 'Unsupported image type' };
+  const buf = Buffer.from(m[2], 'base64');
+  if (!buf.length) return { status: 400, error: 'Empty image' };
+  if (buf.length > PHOTO_MAX_BYTES) return { status: 413, error: 'Image too large' };
+  return { mime, buf };
+}
+
 // Загрузка снимка (только владелец). Принимаем data URL — так не нужен
 // multipart-парсер, а клиент всё равно сжимает изображение перед отправкой.
 app.post('/photo', requireSession, requireAdmin, requireMapAccess, async (req, res) => {
   noStore(res);
-  const data = String((req.body && req.body.data) || '');
-  const m = data.match(/^data:([a-z/+-]+);base64,([A-Za-z0-9+/=]+)$/i);
-  if (!m) return res.status(400).json({ error: 'Expected a base64 data URL' });
-  const mime = m[1].toLowerCase();
-  if (!PHOTO_MIMES.has(mime)) return res.status(415).json({ error: 'Unsupported image type' });
-  let buf;
-  try { buf = Buffer.from(m[2], 'base64'); } catch (_) { return res.status(400).json({ error: 'Broken base64' }); }
-  if (!buf.length) return res.status(400).json({ error: 'Empty image' });
-  if (buf.length > PHOTO_MAX_BYTES) return res.status(413).json({ error: 'Image too large' });
+  const photo = parsePhotoDataUrl(String(req.body.data || ''));
+  if (photo.error) return res.status(photo.status).json({ error: photo.error });
+  const { mime, buf } = photo;
   const id = photoId(req.map, buf);
   try {
     await writePhoto(id, req.map, mime, buf);
@@ -912,8 +939,8 @@ async function mapStorageStats(ids) {
 }
 
 function publicMap(m) {
-  return { id: m.id, name: m.name, desc: m.desc || '', icon: m.icon || '🗺', country: m.country || 'uz',
-    viewers: m.viewers || [], base: !!m.base, createdAt: m.createdAt || '' };
+  const { id, name, desc, icon, country, viewers, base, createdAt } = m;
+  return { id, name, desc, icon, country, viewers, base, createdAt };
 }
 
 app.get('/maps', requireSession, async (req, res) => {
@@ -932,32 +959,67 @@ function newMapId() {
 
 // Копия карты: состояние целиком; фото ручных точек дублируются под новую
 // карту (идентификатор снимка зависит от карты, а доступ проверяется по ней).
+// Фото ручных точек в состоянии карты (поле id каждого снимка).
+function statePhotoRefs(state) {
+  const refs = [];
+  for (const layer of state.customPtLayers || []) {
+    for (const rec of (layer && layer.recs) || []) {
+      const photos = rec && Array.isArray(rec.photos) ? rec.photos : [];
+      refs.push(...photos.filter(ph => ph && typeof ph.id === 'string'));
+    }
+  }
+  return refs;
+}
+
+// Снимок под новой картой; если исходного уже нет — прежний id.
+async function copyPhotoTo(id, toId) {
+  const photo = await readPhoto(id);
+  if (!photo) return id;
+  const nid = photoId(toId, photo.buf);
+  await writePhoto(nid, toId, photo.mime, photo.buf);
+  return nid;
+}
+
+// Копия карты: состояние целиком; фото ручных точек дублируются под новую
+// карту (идентификатор снимка зависит от карты, а доступ проверяется по ней).
 async function copyMapState(fromId, toId) {
   const src = await readState(fromId);
   if (!src) return false;
   const next = JSON.parse(JSON.stringify(src));
   const remap = new Map();
-  for (const layer of next.customPtLayers || []) {
-    for (const rec of (layer && layer.recs) || []) {
-      for (const ph of (rec && Array.isArray(rec.photos) ? rec.photos : [])) {
-        if (!ph || typeof ph.id !== 'string') continue;
-        if (!remap.has(ph.id)) {
-          const photo = await readPhoto(ph.id);
-          if (photo) {
-            const nid = photoId(toId, photo.buf);
-            await writePhoto(nid, toId, photo.mime, photo.buf);
-            remap.set(ph.id, nid);
-          } else {
-            remap.set(ph.id, ph.id);
-          }
-        }
-        ph.id = remap.get(ph.id);
-      }
-    }
+  for (const ph of statePhotoRefs(next)) {
+    if (!remap.has(ph.id)) remap.set(ph.id, await copyPhotoTo(ph.id, toId));
+    ph.id = remap.get(ph.id);
   }
   next._savedAt = new Date().toISOString();
   await writeState(toId, next);
   return true;
+}
+
+function httpError(status, message) {
+  const e = new Error(message);
+  e.status = status;
+  return e;
+}
+
+function nameTaken(name, exceptId) {
+  const lower = name.toLowerCase();
+  return allMaps().some(m => m.id !== exceptId && m.name.toLowerCase() === lower);
+}
+
+// Ошибки реестра: ожидаемые (с status) — пользователю как есть, прочие — 500.
+function sendRegistryError(res, e, what, message) {
+  if (e.status) return res.status(e.status).json({ error: e.message });
+  console.error(what, e.message);
+  res.status(500).json({ error: message });
+}
+
+function newMapEntry(b, name) {
+  return {
+    id: newMapId(), name, desc: cleanText(b.desc, 120), icon: cleanIcon(b.icon, '🗺'),
+    country: MAP_COUNTRIES.has(b.country) ? b.country : 'uz',
+    viewers: cleanViewers(b.viewers), createdAt: new Date().toISOString(),
+  };
 }
 
 app.post('/maps', requireSession, requireAdmin, async (req, res) => {
@@ -965,33 +1027,42 @@ app.post('/maps', requireSession, requireAdmin, async (req, res) => {
   const b = req.body || {};
   const name = cleanText(b.name, 60);
   if (!name) return res.status(400).json({ error: 'Укажите название карты' });
-  const country = MAP_COUNTRIES.has(b.country) ? b.country : 'uz';
   const copyFrom = b.copyFrom ? String(b.copyFrom) : '';
   if (copyFrom && !findMap(copyFrom)) return res.status(400).json({ error: 'Карта-образец не найдена' });
   try {
     const created = await updateRegistry(async list => {
-      const custom = list.filter(m => !BASE_IDS.has(m.id));
-      if (custom.length >= MAX_CUSTOM_MAPS) {
-        const e = new Error('Достигнут предел: ' + MAX_CUSTOM_MAPS + ' новых карт'); e.status = 409; throw e;
+      if (list.filter(m => !BASE_IDS.has(m.id)).length >= MAX_CUSTOM_MAPS) {
+        throw httpError(409, 'Достигнут предел: ' + MAX_CUSTOM_MAPS + ' новых карт');
       }
-      if (allMaps().some(m => m.name.toLowerCase() === name.toLowerCase())) {
-        const e = new Error('Карта с таким названием уже есть'); e.status = 409; throw e;
-      }
-      const m = {
-        id: newMapId(), name, desc: cleanText(b.desc, 120), icon: cleanIcon(b.icon, '🗺'),
-        country, viewers: cleanViewers(b.viewers), createdAt: new Date().toISOString(),
-      };
+      if (nameTaken(name)) throw httpError(409, 'Карта с таким названием уже есть');
+      const m = newMapEntry(b, name);
       if (copyFrom) await copyMapState(copyFrom, m.id);
       list.push(m);
       return m;
     });
     res.json({ ok: true, map: publicMap({ ...created, base: false }) });
   } catch (e) {
-    if (e.status) return res.status(e.status).json({ error: e.message });
-    console.error('Map create error:', e.message);
-    res.status(500).json({ error: 'Не удалось создать карту' });
+    sendRegistryError(res, e, 'Map create error:', 'Не удалось создать карту');
   }
 });
+
+function editMapName(entry, b, id) {
+  if (b.name == null) return;
+  const name = cleanText(b.name, 60);
+  if (!name) throw httpError(400, 'Название не может быть пустым');
+  if (nameTaken(name, id)) throw httpError(409, 'Карта с таким названием уже есть');
+  entry.name = name;
+}
+
+// Правка записи реестра: меняются только присланные поля.
+function editMapEntry(entry, b, current) {
+  editMapName(entry, b, current.id);
+  if (b.desc != null) entry.desc = cleanText(b.desc, 120);
+  if (b.icon != null) entry.icon = cleanIcon(b.icon, current.icon || '🗺');
+  if (b.viewers != null) entry.viewers = cleanViewers(b.viewers);
+  // Страну исходных карт не трогаем: на ней держатся их города и справочники.
+  if (!current.base && MAP_COUNTRIES.has(b.country)) entry.country = b.country;
+}
 
 app.post('/maps/update', requireSession, requireAdmin, async (req, res) => {
   noStore(res);
@@ -1000,31 +1071,36 @@ app.post('/maps/update', requireSession, requireAdmin, async (req, res) => {
   const current = findMap(id);
   if (!current) return res.status(404).json({ error: 'Карта не найдена' });
   try {
-    const updated = await updateRegistry(async list => {
+    await updateRegistry(async list => {
       let entry = list.find(m => m.id === id);
       if (!entry) { entry = { id }; list.push(entry); }   // первая правка исходной карты
-      if (b.name != null) {
-        const name = cleanText(b.name, 60);
-        if (!name) { const e = new Error('Название не может быть пустым'); e.status = 400; throw e; }
-        if (allMaps().some(m => m.id !== id && m.name.toLowerCase() === name.toLowerCase())) {
-          const e = new Error('Карта с таким названием уже есть'); e.status = 409; throw e;
-        }
-        entry.name = name;
-      }
-      if (b.desc != null) entry.desc = cleanText(b.desc, 120);
-      if (b.icon != null) entry.icon = cleanIcon(b.icon, current.icon || '🗺');
-      if (b.viewers != null) entry.viewers = cleanViewers(b.viewers);
-      // Страну исходных карт не трогаем: на ней держатся их города и справочники.
-      if (b.country != null && !BASE_IDS.has(id) && MAP_COUNTRIES.has(b.country)) entry.country = b.country;
-      return id;
+      editMapEntry(entry, b, current);
     });
-    res.json({ ok: true, map: publicMap(findMap(updated)) });
+    res.json({ ok: true, map: publicMap(findMap(id)) });
   } catch (e) {
-    if (e.status) return res.status(e.status).json({ error: e.message });
-    console.error('Map update error:', e.message);
-    res.status(500).json({ error: 'Не удалось сохранить карту' });
+    sendRegistryError(res, e, 'Map update error:', 'Не удалось сохранить карту');
   }
 });
+
+function deleteMapPhotoFiles(id) {
+  if (!fs.existsSync(PHOTO_DIR)) return;
+  for (const f of fs.readdirSync(PHOTO_DIR)) {
+    const fp = path.join(PHOTO_DIR, f);
+    try { if (JSON.parse(fs.readFileSync(fp, 'utf8')).map === id) fs.unlinkSync(fp); } catch (_) {}
+  }
+}
+
+async function deleteMapStorage(id) {
+  if (db) {
+    await db.query('DELETE FROM app_state WHERE key = $1', [id]);
+    await db.query('DELETE FROM photos WHERE map = $1', [id]);
+  } else {
+    try { fs.unlinkSync(stateFileFor(id)); } catch (_) {}
+    deleteMapPhotoFiles(id);
+  }
+  stateReadCache.delete(id);
+  clearLayerChunkCache(id);
+}
 
 app.post('/maps/delete', requireSession, requireAdmin, async (req, res) => {
   noStore(res);
@@ -1039,20 +1115,8 @@ app.post('/maps/delete', requireSession, requireAdmin, async (req, res) => {
   }
   try {
     await updateRegistry(async list => {
-      if (db) {
-        await db.query('DELETE FROM app_state WHERE key = $1', [id]);
-        await db.query('DELETE FROM photos WHERE map = $1', [id]);
-      } else {
-        try { fs.unlinkSync(stateFileFor(id)); } catch (_) {}
-        try {
-          for (const f of fs.readdirSync(PHOTO_DIR)) {
-            const fp = path.join(PHOTO_DIR, f);
-            try { if (JSON.parse(fs.readFileSync(fp, 'utf8')).map === id) fs.unlinkSync(fp); } catch (_) {}
-          }
-        } catch (_) {}
-      }
-      stateReadCache.delete(id);
-      clearLayerChunkCache(id);
+      await deleteMapStorage(id);
+      // Два удаления подряд: второе уже не найдёт запись — ничего не трогаем.
       const i = list.findIndex(x => x.id === id);
       if (i >= 0) list.splice(i, 1);
     });
@@ -1072,39 +1136,44 @@ app.get('/state/revision', requireSession, requireMapAccess, async (req, res) =>
   res.json({ revision: (state && state._savedAt) || '', empty: !state });
 });
 
+const chunkLimit = v => Math.max(500, Math.min(Number(v) || 4000, 5000));
+
+// Словари повторяющихся строк: значение → индекс, пустое → -1.
+function chunkDictionaries() {
+  // x — дополнительные поля точки (JSON-строкой; одинаковые наборы сжимаются словарём).
+  const dictionaries = { name: [], addr: [], code: [], hours: [], x: [] };
+  const indexes = Object.fromEntries(Object.keys(dictionaries).map(field => [field, new Map()]));
+  const index = (field, value) => {
+    const text = value == null ? '' : String(value);
+    if (!text) return -1;
+    const known = indexes[field];
+    if (!known.has(text)) {
+      known.set(text, dictionaries[field].length);
+      dictionaries[field].push(text);
+    }
+    return known.get(text);
+  };
+  return { dictionaries, index };
+}
+
+const round5 = v => Math.round((Number(v) || 0) * 100000) / 100000;
+
+function compactRow(r, index) {
+  return [
+    round5(r.lat), round5(r.lon), Number(r.vol) || 0,
+    index('name', r.name), index('addr', r.addr), index('code', r.code), index('hours', r.hours),
+    index('x', r.x && typeof r.x === 'object' ? JSON.stringify(r.x) : ''),
+  ];
+}
+
 function compactLayerChunk(recs, offset, limit, revision, key, map) {
   const source = Array.isArray(recs) ? recs : [];
   const total = source.length;
   const start = Math.max(0, Math.min(Number(offset) || 0, total));
-  const size = Math.max(500, Math.min(Number(limit) || 4000, 5000));
+  const size = chunkLimit(limit);
   const end = Math.min(start + size, total);
-  // x — дополнительные поля точки (JSON-строкой; одинаковые наборы сжимаются словарём).
-  const dictionaries = { name: [], addr: [], code: [], hours: [], x: [] };
-  const indexes = Object.fromEntries(Object.keys(dictionaries).map(field => [field, new Map()]));
-  const dictIndex = (field, value) => {
-    const text = value == null ? '' : String(value);
-    if (!text) return -1;
-    const mapForField = indexes[field];
-    if (mapForField.has(text)) return mapForField.get(text);
-    const index = dictionaries[field].length;
-    dictionaries[field].push(text);
-    mapForField.set(text, index);
-    return index;
-  };
-  const rows = [];
-  for (let i = start; i < end; i += 1) {
-    const r = source[i] || {};
-    rows.push([
-      Math.round((Number(r.lat) || 0) * 100000) / 100000,
-      Math.round((Number(r.lon) || 0) * 100000) / 100000,
-      Number(r.vol) || 0,
-      dictIndex('name', r.name),
-      dictIndex('addr', r.addr),
-      dictIndex('code', r.code),
-      dictIndex('hours', r.hours),
-      dictIndex('x', r.x && typeof r.x === 'object' ? JSON.stringify(r.x) : ''),
-    ]);
-  }
+  const { dictionaries, index } = chunkDictionaries();
+  const rows = source.slice(start, end).map(r => compactRow(r || {}, index));
   return {
     _app: 'hm-layer-chunk', map, key, _revision: revision,
     total, offset: start, limit: size, nextOffset: end < total ? end : null,
@@ -1112,44 +1181,55 @@ function compactLayerChunk(recs, offset, limit, revision, key, map) {
   };
 }
 
+// The requested key must exist in this map's saved state, so callers cannot
+// access arbitrary storage keys.
+function heatLayer(state, key) {
+  const listed = Array.isArray(state.heatKeys) && state.heatKeys.includes(key);
+  return (listed && state.layers && state.layers[key]) || null;
+}
+
+// Общее начало ответов по одному слою: { state, key, layer } или null, если
+// ответ уже отправлен (карта пуста или слоя нет).
+async function requestedLayer(req, res) {
+  noStore(res);
+  const state = await readState(req.map);
+  if (!state) { res.json({ empty: true }); return null; }
+  const key = String(req.query.layer || '');
+  const layer = heatLayer(state, key);
+  if (!layer) { res.status(404).json({ error: 'Layer not found' }); return null; }
+  return { state, key, layer };
+}
+
+// The first chunk is the latency-critical response. Cache only offset 0 to
+// keep memory bounded; later chunks remain streamed and revision-safe.
+function firstChunkCached(cacheKey, offset, build) {
+  if (offset !== 0) return build();
+  const hit = layerChunkCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < CHUNK_CACHE_TTL_MS) return hit.value;
+  if (hit) layerChunkCache.delete(cacheKey);
+  const payload = build();
+  putLayerChunkCache(cacheKey, payload);
+  return payload;
+}
+
 // Progressive compact records for large layers. The current full endpoint below
 // remains the compatibility path for small layers, exports and legacy tabs.
 app.get('/state/layer/chunk', requireSession, requireMapAccess, async (req, res) => {
-  noStore(res);
-  const state = await readState(req.map);
-  if (!state) return res.json({ empty: true });
-  const key = String(req.query.layer || '');
-  if (!Array.isArray(state.heatKeys) || !state.heatKeys.includes(key) || !state.layers || !state.layers[key]) {
-    return res.status(404).json({ error: 'Layer not found' });
-  }
-  const layer = state.layers[key];
+  const found = await requestedLayer(req, res);
+  if (!found) return;
+  const { state, key, layer } = found;
   const revision = state._savedAt || '';
   const offset = Math.max(0, Number(req.query.offset) || 0);
-  const limit = Math.max(500, Math.min(Number(req.query.limit) || 4000, 5000));
-  // The first chunk is the latency-critical response. Cache only offset 0 to
-  // keep memory bounded; later chunks remain streamed and revision-safe.
+  const limit = chunkLimit(req.query.limit);
   const cacheKey = `${req.map}|${revision}|${key}|${offset}|${limit}`;
-  if (offset === 0) {
-    const hit = layerChunkCache.get(cacheKey);
-    if (hit && Date.now() - hit.at < CHUNK_CACHE_TTL_MS) return res.json(hit.value);
-    if (hit) layerChunkCache.delete(cacheKey);
-  }
-  const payload = compactLayerChunk(layer.recs, offset, limit, revision, key, req.map);
-  if (offset === 0) putLayerChunkCache(cacheKey, payload);
-  res.json(payload);
+  res.json(firstChunkCached(cacheKey, offset, () => compactLayerChunk(layer.recs, offset, limit, revision, key, req.map)));
 });
 
-// Records for one heat layer. The requested key must exist in this map's saved
-// state, so callers cannot access arbitrary storage keys.
+// Records for one heat layer.
 app.get('/state/layer', requireSession, requireMapAccess, async (req, res) => {
-  noStore(res);
-  const state = await readState(req.map);
-  if (!state) return res.json({ empty: true });
-  const key = String(req.query.layer || '');
-  if (!Array.isArray(state.heatKeys) || !state.heatKeys.includes(key) || !state.layers || !state.layers[key]) {
-    return res.status(404).json({ error: 'Layer not found' });
-  }
-  const layer = state.layers[key];
+  const found = await requestedLayer(req, res);
+  if (!found) return;
+  const { state, key, layer } = found;
   res.json({
     _app: 'hm-layer',
     map: req.map,
@@ -1168,18 +1248,21 @@ app.get('/state', requireSession, requireMapAccess, async (req, res) => {
   res.json(state);
 });
 
+// Keep current records for a layer the browser intentionally did not fetch.
+// The incoming metadata/settings still win, so this is safe for lazy startup.
+function mergeLazyLayer(previousLayer, nextLayer) {
+  const merged = previousLayer && Array.isArray(previousLayer.recs)
+    ? { ...previousLayer, ...nextLayer, recs: previousLayer.recs }
+    : nextLayer;
+  delete merged._recordsOmitted;
+  return merged;
+}
+
 function mergeLazyState(previous, incoming) {
-  if (!incoming || !incoming._lazy || !previous || !previous.layers) return incoming;
-  const layers = { ...(incoming.layers || {}) };
+  if (!incoming._lazy || !previous || !previous.layers) return incoming;
+  const layers = { ...incoming.layers };
   for (const [key, nextLayer] of Object.entries(layers)) {
-    if (!nextLayer || !nextLayer._recordsOmitted) continue;
-    const previousLayer = previous.layers[key];
-    // Keep current records for a layer the browser intentionally did not fetch.
-    // The incoming metadata/settings still win, so this is safe for lazy startup.
-    if (previousLayer && Array.isArray(previousLayer.recs)) {
-      layers[key] = { ...previousLayer, ...nextLayer, recs: previousLayer.recs };
-    }
-    delete layers[key]._recordsOmitted;
+    if (nextLayer && nextLayer._recordsOmitted) layers[key] = mergeLazyLayer(previous.layers[key], nextLayer);
   }
   return { ...incoming, layers, _lazy: false };
 }

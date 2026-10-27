@@ -204,3 +204,39 @@ test('sessions, CORS and headers', async t => {
     assert.equal(res.headers.get('x-powered-by'), null);
   });
 });
+
+test('stored password overrides: only valid ones for known accounts apply', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hm-overrides-'));
+  fs.writeFileSync(path.join(dir, 'state.auth_overrides.json'), JSON.stringify({ users: {
+    ghost: { passwordHash: hash('ghost-pass-1') },
+    com: { passwordHash: 'not-a-hash' },
+    kgu: null,
+    boss: { passwordHash: hash('stored-pass-1'), changedAt: 'garbage' },
+  } }));
+  const srv = await startServer(USERS, {}, { dir });
+  try {
+    assert.match(srv.log(), /Password overrides applied: 1/);
+    assert.equal((await login(srv, 'boss', 'stored-pass-1')).status, 200);
+    assert.equal((await login(srv, 'com', USERS.com.password)).status, 200, 'broken hash is ignored');
+    assert.equal((await login(srv, 'ghost', 'ghost-pass-1')).status, 401, 'no override creates an account');
+    const boss = await signIn(srv, 'boss', 'stored-pass-1');
+    const users = (await (await boss.get('/auth/users')).json()).users;
+    assert.equal(users.find(u => u.username === 'boss').changedAt, '', 'bad changedAt reads as never');
+  } finally {
+    await srv.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'hm-overrides-'));
+  fs.writeFileSync(path.join(empty, 'state.auth_overrides.json'), JSON.stringify({ note: 'no users key' }));
+  const srv2 = await startServer(USERS, {}, { dir: empty });
+  try {
+    assert.doesNotMatch(srv2.log(), /Password overrides applied/);
+    assert.equal((await login(srv2, 'boss', USERS.boss.password)).status, 200);
+  } finally {
+    await srv2.stop();
+    fs.rmSync(empty, { recursive: true, force: true });
+  }
+});
