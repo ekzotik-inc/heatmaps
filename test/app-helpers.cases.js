@@ -138,4 +138,13 @@ module.exports = [
 
   ["(() => { const bad = '\"><img src=x onerror=alert(1)>'; applySnapshot({ _app: 'hm-br', heatKeys: ['custom_x'], layers: { custom_x: { name: 'X', color: bad, color2: bad, recs: [] } }, customPtLayers: [{ id: 'c1', name: 'Т', color: bad, color2: bad, manual: true, recs: [{ id: 'p', lat: 41, lon: 69, color: bad }, { id: 'q', lat: 41, lon: 69, color: '#00ff00' }] }] }); const s = buildStateSnapshot(); return [s.layers.custom_x.color, s.layers.custom_x.color2, s.customPtLayers[0].color, s.customPtLayers[0].color2, s.customPtLayers[0].recs.map(r => r.color)]; })()",
     ['#12ADC1', '', '#12ADC1', '', ['', '#00ff00']]],
+
+  // Импорт границ из GeoJSON и проверка зон из состояния — одно правило кольца.
+  ['geojsonZones(null)', []],
+  ["geojsonZones({ type: 'Polygon', coordinates: [[[69, 41], [69.1, 41], [69.1, 41.1], [69, 41]]] })", [{ name: 'Зона 1', mp: [[[[69, 41], [69.1, 41], [69.1, 41.1], [69, 41]]]] }]],
+  ["geojsonZones({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: { name_ru: 'чиланзар', name: 'Chilanzar' }, geometry: { type: 'MultiPolygon', coordinates: [[[[69.123456789, 41], [69.2, 41], [69.2, 41.1], [69.123456789, 41]], [[1, 2]]], [[[200, 41], [69, 41], [69, 42], [200, 41]]]] } }, { type: 'Feature', properties: { NAME: '  ', title: 'T' }, geometry: { type: 'Polygon', coordinates: [[['69', '41'], [69.1, 41], [69.1, 41.1], ['69', '41']]] } }, { type: 'Feature', geometry: { type: 'Point', coordinates: [69, 41] } }, null, { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[69, 41], [69.1, 41], [69, 41]]] } }] })",
+    [{ name: 'Чиланзар', mp: [[[[69.12346, 41], [69.2, 41], [69.2, 41.1], [69.12346, 41]]]] }, { name: 'T', mp: [[[[69, 41], [69.1, 41], [69.1, 41.1], [69, 41]]]] }]],
+  ["geojsonZones({ type: 'Feature', properties: { 'name:ru': 'x'.repeat(80) }, geometry: { type: 'Polygon', coordinates: [[[69, 41], [69.1, 41], [69.1, 41.1], [69, 41]]] } })[0].name.length", 60],
+  ['cleanMp([[[[200, 41], [69, 41], [69, 42], [200, 41]]]])', null],
+  ['cleanMp([[[[69, 41], [69.1, 95], [69.1, 41.1], [69, 41]]]])', null],
 ];

@@ -880,10 +880,18 @@ function boundsChanged(save = true, rebuildUI = true) {
 }
 // Состояние приходит с сервера/из файла — проверяем форму и числа. Чего нет
 // в состоянии — сбрасываем: иначе при смене карты остались бы зоны прошлой.
+// Кольцо зоны: не меньше 4 точек [lon, lat] в пределах ±180 / ±90.
+function isLonLatRing(r) {
+  return Array.isArray(r) && r.length >= 4 && r.every(c => Array.isArray(c) &&
+    Number.isFinite(+c[0]) && Number.isFinite(+c[1]) && Math.abs(+c[0]) <= 180 && Math.abs(+c[1]) <= 90);
+}
+// Полигон: внешнее кольцо обязано быть годным, негодные дырки отбрасываются.
+function cleanPolygon(poly, coord) {
+  return Array.isArray(poly) && isLonLatRing(poly[0]) ? poly.filter(isLonLatRing).map(r => r.map(coord)) : null;
+}
 function cleanMp(mp) {
   if (!Array.isArray(mp)) return null;
-  const okRing = r => Array.isArray(r) && r.length >= 4 && r.every(c => Array.isArray(c) && Number.isFinite(+c[0]) && Number.isFinite(+c[1]));
-  const out = mp.map(poly => Array.isArray(poly) && okRing(poly[0]) ? poly.filter(okRing).map(r => r.map(c => [+c[0], +c[1]])) : null).filter(Boolean);
+  const out = mp.map(poly => cleanPolygon(poly, c => [+c[0], +c[1]])).filter(Boolean);
   return out.length ? out : null;
 }
 const bzId = v => String(v == null ? '' : v).replace(/[^\w-]/g, '').slice(0, 40);
@@ -3749,15 +3757,13 @@ function geojsonZones(gj) {
   const feats = gj && gj.type === 'FeatureCollection' ? gj.features
     : gj && gj.type === 'Feature' ? [gj]
     : gj && gj.type ? [{ type: 'Feature', properties: {}, geometry: gj }] : [];
-  const okRing = r => Array.isArray(r) && r.length >= 4 && r.every(c => Array.isArray(c) && isFinite(+c[0]) && isFinite(+c[1]) && Math.abs(+c[0]) <= 180 && Math.abs(+c[1]) <= 90);
-  const cleanPoly = poly => Array.isArray(poly) && okRing(poly[0])
-    ? poly.filter(okRing).map(r => r.map(c => [+(+c[0]).toFixed(5), +(+c[1]).toFixed(5)])) : null;
+  const round5 = c => [+(+c[0]).toFixed(5), +(+c[1]).toFixed(5)];
   const out = [];
   (feats || []).forEach((f, i) => {
     const g = f && f.geometry;
     if (!g) return;
     const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
-    const mp = (polys || []).map(cleanPoly).filter(Boolean);
+    const mp = (polys || []).map(poly => cleanPolygon(poly, round5)).filter(Boolean);
     if (!mp.length) return;
     const p = f.properties || {};
     const nm = [p.name_ru, p['name:ru'], p.name, p.NAME, p.Name, p.title].find(v => typeof v === 'string' && v.trim());
