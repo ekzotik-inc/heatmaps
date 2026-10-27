@@ -32,6 +32,16 @@ jobs:
           npm install --no-audit --no-fund
           npx eslint app.js
 
+      # Тесты: настоящий server.js поднимается на временной папке данных
+      # (server/test), app.js — в Chromium через Playwright (test/). Прогон на
+      # PostgreSQL — локально: npm run test:pg (нужен HM_TEST_PG_URL, см. CONTEXT.md).
+      - name: Tests (server + browser)
+        run: |
+          npm ci --prefix server --no-audit --no-fund
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+          npm test
+
       - name: Cache version bumped with app.js/style.css
         if: github.event_name == 'pull_request'
         run: |
