@@ -1040,7 +1040,6 @@ function refreshHeatMax() {
 }
 
 function renderHeat() {
-  let total = 0;
   let needsUiRefresh = false;
   const selKey = selectionKey();
   heatKeys.forEach(k => {
@@ -1072,7 +1071,6 @@ function renderHeat() {
     // the visual/filter inputs changed. This is the hot path for all-cities
     // selection and avoids rebuilding canvases during repeated UI updates.
     if (cached && cached.sourceRef === sourceRef && cached.key === renderKey && alive) {
-      total += cached.count;
       d._shownCount = cached.count;
       return;
     }
@@ -1106,7 +1104,6 @@ function renderHeat() {
       });
       if (fullSelection) d._fullPtsCache = { sourceRef, scale, boost, pts };
     }
-    total += recs.length;
     d._shownCount = recs.length;   // ровно столько нарисовано — это же число в легенде
     d._pts = pts;
     if (heatStyle === 'zones') {
