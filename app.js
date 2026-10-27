@@ -3414,8 +3414,7 @@ function renderPointLabels() {
       if (x < 0 || y < 0 || x + w > size.x || y + h > size.y) continue;
       if (!free(x - 1, y - 1, w + 2, h + 2)) continue;
       put([x, y, w, h]);
-      const color = c.r.color || c.l.color || '#888';
-      html.push(`<span class="pt-label" style="left:${Math.round(x + origin.x)}px;top:${Math.round(y + origin.y)}px;border-left-color:${esc(color)}">${esc(text)}</span>`);
+      html.push(`<span class="pt-label" style="left:${Math.round(x + origin.x)}px;top:${Math.round(y + origin.y)}px;border-left-color:${safeColor(c.r.color, safeColor(c.l.color, '#888'))}">${esc(text)}</span>`);
       shown++;
       break;
     }
@@ -4190,6 +4189,8 @@ async function showLightboxPhoto() {
   }
 }
 
+// Цвет точки (свой или слоя) для style — только корректный hex.
+function pointColor(layer, r) { return safeColor(r.color, safeColor(layer.color)); }
 function manualPopupHtml(layer, r) {
   const rows = [];
   if (r.dms)   rows.push(['ДМС-код', r.dms]);
@@ -4210,7 +4211,7 @@ function manualPopupHtml(layer, r) {
     ${rows.map(([k, v]) =>
       `<div class="pp-row"><span>${esc(k)}</span><b style="font-family:Inter;font-weight:600;text-align:right">${esc(String(v))}</b></div>`).join('')}
     ${r.comment ? `<div class="rp-comment">${esc(r.comment)}</div>` : ''}
-    <span class="pp-tag rp-tag" style="background:${esc(r.color || layer.color)}22;color:var(--ink);border:1px solid ${esc(r.color || layer.color)}">${esc(layer.name)}</span>
+    <span class="pp-tag rp-tag" style="background:${pointColor(layer, r)}22;color:var(--ink);border:1px solid ${pointColor(layer, r)}">${esc(layer.name)}</span>
     ${yandexLinkHtml(r.lat, r.lon)}
     ${isAdmin() && layer.manual ? `<button type="button" class="rp-edit" data-rpedit="1">${uiIcon('pencil', 13)} Редактировать</button>` : ''}`;
 }
@@ -5408,13 +5409,20 @@ function migrateRetailPts(st) {
   })).filter(p => isFinite(p.lat) && isFinite(p.lon) && !known.has(p.id));
   if (!fresh.length) return;
   const old = st.retailLayer || {};
-  const color = old.color || '#F1C40F';
-  customPtLayers.push({
+  const color = safeColor(old.color, '#F1C40F');
+  customPtLayers.push(cleanPointLayer({
     id: 'cpt_retail_legacy', name: 'Торговые точки', color, manual: true, visible: old.visible !== false,
     shape: 'star', size: 34, opacity: 1,
     radiusOn: false, radiusM: 1500, radiusColor: color, radiusOpacity: 0.15,
-    recs: fresh, _group: null,
-  });
+    recs: fresh,
+  }));
+}
+
+// Цвета из состояния попадают в разметку и стили — на входе оставляем только
+// корректный hex (дальше им доверяем). Пустой цвет точки — «как у слоя».
+function cleanPointLayer(l) {
+  const recs = Array.isArray(l.recs) ? l.recs.map(r => (r && r.color ? { ...r, color: safeColor(r.color, '') } : r)) : l.recs;
+  return { ...l, color: safeColor(l.color), color2: safeColor(l.color2, ''), recs, _group: null };
 }
 
 function applyPointLayersState(st) {
@@ -5424,7 +5432,7 @@ function applyPointLayersState(st) {
     cptRoot.clearLayers();
     // Restore custom point layers without their Leaflet groups (re-created on render)
     _cptSoloId = null; _cptPrevVisible = null; _cptOpen.clear();
-    customPtLayers = st.customPtLayers.map(l => ({ ...l, _group: null }));
+    customPtLayers = st.customPtLayers.map(cleanPointLayer);
   }
   migrateRetailPts(st);
 }
@@ -5432,13 +5440,13 @@ function applyPointLayersState(st) {
 // Вид слоя из сохранённого: чего нет или что не того типа — прежнее/по умолчанию.
 function applyHeatLayerLook(d, sv) {
   d.name = sv.name || d.name || d.key;
-  d.color = sv.color || d.color || '#12ADC1';
+  d.color = safeColor(sv.color, d.color || '#12ADC1');
   d.intensity = typeof sv.intensity === 'number' ? sv.intensity : (d.intensity || 1);
   d.visible = typeof sv.visible === 'boolean' ? sv.visible : Boolean(d.visible);
   if (typeof sv.ramp === 'string') d.ramp = sv.ramp;
   if (typeof sv.opacity === 'number') d.opacity = sv.opacity;
   const str = v => (typeof v === 'string' ? v : '');
-  d.color2 = str(sv.color2);
+  d.color2 = safeColor(sv.color2, '');
   d.icon = str(sv.icon);
   d.shape = str(sv.shape);
   d.fields = Array.isArray(sv.fields) ? sv.fields.filter(f => typeof f === 'string').slice(0, EXTRA_MAX_COLS) : [];
@@ -5510,7 +5518,8 @@ function keyList(list, legacy) {
 
 function applyViewState(st) {
   // st.pts — настройки удалённых слоёв «Наши точки · IQOS», игнорируются.
-  if (st.incCol) Object.assign(incCol, st.incCol);
+  // Цвета уровней дохода идут в стили районов — берём только корректный hex.
+  if (st.incCol) Object.keys(incCol).forEach(k => { incCol[k] = safeColor(st.incCol[k], incCol[k]); });
   applyCitySelection(st);
   applyPlainSettings(st);
   if (typeof st.recBasis === 'string' && DS[st.recBasis]) recBasis = st.recBasis;

@@ -128,4 +128,14 @@ module.exports = [
     { head: ['Название', 'Широта', 'Долгота', 'Адрес', 'Часы работы', 'Код', 'Сегмент'],
       back: [{ name: 'A', addr: 'ул', code: 'K1', hours: '9-18', lat: 41.3, lon: 69.2, x: { Сегмент: 'S1' } }, { name: 'B', addr: '', code: '', hours: '', lat: 41.4, lon: 69.3 }],
       fields: ['Сегмент'] }],
+
+  // XSS и CSS-инъекции (CLAUDE.md, инвариант 8 и safeColor): всё из файлов и
+  // состояния экранируется, цвета в style — только корректный hex.
+  ["(() => { const h = manualPopupHtml({ name: '<i>Слой</i>', color: '#123456', manual: true }, { name: '<img src=x onerror=alert(1)>', color: 'red;background:url(//evil.example)', comment: '<script>x</script>', dms: '\"><b>', equip: \"'\", addr: '<a>', hours: '&', lat: 41, lon: 69 }); return [/<img|<script|<b>|<a>|<i>|url\\(/.test(h), (h.match(/style=\"background:([^\"]*)\"/) || [])[1]]; })()",
+    [false, '#12345622;color:var(--ink);border:1px solid #123456']],
+  ["(() => { const h = tagPopupHtml({ name: '<svg onload=1>' }, { name: '<img src=x>', addr: '<b>', hours: '<u>', code: '<s>', fil: '<i>', vol: 1, lat: 41, lon: 69, x: { '<k>': '<v>' } }); return /<img|<svg onload|<b>|<u>|<s>|<i>|<k>|<v>/.test(h); })()", false],
+  ["(() => { const before = { ...incCol }; applySnapshot({ _app: 'hm-br', incCol: { high: 'red;background:url(//evil.example)', mid: '#abcdef', low: 7 } }); const after = { ...incCol }; Object.assign(incCol, before); return [after.high === before.high, after.mid, after.low === before.low]; })()", [true, '#abcdef', true]],
+
+  ["(() => { const bad = '\"><img src=x onerror=alert(1)>'; applySnapshot({ _app: 'hm-br', heatKeys: ['custom_x'], layers: { custom_x: { name: 'X', color: bad, color2: bad, recs: [] } }, customPtLayers: [{ id: 'c1', name: 'Т', color: bad, color2: bad, manual: true, recs: [{ id: 'p', lat: 41, lon: 69, color: bad }, { id: 'q', lat: 41, lon: 69, color: '#00ff00' }] }] }); const s = buildStateSnapshot(); return [s.layers.custom_x.color, s.layers.custom_x.color2, s.customPtLayers[0].color, s.customPtLayers[0].color2, s.customPtLayers[0].recs.map(r => r.color)]; })()",
+    ['#12ADC1', '', '#12ADC1', '', ['', '#00ff00']]],
 ];
