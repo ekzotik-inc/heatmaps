@@ -5305,18 +5305,50 @@ function slimRecs(recs) {
   });
 }
 
+// Простые настройки карты: ключ в состоянии, тип, чтение и запись. Одна
+// строка таблицы — и поле сохраняется, восстанавливается и попадает в
+// отпечаток (stateFingerprint берёт весь снимок).
+const PLAIN_SETTINGS = [
+  ['covR', 'number', () => covR, v => { covR = v; }],
+  ['topN', 'number', () => topN, v => { topN = v; }],
+  ['recShow', 'boolean', () => recShow, v => { recShow = v; }],
+  ['heatBlend', 'string', () => heatBlend, v => { heatBlend = v; }],
+  ['heatRadius', 'number', () => heatRadius, v => { heatRadius = v; }],
+  ['districtsOn', 'boolean', () => districtsOn, v => { districtsOn = v; }],
+  ['incomeHeatOn', 'boolean', () => incomeHeatOn, v => { incomeHeatOn = v; }],
+  ['coresOn', 'boolean', () => coresOn, v => { coresOn = v; }],
+  ['showHeatAll', 'boolean', () => showHeatAll, v => { showHeatAll = v; }],
+  ['rtRadius', 'number', () => rtRadius, v => { rtRadius = v; }],
+  ['rtRadiusOp', 'string', () => rtRadiusOp, v => { rtRadiusOp = v; }],
+  ['rtExclRadius', 'number', () => rtExclRadius, v => { rtExclRadius = v; }],
+  ['rtExclOp', 'string', () => rtExclOp, v => { rtExclOp = v; }],
+];
+function plainSettings() {
+  return Object.fromEntries(PLAIN_SETTINGS.map(([key, , get]) => [key, get()]));
+}
+function applyPlainSettings(st) {
+  PLAIN_SETTINGS.forEach(([key, type, , set]) => { if (typeof st[key] === type) set(st[key]); });
+}
+
+function heatLayerSnapshot(k, d) {
+  const o = { name: d.name, color: d.color, color2: d.color2 || '', ramp: d.ramp, icon: d.icon || '', shape: d.shape || '', fields: d.fields || [], opacity: d.opacity, intensity: d.intensity, visible: d.visible, showTags: !!d.showTags, volUnit: d.volUnit || '', stats: d.stats };
+  if (k.startsWith('custom_') || d._userData) {
+    o._userData = true;
+    if (d._recordsLoaded === false) o._recordsOmitted = true;
+    else o.recs = slimRecs(d.recs);
+  }
+  return o;
+}
+
+// recs ручных слоёв несут карточку и идентификаторы фото — байты снимков
+// живут на сервере и в состояние не попадают.
+function pointLayerSnapshot(l) {
+  return { id: l.id, name: l.name, color: l.color, color2: l.color2 || '', icon: l.icon || '', fields: l.fields || [], manual: !!l.manual, visible: l.visible, shape: l.shape, size: l.size, opacity: l.opacity, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, labels: !!l.labels, density: !!l.density, ramp: l.ramp || '', recs: l.recs };
+}
+
 function buildStateSnapshot() {
   const layers = {};
-  heatKeys.forEach(k => {
-    const d = DS[k]; if (!d) return;
-    const o = { name: d.name, color: d.color, color2: d.color2 || '', ramp: d.ramp, icon: d.icon || '', shape: d.shape || '', fields: d.fields || [], opacity: d.opacity, intensity: d.intensity, visible: d.visible, showTags: !!d.showTags, volUnit: d.volUnit || '', stats: d.stats };
-    if (k.startsWith('custom_') || d._userData) {
-      o._userData = true;
-      if (d._recordsLoaded === false) o._recordsOmitted = true;
-      else o.recs = slimRecs(d.recs);
-    }
-    layers[k] = o;
-  });
+  heatKeys.forEach(k => { if (DS[k]) layers[k] = heatLayerSnapshot(k, DS[k]); });
   return {
     _v: 1, _app: 'hm-br', _savedAt: new Date().toISOString(), _date: new Date().toISOString().slice(0, 10),
     _lazy: heatKeys.some(k => DS[k] && DS[k]._recordsLoaded === false),
@@ -5324,16 +5356,15 @@ function buildStateSnapshot() {
     selectedCities: selectedCities.slice(),
     // Keep the legacy field for older consumers; it represents only a single selection.
     city: selectedCities.length === 1 ? selectedCities[0] : '',
-    covR, topN, recBasis, recShow, heatBoost, heatBlend, heatRadius, districtsOn, incomeHeatOn, coresOn,
+    ...plainSettings(),
+    recBasis, heatBoost,
     // «Границы»: свои зоны (геометрия — только контуры), выбор и режим отбора.
     distOpacity, boundLayers: boundLayers.map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, zones: l.zones })),
     boundSel: boundSel.slice(), boundFilter: { ...boundFilter },
-    showHeatAll, showPointsAll, heatStyle,
+    showPointsAll, heatStyle,
     cityScope,
-    addrSrcKeys, addrRefKeys, rtRadius, rtRadiusOp, rtExclRadius, rtExclOp, rtExclKeys,
-    // recs ручных слоёв несут карточку и идентификаторы фото — байты снимков
-    // живут на сервере и в состояние не попадают.
-    customPtLayers: customPtLayers.map(l => ({ id: l.id, name: l.name, color: l.color, color2: l.color2 || '', icon: l.icon || '', fields: l.fields || [], manual: !!l.manual, visible: l.visible, shape: l.shape, size: l.size, opacity: l.opacity, radiusOn: l.radiusOn, radiusM: l.radiusM, radiusColor: l.radiusColor, radiusOpacity: l.radiusOpacity, labels: !!l.labels, density: !!l.density, ramp: l.ramp || '', recs: l.recs })),
+    addrSrcKeys, addrRefKeys, rtExclKeys,
+    customPtLayers: customPtLayers.map(pointLayerSnapshot),
   };
 }
 
@@ -5365,10 +5396,28 @@ function importState(file) {
   rd.readAsText(file);
 }
 
-function applySnapshot(st) {
-  // ВАЖНО: наши точки восстанавливаются ПЕРВЫМИ. От них считается nd в
-  // тепловых слоях ниже — при обратном порядке покрытие посчиталось бы по
-  // ещё не заменённому набору точек.
+// Миграция: раньше точки ручного ввода лежали отдельным списком retailPts.
+// Переносим их в обычный слой — потерять заведённые вручную точки нельзя.
+function migrateRetailPts(st) {
+  if (!Array.isArray(st.retailPts) || !st.retailPts.length) return;
+  const known = new Set();
+  customPtLayers.forEach(l => (l.recs || []).forEach(r => { if (r.id) known.add(r.id); }));
+  const fresh = st.retailPts.map(p => ({
+    ...p, lat: +p.lat, lon: +p.lon,
+    photos: Array.isArray(p.photos) ? p.photos.filter(ph => ph && ph.id) : [],
+  })).filter(p => isFinite(p.lat) && isFinite(p.lon) && !known.has(p.id));
+  if (!fresh.length) return;
+  const old = st.retailLayer || {};
+  const color = old.color || '#F1C40F';
+  customPtLayers.push({
+    id: 'cpt_retail_legacy', name: 'Торговые точки', color, manual: true, visible: old.visible !== false,
+    shape: 'star', size: 34, opacity: 1,
+    radiusOn: false, radiusM: 1500, radiusColor: color, radiusOpacity: 0.15,
+    recs: fresh, _group: null,
+  });
+}
+
+function applyPointLayersState(st) {
   if (Array.isArray(st.customPtLayers)) {
     // Wipe all existing custom-point markers — otherwise old groups stay
     // orphaned on the map (overlapping new ones / impossible to toggle off).
@@ -5377,119 +5426,117 @@ function applySnapshot(st) {
     _cptSoloId = null; _cptPrevVisible = null; _cptOpen.clear();
     customPtLayers = st.customPtLayers.map(l => ({ ...l, _group: null }));
   }
-  // Миграция: раньше точки ручного ввода лежали отдельным списком retailPts.
-  // Переносим их в обычный слой — потерять заведённые вручную точки нельзя.
-  if (Array.isArray(st.retailPts) && st.retailPts.length) {
-    const migrated = st.retailPts.map(p => ({
-      ...p, lat: +p.lat, lon: +p.lon,
-      photos: Array.isArray(p.photos) ? p.photos.filter(ph => ph && ph.id) : [],
-    })).filter(p => isFinite(p.lat) && isFinite(p.lon));
-    const known = new Set();
-    customPtLayers.forEach(l => (l.recs || []).forEach(r => { if (r.id) known.add(r.id); }));
-    const fresh = migrated.filter(p => !known.has(p.id));
-    if (fresh.length) {
-      const color = (st.retailLayer && st.retailLayer.color) || '#F1C40F';
-      customPtLayers.push({
-        id: 'cpt_retail_legacy', name: 'Торговые точки', color, manual: true,
-        visible: st.retailLayer ? st.retailLayer.visible !== false : true,
-        shape: 'star', size: 34, opacity: 1,
-        radiusOn: false, radiusM: 1500, radiusColor: color, radiusOpacity: 0.15,
-        recs: fresh, _group: null,
-      });
-    }
+  migrateRetailPts(st);
+}
+
+// Вид слоя из сохранённого: чего нет или что не того типа — прежнее/по умолчанию.
+function applyHeatLayerLook(d, sv) {
+  d.name = sv.name || d.name || d.key;
+  d.color = sv.color || d.color || '#12ADC1';
+  d.intensity = typeof sv.intensity === 'number' ? sv.intensity : (d.intensity || 1);
+  d.visible = typeof sv.visible === 'boolean' ? sv.visible : Boolean(d.visible);
+  if (typeof sv.ramp === 'string') d.ramp = sv.ramp;
+  if (typeof sv.opacity === 'number') d.opacity = sv.opacity;
+  const str = v => (typeof v === 'string' ? v : '');
+  d.color2 = str(sv.color2);
+  d.icon = str(sv.icon);
+  d.shape = str(sv.shape);
+  d.fields = Array.isArray(sv.fields) ? sv.fields.filter(f => typeof f === 'string').slice(0, EXTRA_MAX_COLS) : [];
+  d.showTags = !!sv.showTags;
+  d.volUnit = sv.volUnit === '%' ? '%' : '';
+}
+
+const EMPTY_STATS = () => ({ n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 });
+
+function applyHeatLayerRecords(d, sv, isManifest, ownPointIndex) {
+  if (Array.isArray(sv.recs)) {
+    // Saved recs are slim (see slimRecs). Rebuild city and nearest-own-point
+    // fields during hydration; defer expensive local-demand (`ld/lc`) work
+    // until this layer is selected as the recommendation basis.
+    sv.recs.forEach(r => { r.fil = cityOf(r.lat, r.lon); });
+    d.recs = sv.recs;
+    enrichNd(d.recs, ownPointIndex);
+    d.recs._densityReady = false;
+    d.stats = sv.stats || statsOf(d.recs);
+    d._recordsLoaded = true;
+    d._userData = true;
+  } else if (isManifest) {
+    // A metadata-first manifest must never inherit stale records from the
+    // previous map/session. They arrive lazily through `/state/layer`.
+    d.recs = [];
+    d.stats = sv.stats || { ...EMPTY_STATS(), n: sv.recordCount || 0 };
+    d._recordsLoaded = false;
+    d._userData = true;
+    // Derived render caches belong to the previous revision — drop them so a
+    // refresh cannot paint the old heat over freshly published records.
+    d._heatCache = null;
+    d._fullPtsCache = null;
+    d._heatMaxCache = null;
+  } else if (!d.recs) {
+    d.recs = []; d.stats = EMPTY_STATS();
   }
-  // All hydrated heat layers share the same closest-own-point lookup. Build it
-  // once rather than rebuilding it per layer while the map is starting.
-  const ownPointIndex = buildPtIndex(ourPts());
+}
+
+function applyHeatLayersState(st) {
   // Only user-uploaded layers are shown; drop legacy cig/sticks/combined keys
   // that older saved states may still carry.
   if (Array.isArray(st.heatKeys)) heatKeys = st.heatKeys.filter(k => k.startsWith('custom_'));
-  if (st.layers) {
-    for (const k of heatKeys) {
-      const sv = st.layers[k]; if (!sv) continue;
-      if (!DS[k]) DS[k] = { key: k };
-      Object.assign(DS[k], {
-        name: sv.name || DS[k].name || k,
-        color: sv.color || DS[k].color || '#12ADC1',
-        intensity: typeof sv.intensity === 'number' ? sv.intensity : (DS[k].intensity || 1),
-        visible: typeof sv.visible === 'boolean' ? sv.visible : Boolean(DS[k].visible),
-      });
-      if (typeof sv.ramp    === 'string') DS[k].ramp    = sv.ramp;
-      DS[k].color2 = typeof sv.color2 === 'string' ? sv.color2 : '';
-      DS[k].icon = typeof sv.icon === 'string' ? sv.icon : '';
-      DS[k].shape = typeof sv.shape === 'string' ? sv.shape : '';
-      DS[k].fields = Array.isArray(sv.fields) ? sv.fields.filter(f => typeof f === 'string').slice(0, EXTRA_MAX_COLS) : [];
-      if (typeof sv.opacity === 'number') DS[k].opacity = sv.opacity;
-      DS[k].showTags = !!sv.showTags;
-      DS[k].volUnit = sv.volUnit === '%' ? '%' : '';
-      if (Array.isArray(sv.recs)) {
-        // Saved recs are slim (see slimRecs). Rebuild city and nearest-own-point
-        // fields during hydration; defer expensive local-demand (`ld/lc`) work
-        // until this layer is selected as the recommendation basis.
-        sv.recs.forEach(r => { r.fil = cityOf(r.lat, r.lon); });
-        DS[k].recs = sv.recs;
-        enrichNd(DS[k].recs, ownPointIndex);
-        DS[k].recs._densityReady = false;
-        DS[k].stats = sv.stats || statsOf(DS[k].recs);
-        DS[k]._recordsLoaded = true;
-        DS[k]._userData = true;
-      } else if (st._meta) {
-        // A metadata-first manifest must never inherit stale records from the
-        // previous map/session. They arrive lazily through `/state/layer`.
-        DS[k].recs = [];
-        DS[k].stats = sv.stats || { n: sv.recordCount || 0, sum: 0, max: 0, p50: 0, p90: 0.01 };
-        DS[k]._recordsLoaded = false;
-        DS[k]._userData = true;
-        // Derived render caches belong to the previous revision — drop them so a
-        // refresh cannot paint the old heat over freshly published records.
-        DS[k]._heatCache = null;
-        DS[k]._fullPtsCache = null;
-        DS[k]._heatMaxCache = null;
-      } else if (!DS[k].recs) {
-        DS[k].recs = []; DS[k].stats = { n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 };
-      }
-    }
+  if (!st.layers) return;
+  // All hydrated heat layers share the same closest-own-point lookup. Build it
+  // once rather than rebuilding it per layer while the map is starting.
+  const ownPointIndex = buildPtIndex(ourPts());
+  for (const k of heatKeys) {
+    const sv = st.layers[k]; if (!sv) continue;
+    if (!DS[k]) DS[k] = { key: k };
+    applyHeatLayerLook(DS[k], sv);
+    applyHeatLayerRecords(DS[k], sv, !!st._meta, ownPointIndex);
   }
-  // st.pts — настройки удалённых слоёв «Наши точки · IQOS», игнорируются.
-  if (st.incCol) Object.assign(incCol, st.incCol);
+}
+
+function applyCitySelection(st) {
   if (Array.isArray(st.selectedCities)) {
     selectedCities = canonicalCities(st.selectedCities);
   } else if (typeof st.city === 'string') {
     // Backward compatibility with the previous single-city export format.
     selectedCities = st.city && CITIES.includes(st.city) ? [st.city] : [];
   }
-  if (typeof st.covR       === 'number')  covR         = st.covR;
-  if (typeof st.topN       === 'number')  topN         = st.topN;
-  if (typeof st.recBasis   === 'string' && DS[st.recBasis]) recBasis = st.recBasis;
-  if (typeof st.recShow    === 'boolean') recShow      = st.recShow;
+}
+
+// Старые состояния хранили один ключ строкой — переносим в список.
+function keyList(list, legacy) {
+  if (Array.isArray(list)) return list.slice();
+  return typeof legacy === 'string' && legacy ? [legacy] : null;
+}
+
+function applyViewState(st) {
+  // st.pts — настройки удалённых слоёв «Наши точки · IQOS», игнорируются.
+  if (st.incCol) Object.assign(incCol, st.incCol);
+  applyCitySelection(st);
+  applyPlainSettings(st);
+  if (typeof st.recBasis === 'string' && DS[st.recBasis]) recBasis = st.recBasis;
   // Общая яркость убрана из интерфейса — старое значение не применяем, иначе
   // его нельзя было бы вернуть назад.
   heatBoost = 1;
-  if (typeof st.showHeatAll === 'boolean') showHeatAll = st.showHeatAll;
   heatStyle = st.heatStyle === 'zones' ? 'zones' : 'spots';
   // Раньше ярлыки включались у каждого слоя отдельно — переносим в общий флаг.
   if (typeof st.showPointsAll === 'boolean') showPointsAll = st.showPointsAll;
   else if (st.layers && Object.values(st.layers).some(l => l && l.showTags)) showPointsAll = true;
-  if (typeof st.heatBlend  === 'string')  heatBlend    = st.heatBlend;
-  if (typeof st.heatRadius === 'number')  heatRadius   = st.heatRadius;
   // До октября 2026 режим назывался tashkentScope и касался только Ташкента.
   const scope = st.cityScope || st.tashkentScope;
   if (scope === 'city' || scope === 'region') cityScope = scope;
-  if (typeof st.districtsOn  === 'boolean') districtsOn  = st.districtsOn;
   applyBoundsState(st);
-  if (typeof st.incomeHeatOn === 'boolean') incomeHeatOn = st.incomeHeatOn;
-  if (typeof st.coresOn      === 'boolean') coresOn      = st.coresOn;
-  // Старые состояния хранили один ключ строкой — переносим в список.
-  if (Array.isArray(st.addrSrcKeys))        addrSrcKeys  = st.addrSrcKeys.slice();
-  else if (typeof st.addrSrcKey === 'string' && st.addrSrcKey) addrSrcKeys = [st.addrSrcKey];
-  // Старые состояния хранили один ключ строкой — переносим в список.
-  if (Array.isArray(st.addrRefKeys))        addrRefKeys  = st.addrRefKeys.slice();
-  else if (typeof st.addrRefKey === 'string' && st.addrRefKey) addrRefKeys = [st.addrRefKey];
-  if (typeof st.rtRadius     === 'number')  rtRadius     = st.rtRadius;
-  if (typeof st.rtRadiusOp   === 'string')  rtRadiusOp   = st.rtRadiusOp;
-  if (typeof st.rtExclRadius === 'number')  rtExclRadius = st.rtExclRadius;
-  if (typeof st.rtExclOp     === 'string')  rtExclOp     = st.rtExclOp;
-  if (Array.isArray(st.rtExclKeys))         rtExclKeys   = st.rtExclKeys.slice();
+  addrSrcKeys = keyList(st.addrSrcKeys, st.addrSrcKey) || addrSrcKeys;
+  addrRefKeys = keyList(st.addrRefKeys, st.addrRefKey) || addrRefKeys;
+  if (Array.isArray(st.rtExclKeys)) rtExclKeys = st.rtExclKeys.slice();
+}
+
+function applySnapshot(st) {
+  // ВАЖНО: наши точки восстанавливаются ПЕРВЫМИ. От них считается nd в
+  // тепловых слоях ниже — при обратном порядке покрытие посчиталось бы по
+  // ещё не заменённому набору точек.
+  applyPointLayersState(st);
+  applyHeatLayersState(st);
+  applyViewState(st);
 }
 
 /* ── EXPORT RECS ─────────────────────────────────────────────────────── */
@@ -6732,54 +6779,22 @@ function eagerStateLayers() {
 
 let stateReady = false, _saveTimer = null;
 let _lastServerStateFingerprint = '';
+// Отпечаток — весь снимок, кроме служебных полей: новое поле попадает в него
+// само. Записи заменены их числом (слои меняются заменой файла), у ручных
+// слоёв точек правится карточка — их записи учитываются целиком. Геометрию
+// зон целиком не сравниваем: зоны не правятся по вершинам, их только
+// добавляют и удаляют — хватает идентификатора, имени и размера контура.
+function fingerprintRecs(recs) { return Array.isArray(recs) ? recs.length : null; }
 function stateFingerprint(snapshot) {
   if (!snapshot) return '';
-  const layers = Object.entries(snapshot.layers || {}).map(([key, layer]) => [
-    key, layer && layer.name, layer && layer.color, layer && layer.opacity,
-    layer && layer.intensity, layer && layer.visible,
-    layer && layer.ramp, layer && layer.showTags,
-    layer && layer.color2, layer && layer.icon, layer && layer.shape, layer && JSON.stringify(layer.fields || []),
-    // Единица («%») меняется перезаливкой того же файла — число записей и
-    // статистика при этом могут остаться прежними.
-    layer && layer.volUnit,
-    layer && layer._recordsOmitted,
-    layer && layer.recordCount,
-    layer && layer.stats,
-    Array.isArray(layer && layer.recs) ? layer.recs.length : null,
-  ]);
-  const custom = (snapshot.customPtLayers || []).map(layer => [
-    layer.id, layer.name, layer.color, layer.visible, layer.shape, layer.manual,
-    layer.color2 || '', layer.icon || '', JSON.stringify(layer.fields || []),
-    layer.size, layer.opacity, !!layer.labels, !!layer.density, layer.ramp || '',
-    layer.radiusOn, layer.radiusM, layer.radiusColor, layer.radiusOpacity,
-    Array.isArray(layer.recs) ? layer.recs.length : 0,
-    // Правка карточки ручной точки не меняет их количество. Без этого отпечаток
-    // совпал бы с прежним и сохранение на сервер было бы пропущено.
-    layer.manual && Array.isArray(layer.recs)
-      ? layer.recs.map(r => [r.id, r.name, r.dms, r.equip, r.sales, r.comment, r.color,
-          r.lat, r.lon, (r.photos || []).map(ph => ph.id).join(',')].join('~')).join('|')
-      : '',
-  ]);
+  const { _v, _app, _savedAt, _date, _lazy, layers, customPtLayers, boundLayers, ...settings } = snapshot;
   return JSON.stringify({
-    heatKeys: snapshot.heatKeys || [], layers, custom,
-    selectedCities: snapshot.selectedCities || [], city: snapshot.city || '',
-    incCol: snapshot.incCol, covR: snapshot.covR, topN: snapshot.topN,
-    recBasis: snapshot.recBasis, recShow: snapshot.recShow,
-    heatBoost: snapshot.heatBoost, heatBlend: snapshot.heatBlend,
-    showHeatAll: snapshot.showHeatAll !== false, showPointsAll: !!snapshot.showPointsAll,
-    heatStyle: snapshot.heatStyle || 'spots',
-    heatRadius: snapshot.heatRadius, districtsOn: snapshot.districtsOn,
-    distOpacity: snapshot.distOpacity, boundSel: snapshot.boundSel || [], boundFilter: snapshot.boundFilter || null,
-    // Геометрию зон целиком не сравниваем: зоны не правятся по вершинам, их
-    // только добавляют и удаляют — хватает идентификатора, имени и числа вершин.
-    boundLayers: (snapshot.boundLayers || []).map(l => [l.id, l.name, l.color, l.visible,
-      (l.zones || []).map(z => [z.id, z.name, JSON.stringify(z.mp || []).length].join('~')).join('|')]),
-    cityScope: snapshot.cityScope || snapshot.tashkentScope,
-    incomeHeatOn: snapshot.incomeHeatOn, coresOn: snapshot.coresOn,
-    addrSrcKeys: snapshot.addrSrcKeys, addrRefKeys: snapshot.addrRefKeys,
-    rtRadius: snapshot.rtRadius, rtRadiusOp: snapshot.rtRadiusOp,
-    rtExclRadius: snapshot.rtExclRadius,
-    rtExclOp: snapshot.rtExclOp, rtExclKeys: snapshot.rtExclKeys || [],
+    settings,
+    layers: Object.entries(layers || {}).map(([key, l]) => [key, l && { ...l, recs: fingerprintRecs(l.recs) }]),
+    custom: (customPtLayers || []).map(l => ({ ...l, recs: l.manual ? l.recs : fingerprintRecs(l.recs) })),
+    boundLayers: (boundLayers || []).map(l => ({
+      ...l, zones: (l.zones || []).map(z => [z.id, z.name, JSON.stringify(z.mp || []).length]),
+    })),
   });
 }
 

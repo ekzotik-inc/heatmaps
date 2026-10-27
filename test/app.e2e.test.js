@@ -190,6 +190,45 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     await s.close();
   });
 
+  await t.test('older saved formats are migrated on apply', async () => {
+    const s = await open('boss');
+    const got = await s.page.evaluate(() => {
+      applySnapshot({
+        _app: 'hm-br', heatKeys: ['cig', 'custom_b'],
+        layers: { cig: { name: 'Сигареты' }, custom_b: { name: 'Б', showTags: true, recs: [{ lat: 41.3, lon: 69.2, vol: 2 }] } },
+        retailPts: [
+          { id: 'r1', lat: '41.3', lon: '69.2', name: 'Старая', photos: [{ id: 'a' }, null, {}] },
+          { id: 'bad', lat: 'x', lon: 1 },
+        ],
+        retailLayer: { color: '#123456', visible: false },
+        tashkentScope: 'city', addrSrcKey: 'custom_b', addrRefKey: '__cpt__cpt_retail_legacy',
+        city: 'Самарканд', heatBoost: 3, heatStyle: 'weird', recBasis: 'nope',
+      });
+      const snap = buildStateSnapshot();
+      const legacy = snap.customPtLayers.find(l => l.id === 'cpt_retail_legacy');
+      applySnapshot({ _app: 'hm-br', _meta: true, heatKeys: ['custom_m'], layers: { custom_m: { name: 'М', recordCount: 42 } } });
+      const m = DS.custom_m;
+      applySnapshot({ _app: 'hm-br', city: 'Атлантида', addrSrcKeys: ['x'], cityScope: 'nowhere' });
+      return {
+        heatKeys: snap.heatKeys, b: [snap.layers.custom_b.name, snap.layers.custom_b.recs.length, snap.layers.custom_b.stats.n],
+        legacy: legacy && [legacy.color, legacy.visible, legacy.manual, legacy.shape, legacy.recs.map(r => [r.id, r.lat, r.lon, r.photos])],
+        scope: snap.cityScope, addr: [snap.addrSrcKeys, snap.addrRefKeys], cities: snap.selectedCities,
+        heatBoost: snap.heatBoost, heatStyle: snap.heatStyle, showPointsAll: snap.showPointsAll, recBasisKept: snap.recBasis !== 'nope',
+        manifest: [m.name, m._recordsLoaded, m.recs.length, m.stats.n],
+        after: [selectedCities, addrSrcKeys, cityScope],
+      };
+    });
+    assert.deepStrictEqual(got, {
+      heatKeys: ['custom_b'], b: ['Б', 1, 1],
+      legacy: ['#123456', false, true, 'star', [['r1', 41.3, 69.2, [{ id: 'a' }]]]],
+      scope: 'city', addr: [['custom_b'], ['__cpt__cpt_retail_legacy']], cities: ['Самарканд'],
+      heatBoost: 1, heatStyle: 'spots', showPointsAll: true, recBasisKept: true,
+      manifest: ['М', false, 0, 42],
+      after: [[], ['x'], 'city'],
+    });
+    await s.close();
+  });
+
   await t.test('admin signs in and the map starts without page errors', async () => {
     const s = await open('boss');
     assert.deepEqual(s.errors, []);
