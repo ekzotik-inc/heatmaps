@@ -2561,9 +2561,13 @@ function showTip(icon) {
   el.style.top = (above >= 8 ? above : r.bottom + 8) + 'px';
   el.classList.toggle('below', above < 8);
 }
+// Показать/скрыть элемент по id; отсутствующий элемент — не ошибка.
+function setHidden(id, hidden) {
+  const el = document.getElementById(id);
+  if (el) el.hidden = hidden;
+}
 function hideTip() {
-  const el = document.getElementById('hm-tip');
-  if (el) el.hidden = true;
+  setHidden('hm-tip', true);
   if (_tipFor) { _tipFor.removeAttribute('aria-describedby'); _tipFor.setAttribute('aria-expanded', 'false'); }
   _tipFor = null;
 }
@@ -4158,8 +4162,7 @@ function openLightbox(ids, index) {
   showLightboxPhoto();
 }
 function closeLightbox() {
-  const ov = document.getElementById('photo-lightbox');
-  if (ov) ov.hidden = true;
+  setHidden('photo-lightbox', true);
 }
 function moveLightbox(step) {
   if (_lightbox.ids.length < 2) return;
@@ -7389,8 +7392,7 @@ async function switchMap(id) {
 }
 
 function closeMapMenu() {
-  const menu = document.getElementById('map-menu');
-  if (menu) menu.hidden = true;
+  setHidden('map-menu', true);
   document.querySelectorAll('[aria-controls="map-menu"]').forEach(el => el.setAttribute('aria-expanded', 'false'));
 }
 function openMapMenu(anchor, focusItem = true) {
@@ -7784,8 +7786,7 @@ function showUpdateBanner(revision) {
   el.hidden = false;
 }
 function hideUpdateBanner() {
-  const el = document.getElementById('update-banner');
-  if (el) el.hidden = true;
+  setHidden('update-banner', true);
 }
 
 function setUpdateProgress(p, title, sub) {
@@ -7808,13 +7809,11 @@ function openUpdateOverlay() {
   document.body.classList.add('updating');
   const hints = document.getElementById('upd-hints');
   if (hints) { hints.hidden = true; hints.innerHTML = ''; }
-  const acts = document.getElementById('upd-actions');
-  if (acts) acts.hidden = true;
+  setHidden('upd-actions', true);
   setUpdateProgress(0, 'Обновляем карту', 'Проверяем данные на сервере…');
 }
 function closeUpdateOverlay() {
-  const ov = document.getElementById('update-overlay');
-  if (ov) ov.hidden = true;
+  setHidden('update-overlay', true);
   document.body.classList.remove('updating');
   document.body.style.removeProperty('--upd-gray');
 }
@@ -7877,8 +7876,7 @@ function showUpdateFailure(err) {
   }
   const retry = document.getElementById('upd-retry');
   if (retry) retry.textContent = copy.reload ? 'Войти заново' : 'Повторить';
-  const acts = document.getElementById('upd-actions');
-  if (acts) acts.hidden = false;
+  setHidden('upd-actions', false);
   setSyncBadge('err', 'Обновление не выполнено');
   console.warn('Update failed:', (err && err.message) || err);
 }
