@@ -4137,15 +4137,17 @@ function compressImage(file) {
 }
 // Голый «HTTP 401» ничего не говорит: у сервера два разных 401 — нет ключа
 // записи и нет сессии. Разворачиваем ответ в понятную причину с действием.
+const SERVER_ERROR_TEXT = {
+  401: 'сессия истекла — войдите заново',
+  403: 'нет доступа к этой карте',
+  413: 'файл слишком большой',
+  415: 'формат не поддерживается — нужен JPEG, PNG или WebP',
+};
 async function serverErrorText(res) {
   let msg = '';
   try { const j = await res.json(); msg = (j && j.error) || ''; } catch (_) {}
   if (res.status === 401 && /api-key/i.test(msg)) return 'не введён ключ записи';
-  if (res.status === 401) return 'сессия истекла — войдите заново';
-  if (res.status === 403) return 'нет доступа к этой карте';
-  if (res.status === 413) return 'файл слишком большой';
-  if (res.status === 415) return 'формат не поддерживается — нужен JPEG, PNG или WebP';
-  return msg || ('HTTP ' + res.status);
+  return SERVER_ERROR_TEXT[res.status] || msg || ('HTTP ' + res.status);
 }
 async function uploadPhoto(file) {
   const { data, w, h } = await compressImage(file);

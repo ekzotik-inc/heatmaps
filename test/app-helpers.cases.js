@@ -147,4 +147,8 @@ module.exports = [
   ["geojsonZones({ type: 'Feature', properties: { 'name:ru': 'x'.repeat(80) }, geometry: { type: 'Polygon', coordinates: [[[69, 41], [69.1, 41], [69.1, 41.1], [69, 41]]] } })[0].name.length", 60],
   ['cleanMp([[[[200, 41], [69, 41], [69, 42], [200, 41]]]])', null],
   ['cleanMp([[[[69, 41], [69.1, 95], [69.1, 41.1], [69, 41]]]])', null],
+
+  // Тексты ошибок сервера для пользователя.
+  ["Promise.all([[401, { error: 'Invalid or missing X-API-Key header' }], [401, { error: 'Authentication required' }], [403, {}], [413, {}], [415, {}], [400, { error: 'Expected a base64 data URL' }], [500, {}], [502, 'not json']].map(([status, body]) => serverErrorText(new Response(typeof body === 'string' ? body : JSON.stringify(body), { status }))))",
+    ['не введён ключ записи', 'сессия истекла — войдите заново', 'нет доступа к этой карте', 'файл слишком большой', 'формат не поддерживается — нужен JPEG, PNG или WebP', 'Expected a base64 data URL', 'HTTP 500', 'HTTP 502']],
 ];

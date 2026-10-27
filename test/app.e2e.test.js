@@ -176,9 +176,10 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
   await t.test('helpers give the expected results', async () => {
     const s = await open('boss');
     const cases = require('./app-helpers.cases');
-    const got = await s.page.evaluate(exprs => exprs.map(src => {
-      try { return { v: JSON.stringify((0, eval)(src)) }; } catch (e) { return { err: String(e) }; }
-    }), cases.map(c => c[0]));
+    // Выражение может вернуть промис (асинхронный помощник) — дожидаемся его.
+    const got = await s.page.evaluate(exprs => Promise.all(exprs.map(async src => {
+      try { return { v: JSON.stringify(await (0, eval)(src)) }; } catch (e) { return { err: String(e) }; }
+    })), cases.map(c => c[0]));
     const wrong = cases
       .map(([expr, want], i) => ({ expr, want, got: got[i].err || (got[i].v === undefined ? undefined : JSON.parse(got[i].v)) }))
       .filter(c => !isDeepStrictEqual(c.got, JSON.parse(JSON.stringify(c.want))));
