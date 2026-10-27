@@ -702,8 +702,10 @@ function boundZones() {
   if (_bzZones) return _bzZones;
   const out = [];
   if (districtsOn) cityDistricts().forEach(f => out.push({
-    key: 'city:' + f.ru, name: f.ru, color: incCol[f.tier] || '#12ADC1', mp: f.mp,
-    sub: [DIST_TIER_NAME[f.tier], f.pop ? (f.pop / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + ' тыс. жителей (01.01.2026)' : ''].filter(Boolean).join(' · '),
+    key: 'city:' + f.ru, name: f.ru, color: incCol[f.tier] || '#12ADC1', mp: f.mp, pop: f.pop || 0,
+    sub: [DIST_TIER_NAME[f.tier],
+      f.pop ? (f.pop / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + ' тыс. жителей (01.01.2026)' : '',
+      f.pop ? '≈ ' + fmtPeople(districtSmokers(f.pop)) + ' курильщиков 21+' : ''].filter(Boolean).join(' · '),
   }));
   boundLayers.forEach(l => {
     if (!l.visible) return;
@@ -752,6 +754,50 @@ function fmtArea(m2) {
   if (km < 0.01) return Math.round(m2).toLocaleString('ru-RU') + ' м²';
   const digits = km < 1 ? 2 : km < 100 ? 1 : 0;
   return km.toLocaleString('ru-RU', { minimumFractionDigits: digits, maximumFractionDigits: digits }) + ' км²';
+}
+/* Курильщики 21+ в районе или зоне — та же формула, что в карточке города:
+   население × доля 21+ (у Ташкента из справочника) × средняя доля курящих
+   (ВОЗ). Население районов — Нацкомстат на 01.01.2026 (district-bounds.js).
+   Своя зона населения не имеет: оценка по районам, которые она накрывает, —
+   доля площади каждого района × его курильщики (точки-пробы внутри зоны). */
+function districtSmokers(pop) {
+  const adult = (UZ_STATS['Ташкент'] && UZ_STATS['Ташкент'].adult) || .64;
+  return pop * adult * SMOKE_AVG;
+}
+function fmtPeople(n) {
+  if (!isFinite(n)) return '—';
+  return n >= 1000 ? (n / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + ' тыс.' : String(Math.round(n));
+}
+const _zoneSmokers = new WeakMap();
+function zoneSmokers(z) {
+  if (z.pop) return { n: districtSmokers(z.pop), est: false };
+  if (COUNTRY !== 'uz') return null;
+  const hit = _zoneSmokers.get(z.mp);
+  if (hit !== undefined) return hit;
+  const dists = cityDistricts().filter(f => f.pop).map(f => ({ f, boxes: mpBoxes(f.mp), area: zoneArea(f.mp) }));
+  let res = null;
+  if (dists.length) {
+    const zb = { boxes: mpBoxes(z.mp) };
+    let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
+    zb.boxes.forEach(b => { x0 = Math.min(x0, b.minLon); y0 = Math.min(y0, b.minLat); x1 = Math.max(x1, b.maxLon); y1 = Math.max(y1, b.maxLat); });
+    const N = 90, cnt = new Map();
+    let inside = 0;
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+      const lon = x0 + (x1 - x0) * (i + .5) / N, lat = y0 + (y1 - y0) * (j + .5) / N;
+      if (!zoneHas(zb, lat, lon)) continue;
+      inside++;
+      const d = dists.find(d => zoneHas(d, lat, lon));
+      if (d) cnt.set(d, (cnt.get(d) || 0) + 1);
+    }
+    if (inside && cnt.size) {
+      const area = zoneArea(z.mp);
+      let n = 0, covered = 0;
+      cnt.forEach((c, d) => { const part = area * c / inside; covered += c; n += districtSmokers(d.f.pop) * Math.min(1, part / d.area); });
+      res = { n, est: true, partial: covered < inside };
+    }
+  }
+  _zoneSmokers.set(z.mp, res);
+  return res;
 }
 // Выбранные зоны, которые сейчас на карте: скрытый слой отбор не держит.
 // boundsHold() зовёт это на каждую точку — список кэшируется до bzInvalidate().
@@ -1385,9 +1431,19 @@ function updateLayerLegend() {
   const total = zones.reduce((a, z) => a + zoneArea(z.mp), 0);
   const zoneHtml = !zones.length ? '' :
     `<div class="legend-sep" role="separator"><span>Районы</span></div>` +
-    zones.map(z => `<div class="legend-item legend-zone"><span class="legend-zdot" style="--c:${boundColor(z.color)}"></span>` +
-      `<span class="legend-name" title="${esc(z.name)}">${esc(z.name)}</span><span class="legend-area">${fmtArea(zoneArea(z.mp))}</span></div>`).join('') +
-    (zones.length > 1 ? `<div class="legend-item legend-total"><span class="legend-name">Всего, ${zones.length} ${plural(zones.length, 'район', 'района', 'районов')}</span><span class="legend-area">${fmtArea(total)}</span></div>` : '');
+    zones.map(z => {
+      // Под названием — курильщики 21+ (у своей зоны — оценка по районам Ташкента).
+      const sm = zoneSmokers(z);
+      const note = sm ? `<span class="legend-note">≈ ${fmtPeople(sm.n)} курильщиков 21+${sm.partial ? ' (часть зоны вне районов)' : ''}</span>` : '';
+      return `<div class="legend-item legend-zone"><span class="legend-zdot" style="--c:${boundColor(z.color)}"></span>` +
+        `<span class="legend-name${note ? ' legend-name2' : ''}" title="${esc(z.name)}">${note ? `<span class="ln-t">${esc(z.name)}</span>${note}` : esc(z.name)}</span>` +
+        `<span class="legend-area">${fmtArea(zoneArea(z.mp))}</span></div>`;
+    }).join('') +
+    (zones.length > 1 ? (() => {
+      const sms = zones.map(zoneSmokers).filter(Boolean);
+      const note = sms.length ? `<span class="legend-note">≈ ${fmtPeople(sms.reduce((a, x) => a + x.n, 0))} курильщиков 21+${sms.length < zones.length ? ' (не по всем)' : ''}</span>` : '';
+      return `<div class="legend-item legend-total"><span class="legend-name${note ? ' legend-name2' : ''}">${note ? `<span class="ln-t">Всего, ${zones.length} ${plural(zones.length, 'район', 'района', 'районов')}</span>${note}` : `Всего, ${zones.length} ${plural(zones.length, 'район', 'района', 'районов')}`}</span><span class="legend-area">${fmtArea(total)}</span></div>`;
+    })() : '');
   el.classList.toggle('folded', folded);
   el.innerHTML = `<button type="button" class="legend-head" aria-expanded="${!folded}" title="${folded ? 'Развернуть легенду' : 'Свернуть легенду'}">
       <span class="legend-title">Легенда</span><span class="legend-n">${items.length + zones.length}</span>${uiIcon('chevron', 13)}</button>
@@ -3987,7 +4043,9 @@ function boundsStatusHtml() {
   const nAct = activeBoundZones().length, nAll = boundSel.length;
   if (!nAll) return 'Ничего не выбрано — кликните зону на карте или в списке.';
   const what = !boundFilter.on ? ' · отбор выключен' : nAct ? '' : ' · все скрыты';
-  const area = nAct ? ' · ' + fmtArea(activeBoundZones().reduce((a, z) => a + zoneArea(z.mp), 0)) : '';
+  const sms = activeBoundZones().map(zoneSmokers).filter(Boolean);
+  const area = nAct ? ' · ' + fmtArea(activeBoundZones().reduce((a, z) => a + zoneArea(z.mp), 0)) +
+    (sms.length ? ' · ≈ ' + fmtPeople(sms.reduce((a, x) => a + x.n, 0)) + ' курильщиков 21+' : '') : '';
   return `Выбрано: ${zonesWord(nAll)}${nAct && nAct < nAll ? ` (на карте ${nAct})` : ''}${area}${what} <button type="button" class="lc-link" data-bzclear>Сбросить</button>` +
     (nAct ? `<button type="button" class="create-btn ghost bz-export" data-bzexport>${uiIcon('sheet', 14)} Выгрузить точки ${boundFilter.mode === 'out' ? 'снаружи' : 'внутри'} выбранных в Excel</button>` : '');
 }
@@ -5619,15 +5677,18 @@ async function exportZonePoints() {
     const countOf = li => sheets.find(sh => sh.layer === layers[li].layer)?.recs.length || 0;
     const area = zones.reduce((a, z) => a + zoneArea(z.mp), 0) / 1e6;
     let sumHead, sumRows;
+    // Курильщики 21+ — та же оценка, что в легенде (население × 21+ × доля курящих).
+    const smk = z => { const v = zoneSmokers(z); return v ? Math.round(v.n) : ''; };
+    const smkSum = zones.reduce((a, z) => a + (+smk(z) || 0), 0);
     if (outside) {
       sumHead = ['Условие', 'Площадь исключённых, км²'].concat(layers.map(x => x.layer.name));
       sumRows = [['Точки вне выбранных районов', exportNum(area)].concat(layers.map((_, li) => countOf(li))),
                  [],
-                 ['Исключённые районы', 'Площадь, км²']].concat(zones.map(z => [z.name, exportNum(zoneArea(z.mp) / 1e6)]));
+                 ['Исключённые районы', 'Площадь, км²', 'Курильщиков 21+ (оценка)']].concat(zones.map(z => [z.name, exportNum(zoneArea(z.mp) / 1e6), smk(z)]));
     } else {
-      sumHead = ['Район', 'Площадь, км²'].concat(layers.map(x => x.layer.name));
-      sumRows = zones.map((z, zi) => [z.name, exportNum(zoneArea(z.mp) / 1e6)].concat(perZone[zi]));
-      if (zones.length > 1) sumRows.push(['Всего', exportNum(area)].concat(layers.map((_, li) => countOf(li))));
+      sumHead = ['Район', 'Площадь, км²', 'Курильщиков 21+ (оценка)'].concat(layers.map(x => x.layer.name));
+      sumRows = zones.map((z, zi) => [z.name, exportNum(zoneArea(z.mp) / 1e6), smk(z)].concat(perZone[zi]));
+      if (zones.length > 1) sumRows.push(['Всего', exportNum(area), smkSum || ''].concat(layers.map((_, li) => countOf(li))));
     }
     const sum = XLSX.utils.aoa_to_sheet([sumHead].concat(sumRows));
     sum['!cols'] = sumHead.map((c, i) => ({ wch: i ? Math.max(12, String(c).length + 2) : 30 }));

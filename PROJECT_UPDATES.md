@@ -1094,3 +1094,22 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   (01.01.2026)», selection migration, new figures in the city card; boundary,
   zone, export and address suites pass; UI audit clean.
 - Cache version `20261027a`, `district-bounds.js?v=20261027a`.
+
+## 2026-10-27 — Smokers 21+ for selected districts and zones
+
+- Owner: show the number of smokers aged 21+ for a selected district next to
+  its area.
+- Same formula as the city card, so the numbers agree: population × share of
+  21+ (Tashkent 0.64 from the city reference) × average smoking share (WHO
+  2024: (19.4 % + 0.9 %) / 2). District population — Nacstat on 01.01.2026
+  (`district-bounds.js`). Example: Chilanzar 277.5k × 0.64 × 0.1015 ≈ 18k.
+- Own drawn zones have no population of their own: an estimate from the
+  Tashkent districts they cover (share of each district's area inside the
+  zone × that district's smokers; 90×90 sample points). A zone drawn along
+  Chilanzar's outline gives the same ≈ 18k. Zones outside the Tashkent
+  districts get no figure; partly outside — marked «часть зоны вне районов».
+- Shown in: the legend (a second line under each district/zone, and under
+  «Всего»), the district tooltip, the «Границы» status line, and a new column
+  «Курильщиков 21+ (оценка)» on the «Районы» sheet of the boundary export.
+  The legend is a little wider (310 px) so the line fits.
+- Cache version `20261027b`.

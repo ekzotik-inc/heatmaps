@@ -2700,3 +2700,6 @@ small, .vt-txt small { font-size: 11px; }
 .legend-name2 .ln-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .legend-name2 .ln-t::first-letter { text-transform: uppercase; }
 .legend-note { font: 500 11px "Inter"; color: var(--mut); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Строки районов с «≈ N тыс. курильщиков 21+» — легенде нужно чуть больше места */
+#layer-legend { max-width: 310px; }
