@@ -15,3 +15,7 @@ server/.env
 dataset.json
 uploads/
 *.tmp
+
+# Метрики ub-mode (crapper/dryer/mutator) и покрытие — пересобираются, не коммитим.
+.metrics/
+coverage/

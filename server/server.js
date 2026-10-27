@@ -33,7 +33,9 @@ const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 5;
 const LOGIN_MAX_BUCKETS = 5000;
 const loginAttempts = new Map();
-const STATE_FILE = path.join(__dirname, 'state.json');
+// Папка файлового хранилища (без PostgreSQL). Тесты подставляют временную.
+const DATA_DIR = process.env.HM_DATA_DIR || __dirname;
+const STATE_FILE = path.join(DATA_DIR, 'state.json');
 
 function loadAuthUsers() {
   const raw = process.env.AUTH_USERS_JSON || '';
@@ -408,7 +410,7 @@ function updateRegistry(fn) {
   return run;
 }
 function stateFileFor(key) {
-  return key === 'main' ? STATE_FILE : path.join(__dirname, `state.${key}.json`);
+  return key === 'main' ? STATE_FILE : path.join(DATA_DIR, `state.${key}.json`);
 }
 
 // Разобранные карты держим в памяти только пока их читают. Без этой чистки
@@ -694,7 +696,7 @@ app.get('/state/meta', requireSession, requireMapAccess, async (req, res) => {
 // ---------------------------------------------------------------------------
 const PHOTO_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const PHOTO_MAX_BYTES = 4 * 1024 * 1024;
-const PHOTO_DIR = path.join(__dirname, 'photos');
+const PHOTO_DIR = path.join(DATA_DIR, 'photos');
 
 function photoId(map, buf) {
   return crypto.createHash('sha256').update(map).update('|').update(buf).digest('hex').slice(0, 32);

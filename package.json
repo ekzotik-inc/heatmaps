@@ -5,9 +5,12 @@
   "description": "Heat Map · BR — static front-end (Leaflet). Data server lives in /server.",
   "scripts": {
     "lint": "eslint app.js",
-    "check": "node --check app.js"
+    "check": "node --check app.js",
+    "test": "node --test server/test/*.test.js",
+    "coverage": "c8 --reporter=lcov --reporter=text-summary --include=server/server.js node --test server/test/*.test.js"
   },
   "devDependencies": {
+    "c8": "^10.1.3",
     "eslint": "^8.57.0"
   }
 }
