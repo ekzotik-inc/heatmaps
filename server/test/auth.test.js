@@ -102,7 +102,7 @@ test('login rate limit', async () => {
     const retry = Number(blocked.headers.get('retry-after'));
     assert.ok(retry >= 1 && retry <= 900, `retry after ${retry} s, window is 15 min`);
     assert.equal((await blocked.json()).retryAfter, retry);
-    for (let i = 0; i < 5; i += 1) await login(srv, 'xabby', 'wrong');
+    for (let i = 0; i < 5; i += 1) await login(srv, 'xbby', 'wrong');
     assert.equal((await login(srv, 'abby', USERS.abby.password)).status, 200, 'a similar login has its own bucket');
     assert.equal((await login(srv, 'boss', USERS.boss.password)).status, 200, 'other accounts are not blocked');
     for (let i = 0; i < 2; i += 1) await login(srv, 'kgu', 'wrong');

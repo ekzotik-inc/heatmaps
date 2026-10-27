@@ -107,9 +107,8 @@ function parsePasswordHash(encoded) {
   return { N, R, P, salt, hex };
 }
 
-function verifyPassword(password, encoded) {
-  const cfg = parsePasswordHash(encoded);
-  if (!cfg) return false;
+// cfg — уже разобранный хэш (parsePasswordHash).
+function verifyPassword(password, cfg) {
   try {
     const actual = crypto.scryptSync(String(password || ''), cfg.salt, cfg.hex.length / 2, {
       N: cfg.N, r: cfg.R, p: cfg.P, maxmem: SCRYPT_MAXMEM,
@@ -123,14 +122,14 @@ function verifyPassword(password, encoded) {
 // Unknown usernames must perform the same expensive password work as known
 // usernames. The random hash is generated once per process and never logged or
 // accepted as a real credential.
-const DUMMY_PASSWORD_HASH = hashPassword(crypto.randomBytes(32).toString('hex'));
+const DUMMY_PASSWORD = parsePasswordHash(hashPassword(crypto.randomBytes(32).toString('hex')));
 
 // Учётка по логину и паролю из тела запроса или null. Хэш проверяется всегда,
 // даже для неизвестного логина, — по времени ответа логины не угадать.
 function authenticate(body) {
   const user = AUTH_USERS.get(String(body.username || '').trim().toLowerCase());
-  const passwordHash = user && parsePasswordHash(user.passwordHash) ? user.passwordHash : DUMMY_PASSWORD_HASH;
-  const passwordValid = verifyPassword(String(body.password || ''), passwordHash);
+  const cfg = (user && parsePasswordHash(user.passwordHash)) || DUMMY_PASSWORD;
+  const passwordValid = verifyPassword(String(body.password || ''), cfg);
   return user && SESSION_SECRET && passwordValid ? user : null;
 }
 
@@ -148,9 +147,7 @@ function pruneLoginAttempts(now = Date.now()) {
     if (entry.resetAt <= now) loginAttempts.delete(key);
   }
   while (loginAttempts.size > LOGIN_MAX_BUCKETS) {
-    const first = loginAttempts.keys().next().value;
-    if (first === undefined) break;
-    loginAttempts.delete(first);
+    loginAttempts.delete(loginAttempts.keys().next().value);
   }
 }
 
