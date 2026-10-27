@@ -119,9 +119,10 @@ const PRESET_RAMPS = [
   { id: 'rose',    name: 'Пурпурный' },
   { id: 'eco',     name: 'Светофор' },   // зоны «как на погодной карте»
 ];
-// Цвет приходит из сохранённого состояния и попадает в SVG/стили — только hex.
+// Цвет приходит из сохранённого состояния и попадает в SVG/стили — только hex
+// тех длин, которые понимает CSS: #rgb, #rgba, #rrggbb, #rrggbbaa.
 function safeColor(c, fallback = '#12ADC1') {
-  return typeof c === 'string' && /^#[0-9a-f]{3,8}$/i.test(c) ? c : fallback;
+  return typeof c === 'string' && /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(c) ? c : fallback;
 }
 
 /* Метки на карте: форма + значок, из Map Icons (marker-icons.js, MIT / SIL OFL).
@@ -5501,7 +5502,10 @@ function exportNum(v) {
   const n = +v;
   if (!isFinite(n)) return '';
   if (n === 0) return 0;
-  return Number(n.toPrecision(6));
+  // 6 значащих цифр, но целая часть — всегда целиком: 1 234 567 не должно
+  // выгрузиться как 1 234 570.
+  const intDigits = Math.floor(Math.log10(Math.abs(n))) + 1;
+  return Number(n.toPrecision(Math.min(100, Math.max(6, intDigits))));
 }
 
 /* Процентную колонку в Excel оставляем ЧИСЛОМ и вешаем формат ячейки: так
@@ -5616,7 +5620,7 @@ function layerSheet(kind, layer, recs, tail) {
   return ws;
 }
 function sheetName(name, used) {
-  const base = String(name || 'Слой').replace(/[[\]:*?/\\]/g, ' ').trim().slice(0, 28) || 'Слой';
+  const base = String(name || 'Слой').replace(/[[\]:*?/\\]/g, ' ').trim().slice(0, 28).trim() || 'Слой';
   let out = base, i = 2;
   while (used.has(out.toLowerCase())) out = base.slice(0, 25) + ' ' + (i++);
   used.add(out.toLowerCase());

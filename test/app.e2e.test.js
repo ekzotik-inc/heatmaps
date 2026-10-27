@@ -118,6 +118,19 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     };
   }
 
+  await t.test('helpers give the expected results', async () => {
+    const s = await open('boss');
+    const cases = require('./app-helpers.cases');
+    const got = await s.page.evaluate(exprs => exprs.map(src => {
+      try { return { v: JSON.stringify((0, eval)(src)) }; } catch (e) { return { err: String(e) }; }
+    }), cases.map(c => c[0]));
+    const wrong = cases
+      .map(([expr, want], i) => ({ expr, want, got: got[i].err || (got[i].v === undefined ? undefined : JSON.parse(got[i].v)) }))
+      .filter(c => !require('node:util').isDeepStrictEqual(c.got, JSON.parse(JSON.stringify(c.want))));
+    assert.deepEqual(wrong, []);
+    await s.close();
+  });
+
   await t.test('admin signs in and the map starts without page errors', async () => {
     const s = await open('boss');
     assert.deepEqual(s.errors, []);
