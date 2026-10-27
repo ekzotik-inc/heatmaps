@@ -5927,6 +5927,11 @@ function syncExclHint() {
 }
 
 /* Returns all available source layers for address program (name → key map) */
+// Пустой выбор адрески админу заполняем первым слоем. Зрителю — нет: он
+// открывает карту с чистого листа (applyViewerDefaults), и автовыбор
+// возвращал бы адреску админа.
+function addrAutoPick() { return isAdmin(); }
+
 function addrSrcOptions() {
   const opts = [];
   heatKeys.forEach(k => { if (DS[k]) opts.push({ key: k, name: DS[k].name || k }); });
@@ -5943,7 +5948,7 @@ function buildAddrSrcSel() {
   const opts = addrSrcOptions();
   const valid = new Set(opts.map(o => o.key));
   addrSrcKeys = addrSrcKeys.filter(k => valid.has(k));
-  if (!addrSrcKeys.length && opts.length) addrSrcKeys = [opts[0].key];
+  if (!addrSrcKeys.length && opts.length && addrAutoPick()) addrSrcKeys = [opts[0].key];
 
   if (!opts.length) {
     box.innerHTML = '<div class="rt-excl-empty">Нет слоёв — загрузите на вкладке «Карта» или «Точки».</div>';
@@ -6008,7 +6013,7 @@ function buildAddrRefSel() {
   });
   const valid = new Set(opts.map(o => o.key));
   addrRefKeys = addrRefKeys.filter(k => valid.has(k));
-  if (!addrRefKeys.length && opts.length) addrRefKeys = [opts[0].key];
+  if (!addrRefKeys.length && opts.length && addrAutoPick()) addrRefKeys = [opts[0].key];
 
   if (!opts.length) {
     box.innerHTML = '<div class="rt-excl-empty">Нет точек — загрузите их на вкладке «Точки».</div>';

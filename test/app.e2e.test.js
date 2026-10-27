@@ -15,7 +15,11 @@ try { ({ chromium } = require('playwright')); } catch (_) { chromium = null; }
 
 const ROOT = path.join(__dirname, '..');
 const PROD_SERVER = /window\._HM_SERVER_URL = '[^']*'/;
-const USERS = { boss: { role: 'admin', password: 'boss-pass-123' }, viewer: { role: 'comdep', password: 'viewer-pass-123' } };
+const USERS = {
+  boss: { role: 'admin', password: 'boss-pass-123' },
+  viewer: { role: 'comdep', password: 'viewer-pass-123' },
+  guest: { role: 'other', password: 'guest-pass-123' },
+};
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.svg': 'image/svg+xml' };
 
 function serveStatic() {
@@ -250,6 +254,31 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     assert.equal(recs.length, BIG_RECS.length);
     const wrong = recs.findIndex((r, i) => !isDeepStrictEqual(r, BIG_RECS[i]));
     assert.equal(wrong, -1, wrong < 0 ? '' : `record ${wrong}: ${JSON.stringify(recs[wrong])} vs ${JSON.stringify(BIG_RECS[wrong])}`);
+    assert.deepEqual(s.errors, []);
+    await s.close();
+  });
+
+  // CLAUDE.md, инвариант 15: учётка без админ-прав открывает карту с чистого
+  // листа, но город админа сохраняется.
+  await t.test('a viewer opens the admin\'s map from a clean start', async () => {
+    const s = await open('guest', 'other');
+    const v = await s.page.evaluate(() => {
+      const snap = buildStateSnapshot();
+      return {
+        heat: Object.values(snap.layers).map(l => l.visible), points: snap.customPtLayers.map(l => l.visible),
+        showPointsAll: snap.showPointsAll, addr: [snap.addrSrcKeys, snap.addrRefKeys, snap.rtExclKeys],
+        rt: [snap.rtRadius, snap.rtRadiusOp, snap.rtExclRadius, snap.rtExclOp],
+        districts: [snap.districtsOn, snap.distOpacity], boundSel: snap.boundSel, cities: snap.selectedCities,
+        admin: isAdmin(),
+        // Адреска с пустым выбором считается без ошибок (пустой результат).
+        addrRuns: (() => { try { runAddrFilter(); return true; } catch (e) { return String(e); } })(),
+      };
+    });
+    assert.deepStrictEqual(v, {
+      heat: [false], points: [false], showPointsAll: true, addr: [[], [], []],
+      rt: [1000, 'lte', 150, 'lt'], districts: [true, 0.04], boundSel: [], cities: RICH_STATE.selectedCities,
+      admin: false, addrRuns: true,
+    });
     assert.deepEqual(s.errors, []);
     await s.close();
   });
