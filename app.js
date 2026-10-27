@@ -6739,6 +6739,9 @@ function stateFingerprint(snapshot) {
     layer && layer.intensity, layer && layer.visible,
     layer && layer.ramp, layer && layer.showTags,
     layer && layer.color2, layer && layer.icon, layer && layer.shape, layer && JSON.stringify(layer.fields || []),
+    // Единица («%») меняется перезаливкой того же файла — число записей и
+    // статистика при этом могут остаться прежними.
+    layer && layer.volUnit,
     layer && layer._recordsOmitted,
     layer && layer.recordCount,
     layer && layer.stats,

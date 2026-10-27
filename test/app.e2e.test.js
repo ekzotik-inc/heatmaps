@@ -51,11 +51,49 @@ const DATASET = {
   sticks: { name: 'Стики', recs: [] },
 };
 
+// Карта «other» получает состояние, где каждая настройка не по умолчанию.
+const RICH_STATE = require('./app-state.fixture');
+
 async function seed(api) {
   const res = await api.request('/auth/login', json({ username: 'boss', password: USERS.boss.password }));
   const { token } = await res.json();
   const put = await api.request('/data', json(DATASET, { ...bearer(token), 'X-API-Key': API_KEY }));
   assert.equal(put.status, 200, 'dataset seeded');
+  const state = await api.request('/state?map=other', json(RICH_STATE, { ...bearer(token), 'X-API-Key': API_KEY }));
+  assert.equal(state.status, 200, 'rich state seeded');
+}
+
+// Пути снимка, изменение которых не меняет отпечаток: такая правка не ушла бы
+// на сервер (инвариант 1 в CLAUDE.md). Выполняется в странице.
+function fingerprintBlindSpots() {
+  /* global buildStateSnapshot, stateFingerprint */
+  const META = new Set(['_v', '_app', '_savedAt', '_date', '_lazy']);
+  const snap = buildStateSnapshot();
+  const base = stateFingerprint(snap);
+  const mutate = v => (typeof v === 'number' ? v + 1 : typeof v === 'boolean' ? !v : typeof v === 'string' ? v + 'x'
+    : Array.isArray(v) ? v.concat([v.length && typeof v[0] === 'object' ? { ...v[0] } : 'zz'])
+      : v && typeof v === 'object' ? { ...v, zz: 1 } : 'set');
+  const blind = [];
+  const probe = (path, edit) => { const s = structuredClone(snap); edit(s); if (stateFingerprint(s) === base) blind.push(path); };
+  const nested = ['layers', 'customPtLayers', 'boundLayers'];
+  for (const k of Object.keys(snap)) if (!META.has(k) && !nested.includes(k)) probe(k, s => { s[k] = mutate(s[k]); });
+  // _userData — служебная метка своих слоёв, у сохранённых она всегда true.
+  for (const [key, layer] of Object.entries(snap.layers)) {
+    for (const f of Object.keys(layer)) if (f !== '_userData') probe(`layers.${key}.${f}`, s => { s.layers[key][f] = mutate(layer[f]); });
+  }
+  snap.customPtLayers.forEach((l, i) => {
+    for (const f of Object.keys(l)) probe(`customPtLayers[${i}].${f}`, s => { s.customPtLayers[i][f] = mutate(l[f]); });
+    (l.recs || []).forEach((r, j) => {
+      for (const f of Object.keys(r)) probe(`customPtLayers[${i}].recs[${j}].${f}`, s => { s.customPtLayers[i].recs[j][f] = mutate(r[f]); });
+    });
+  });
+  snap.boundLayers.forEach((l, i) => {
+    for (const f of Object.keys(l)) probe(`boundLayers[${i}].${f}`, s => { s.boundLayers[i][f] = mutate(l[f]); });
+    l.zones.forEach((z, j) => {
+      for (const f of Object.keys(z)) probe(`boundLayers[${i}].zones[${j}].${f}`, s => { s.boundLayers[i].zones[j][f] = mutate(z[f]); });
+    });
+  });
+  return blind;
 }
 
 async function writeLcov(entries, staticBase) {
@@ -128,6 +166,27 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
       .map(([expr, want], i) => ({ expr, want, got: got[i].err || (got[i].v === undefined ? undefined : JSON.parse(got[i].v)) }))
       .filter(c => !require('node:util').isDeepStrictEqual(c.got, JSON.parse(JSON.stringify(c.want))));
     assert.deepEqual(wrong, []);
+    await s.close();
+  });
+
+  await t.test('saved state: every field is restored, reaches the fingerprint and survives re-apply', async () => {
+    const s = await open('boss', 'other');
+    // Записи тепловых слоёв грузятся лениво — сначала дожидаемся их.
+    const snap = await s.page.evaluate(async () => { await ensureLayerRecords(heatKeys); return buildStateSnapshot(); });
+    for (const key of Object.keys(RICH_STATE).filter(k => !k.startsWith('_'))) {
+      assert.deepStrictEqual(snap[key], RICH_STATE[key], `restored ${key}`);
+    }
+    assert.deepEqual(await s.page.evaluate(fingerprintBlindSpots), [], 'every field changes the fingerprint');
+    const again = await s.page.evaluate(() => {
+      const before = buildStateSnapshot();
+      applySnapshot(structuredClone(before));
+      const after = buildStateSnapshot();
+      return { same: stateFingerprint(before) === stateFingerprint(after), before, after };
+    });
+    for (const k of ['_savedAt', '_date']) { delete again.before[k]; delete again.after[k]; }
+    assert.deepStrictEqual(again.after, again.before);
+    assert.equal(again.same, true);
+    assert.deepEqual(s.errors, []);
     await s.close();
   });
 
