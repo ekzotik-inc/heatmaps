@@ -26,9 +26,10 @@ function freePort() {
   });
 }
 
-// users: { login: { role, password } }
-async function startServer(users, extraEnv = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hm-server-test-'));
+// users: { login: { role, password } }. opts.dir — запустить на уже
+// существующей папке данных (проверка перезапуска); её тогда не удаляем.
+async function startServer(users, extraEnv = {}, opts = {}) {
+  const dir = opts.dir || fs.mkdtempSync(path.join(os.tmpdir(), 'hm-server-test-'));
   const port = await freePort();
   const auth = {};
   for (const [name, u] of Object.entries(users)) auth[name] = { role: u.role, passwordHash: hash(u.password) };
@@ -51,11 +52,11 @@ async function startServer(users, extraEnv = {}) {
     base,
     dir,
     log: () => log,
-    request: (p, opts = {}) => fetch(base + p, { redirect: 'manual', ...opts }),
+    request: (p, init = {}) => fetch(base + p, { redirect: 'manual', ...init }),
     stop: () => new Promise(resolve => {
       child.removeAllListeners('exit');
       // Выход по SIGTERM штатный (process.exit) — c8 успевает записать покрытие.
-      child.on('exit', () => { fs.rmSync(dir, { recursive: true, force: true }); resolve(); });
+      child.on('exit', () => { if (!opts.keep && !opts.dir) fs.rmSync(dir, { recursive: true, force: true }); resolve(); });
       child.kill('SIGTERM');
     }),
   };
@@ -67,4 +68,18 @@ function json(body, headers = {}) {
 
 const bearer = token => ({ Authorization: `Bearer ${token}` });
 
-module.exports = { API_KEY, startServer, json, bearer };
+// Вход + готовые заголовки для чтения и записи от имени пользователя.
+async function signIn(srv, username, password) {
+  const res = await srv.request('/auth/login', json({ username, password }));
+  const body = await res.json();
+  if (res.status !== 200) throw new Error(`login ${username}: ${res.status}`);
+  return {
+    ...body,
+    read: bearer(body.token),
+    write: { ...bearer(body.token), 'X-API-Key': body.writeKey || API_KEY },
+    get: p => srv.request(p, { headers: bearer(body.token) }),
+    post: (p, data) => srv.request(p, json(data, { ...bearer(body.token), 'X-API-Key': body.writeKey || API_KEY })),
+  };
+}
+
+module.exports = { API_KEY, startServer, json, bearer, signIn };
