@@ -116,4 +116,16 @@ module.exports = [
   ["[cityRings('Нигде').length, cityRings('Самарканд').length > 0]", [0, true]],
   ['outsideSelectionLabel()', 'за пределами отбора'],
   ["[layerZoneGrad({ ramp: 'warm' })[0.78], layerZoneGrad({ color: '#ff0000', color2: '#0000ff' })[0.55], layerZoneGrad({ color: 'bad' })[0.78]]", ['#e31a1c', '#800080', '#12ADC1']],
+
+  // Выгрузка слоя в Excel загружается обратно тем же слоем (инвариант 14):
+  // строки листа → объекты по заголовкам → тот же разбор, что при загрузке.
+  ["(() => { const layer = { name: 'Продажи', volUnit: '%', fields: ['Канал', 'Пустое поле'] }; const recs = [{ name: 'Точка 1', lat: 41.31, lon: 69.24, vol: 0.356, addr: 'ул. Навои, 1', code: 'C1', hours: '9-18', x: { Канал: 'HoReCa', Сегмент: 'A' } }, { name: 'Точка 2', lat: 41.32, lon: 69.25, vol: 1234567 }]; const [head, ...rows] = layerSheetAoa('heat', layer, recs); const back = toRecs(rows.map(r => Object.fromEntries(head.map((h, i) => [h, r[i]])))); return { head, back, pct: back._percent, fields: back._fields }; })()",
+    { head: ['Название', 'Широта', 'Долгота', 'Значение, %', 'Код', 'Адрес', 'Часы работы', 'Канал', 'Пустое поле', 'Сегмент'],
+      back: [{ name: 'Точка 1', fil: 'Ташкент', lat: 41.31, lon: 69.24, vol: 0.356, addr: 'ул. Навои, 1', code: 'C1', hours: '9-18', x: { Канал: 'HoReCa', Сегмент: 'A' } },
+        { name: 'Точка 2', fil: 'Ташкент', lat: 41.32, lon: 69.25, vol: 1234567 }],
+      pct: true, fields: ['Канал', 'Пустое поле', 'Сегмент'] }],
+  ["(() => { const layer = { name: 'Точки', fields: ['Сегмент'] }; const recs = [{ name: 'A', lat: 41.3, lon: 69.2, addr: 'ул', hours: '9-18', code: 'K1', x: { Сегмент: 'S1' } }, { name: 'B', lat: 41.4, lon: 69.3 }]; const [head, ...rows] = layerSheetAoa('pt', layer, recs); const back = toCustomPtRecs(rows.map(r => Object.fromEntries(head.map((h, i) => [h, r[i]])))); return { head, back, fields: back._fields }; })()",
+    { head: ['Название', 'Широта', 'Долгота', 'Адрес', 'Часы работы', 'Код', 'Сегмент'],
+      back: [{ name: 'A', addr: 'ул', code: 'K1', hours: '9-18', lat: 41.3, lon: 69.2, x: { Сегмент: 'S1' } }, { name: 'B', addr: '', code: '', hours: '', lat: 41.4, lon: 69.3 }],
+      fields: ['Сегмент'] }],
 ];
