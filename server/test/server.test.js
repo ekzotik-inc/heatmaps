@@ -78,9 +78,10 @@ test('server', async t => {
     assert.equal(write.status, 200);
   });
 
-  await t.test('a viewer sees only maps open to its role and gets no write key', async () => {
+  await t.test('a viewer sees only maps open to its role and cannot write the shared map', async () => {
     const { body } = await login(srv, 'viewer');
-    assert.equal(body.writeKey, '');
+    assert.ok(body.writeKey, 'session write key for own data');
+    assert.equal((await srv.request('/state?map=comdep', json({ _app: 'hm-br' }, { ...bearer(body.token), 'X-API-Key': body.writeKey }))).status, 403);
     const maps = (await (await srv.request('/maps', { headers: bearer(body.token) })).json()).maps;
     assert.deepEqual(maps.map(m => m.id), ['comdep']);
     assert.deepEqual(await (await srv.request('/state?map=comdep', { headers: bearer(body.token) })).json(), { empty: true });

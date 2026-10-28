@@ -605,11 +605,13 @@ app.post('/auth/login', express.json({ limit: '32kb' }), rateLimitLogin, (req, r
   setSessionCookie(req, res, token);
   // The token is returned only as an in-memory fallback for the current page.
   // The frontend must never persist it in sessionStorage/localStorage.
-  // writeKey избавляет владельца от ручного ввода ключа записи; выдаётся только
-  // админу и только на эту сессию. Ответ читается лишь с разрешённого origin.
+  // writeKey — защита от подделки запросов с чужих сайтов, привязанная к этой
+  // сессии, а не право: что можно записать, решает роль (общие данные —
+  // только админ, личные границы — любая учётка). Ответ читается лишь с
+  // разрешённого origin.
   res.json({
     ok: true, username: user.username, role: user.role, token,
-    writeKey: user.role === 'admin' ? writeTokenFor(token) : '',
+    writeKey: writeTokenFor(token),
     expiresIn: SESSION_TTL_SEC,
   });
 });
@@ -626,7 +628,7 @@ app.get('/auth/me', requireSession, (req, res) => {
   // иначе владельцу пришлось бы вводить его вручную на каждой перезагрузке.
   res.json({
     ok: true, username: req.user.username, role: req.user.role,
-    writeKey: req.user.role === 'admin' ? writeTokenFor(req.sessionToken) : '',
+    writeKey: writeTokenFor(req.sessionToken),
   });
 });
 
@@ -805,6 +807,76 @@ app.get('/photo/:id', requireSession, async (req, res) => {
   res.setHeader('Content-Type', photo.mime);
   res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
   res.send(photo.buf);
+});
+
+// ---------------------------------------------------------------------------
+// Личные границы. Любая учётка рисует свои зоны на доступной ей карте; их
+// видит только она сама. Хранятся отдельно от состояния карты (ключ
+// ubounds.<карта>.<хэш логина>), поэтому общую карту и границы админа не
+// трогают. Форма — как у boundLayers клиента: [полигон][кольцо][lon, lat].
+// ---------------------------------------------------------------------------
+const OWN_BOUNDS_MAX_LAYERS = 20;
+const OWN_BOUNDS_MAX_VERTICES = 20000;   // как BZ_MAX_VERTICES у клиента
+
+function ownBoundsKey(map, username) {
+  return `ubounds.${map}.${crypto.createHash('sha256').update(username).digest('hex').slice(0, 24)}`;
+}
+const boundId = v => String(v == null ? '' : v).replace(/[^\w-]/g, '').slice(0, 40);
+const boundLayerColor = c => (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c) ? c : '#12ADC1');
+
+function isLonLatRing(r) {
+  return Array.isArray(r) && r.length >= 4 && r.every(c => Array.isArray(c) &&
+    Number.isFinite(+c[0]) && Number.isFinite(+c[1]) && Math.abs(+c[0]) <= 180 && Math.abs(+c[1]) <= 90);
+}
+// Полигоны с годным внешним кольцом; негодные дырки отбрасываются.
+function cleanZoneGeometry(mp) {
+  if (!Array.isArray(mp)) return [];
+  return mp.filter(poly => Array.isArray(poly) && isLonLatRing(poly[0]))
+    .map(poly => poly.filter(isLonLatRing).map(r => r.map(c => [+c[0], +c[1]])));
+}
+function cleanOwnZone(z) {
+  const id = boundId(z && z.id);
+  const mp = cleanZoneGeometry(z && z.mp);
+  return id && mp.length ? { id, name: cleanText(z.name, 60) || 'Зона', mp } : null;
+}
+function cleanOwnLayer(l) {
+  const id = boundId(l && l.id);
+  if (!id) return null;
+  return {
+    id, name: cleanText(l.name, 40) || 'Граница', color: boundLayerColor(l.color), visible: l.visible !== false,
+    zones: (Array.isArray(l.zones) ? l.zones : []).map(cleanOwnZone).filter(Boolean),
+  };
+}
+const vertexCount = layers => layers.reduce((a, l) => a + l.zones.reduce((b, z) =>
+  b + z.mp.reduce((c, poly) => c + poly.reduce((d, r) => d + r.length, 0), 0), 0), 0);
+
+// { layers } или { status, error } — проверка на входе, дальше данным доверяем.
+function parseOwnBounds(body) {
+  const raw = body.layers;
+  if (!Array.isArray(raw)) return { status: 400, error: 'Ожидается список слоёв границ' };
+  if (raw.length > OWN_BOUNDS_MAX_LAYERS) return { status: 400, error: `Не больше ${OWN_BOUNDS_MAX_LAYERS} слоёв границ` };
+  const layers = raw.map(cleanOwnLayer).filter(Boolean);
+  if (vertexCount(layers) > OWN_BOUNDS_MAX_VERTICES) return { status: 413, error: 'Слишком подробные границы' };
+  return { layers };
+}
+
+app.get('/my/bounds', requireSession, requireMapAccess, async (req, res) => {
+  noStore(res);
+  const saved = await readState(ownBoundsKey(req.map, req.user.username));
+  res.json({ layers: (saved && saved.layers) || [] });
+});
+
+app.post('/my/bounds', requireSession, requireMapAccess, async (req, res) => {
+  noStore(res);
+  const parsed = parseOwnBounds(req.body);
+  if (parsed.error) return res.status(parsed.status).json({ error: parsed.error });
+  try {
+    await writeState(ownBoundsKey(req.map, req.user.username), { layers: parsed.layers, _savedAt: new Date().toISOString() });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Own bounds write error:', e.message);
+    res.status(500).json({ error: 'Не удалось сохранить границы' });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -1080,14 +1152,24 @@ function deleteMapPhotoFiles(id) {
   }
 }
 
+// Личные границы карты (ubounds.<карта>.*) уходят вместе с ней.
+function deleteOwnBoundsFiles(id) {
+  const prefix = `state.ubounds.${id}.`;
+  for (const f of fs.readdirSync(DATA_DIR)) {
+    if (f.startsWith(prefix)) fs.rmSync(path.join(DATA_DIR, f), { force: true });
+  }
+}
+
 async function deleteMapStorage(id) {
   if (db) {
-    await db.query('DELETE FROM app_state WHERE key = $1', [id]);
+    await db.query('DELETE FROM app_state WHERE key = $1 OR key LIKE $2', [id, `ubounds.${id}.%`]);
     await db.query('DELETE FROM photos WHERE map = $1', [id]);
   } else {
     try { fs.unlinkSync(stateFileFor(id)); } catch (_) {}
     deleteMapPhotoFiles(id);
+    deleteOwnBoundsFiles(id);
   }
+  for (const key of stateReadCache.keys()) if (key.startsWith(`ubounds.${id}.`)) stateReadCache.delete(key);
   stateReadCache.delete(id);
   clearLayerChunkCache(id);
 }

@@ -82,8 +82,8 @@ test('maps', async t => {
   });
 
   await t.test('only the owner with a write key can create maps', async () => {
-    assert.equal(com.writeKey, '', 'viewer gets no write key');
-    assert.equal((await com.post('/maps', { name: 'X' })).status, 403, 'even the static key does not make a viewer an owner');
+    assert.ok(com.writeKey, 'viewers get a session write key too (for their own boundaries)');
+    assert.equal((await com.post('/maps', { name: 'X' })).status, 403, 'a write key does not make a viewer an owner');
     assert.equal((await srv.request('/maps', json({ name: 'X' }, bearer(boss.token)))).status, 401);
   });
 
