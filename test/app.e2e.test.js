@@ -155,7 +155,9 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
       route.fulfill({ response: res, body: (await res.text()).replace(PROD_SERVER, `window._HM_SERVER_URL = '${api.base}'`) });
     });
     await page.coverage.startJSCoverage({ resetOnNavigation: false });
-    await page.goto(`${web.base}/index.html`);
+    // Не ждём 'load': он зависит от внешних CDN (шрифты); форму и готовность
+    // карты тест ждёт сам.
+    await page.goto(`${web.base}/index.html`, { waitUntil: 'domcontentloaded' });
     await page.fill('#auth-user', user);
     await page.fill('#auth-pass', USERS[user].password);
     await page.click('#auth-submit');
@@ -285,6 +287,49 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     });
     assert.deepEqual(s.errors, []);
     await s.close();
+  });
+
+  // Решение владельца 28.10.2026: границы может создавать любая учётка; у
+  // зрителя они личные — видны только ему и сохраняются между входами.
+  await t.test('a viewer creates own boundaries that persist and stay private', async () => {
+    const s = await open('guest', 'other');
+    const ui = await s.page.evaluate(() => {
+      const box = document.getElementById('bounds-ui');
+      return {
+        sections: [...box.querySelectorAll('.bz-sec')].map(e => e.textContent),
+        ownerLayerEditable: !!box.querySelector('[data-bzdel="bl1"], [data-bzdraw="bl1"], [data-bzren="bl1"]'),
+        canCreate: !!box.querySelector('[data-bzcreate]'),
+      };
+    });
+    assert.deepEqual(ui, { sections: ['Границы владельца карты', 'Мои границы', 'Яркость заливки'], ownerLayerEditable: false, canCreate: true });
+    await s.page.click('#bounds-tab');
+    await s.page.click('#bounds-ui [data-bzcreate]');
+    await s.page.fill('#bz-new-name', 'мой район');
+    await s.page.click('#bounds-ui [data-bznew="draw"]');
+    const saved = s.page.waitForResponse(r => r.url().includes('/my/bounds') && r.request().method() === 'POST');
+    await s.page.evaluate(() => bdrawAddZone([L.latLng(41.30, 69.20), L.latLng(41.30, 69.25), L.latLng(41.33, 69.25)]));
+    assert.equal((await saved).status(), 200);
+    const editable = await s.page.evaluate(() => {
+      const l = boundLayers.find(x => x.own);
+      return { name: l.name, zones: l.zones.length, del: !!document.querySelector(`#bounds-ui [data-bzdel="${l.id}"]`) };
+    });
+    assert.deepEqual(editable, { name: 'Мой район', zones: 1, del: true });
+    assert.deepEqual(s.errors, []);
+    await s.close();
+
+    const again = await open('guest', 'other');
+    await again.page.waitForFunction(() => boundLayers.some(l => l.own));
+    const kept = await again.page.evaluate(() => {
+      const own = boundLayers.filter(l => l.own);
+      return { own: own.map(l => [l.name, l.zones.length]), inSnapshot: buildStateSnapshot().boundLayers.map(l => l.name) };
+    });
+    assert.deepEqual(kept, { own: [['Мой район', 1]], inSnapshot: ['Мои зоны'] }, 'kept after sign-in, never in the map state');
+    await again.close();
+
+    const boss = await open('boss', 'other');
+    const adminSees = await boss.page.evaluate(() => boundLayers.map(l => l.name));
+    assert.deepEqual(adminSees, ['Мои зоны'], 'the admin does not see a viewer\'s boundaries');
+    await boss.close();
   });
 
   await t.test('admin signs in and the map starts without page errors', async () => {

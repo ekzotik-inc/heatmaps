@@ -1151,3 +1151,22 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   - server: no test covered that an empty `SESSION_SECRET` rejects tokens,
     legacy-token revocation, malformed stored hashes — now covered.
 - Cache version `20261027k`.
+
+## 2026-10-28 — Every account can create boundaries
+
+- Owner: let everyone create boundaries, not only the admin. Owner's choice:
+  a viewer's boundaries are personal (only that account sees them) and are
+  kept between sign-ins.
+- Server: `GET/POST /my/bounds?map=` — personal boundary layers stored apart
+  from the map state (`ubounds.<map>.<sha256(login)>`), map access required,
+  checked on entry (ids, names, colours, rings in range, ≤ 20 layers,
+  ≤ 20 000 vertices), removed with the map. Every account now gets a session
+  write key (CSRF protection); shared data still needs the admin role.
+- Client: «Границы» shows the map owner's boundaries read-only and a «Мои
+  границы» section with «Новая граница», drawing, GeoJSON import, rename,
+  colour and delete. Edit rights per layer (`canEditBound`). Personal layers
+  never enter the map snapshot; the admin does not see them.
+- Tests: own-bounds server suite (files + PostgreSQL) and a browser test —
+  a viewer creates a zone, it is saved, survives a new sign-in, stays out of
+  the map state and is invisible to the admin.
+- Cache version `20261028a`. Server changed — Render redeploys on push.

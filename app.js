@@ -876,10 +876,8 @@ function boundsChanged(save = true, rebuildUI = true) {
   if (rebuildUI) buildBoundsUI(); else syncBoundsStatus();
   updateLayerLegend();   // блок «районы» в легенде — площади выбранных
   syncBoundsBadge();
-  if (save) saveState();
+  if (save) { saveState(); scheduleOwnBoundsSave(); }
 }
-// Состояние приходит с сервера/из файла — проверяем форму и числа. Чего нет
-// в состоянии — сбрасываем: иначе при смене карты остались бы зоны прошлой.
 // Кольцо зоны: не меньше 4 точек [lon, lat] в пределах ±180 / ±90.
 function isLonLatRing(r) {
   return Array.isArray(r) && r.length >= 4 && r.every(c => Array.isArray(c) &&
@@ -889,20 +887,74 @@ function isLonLatRing(r) {
 function cleanPolygon(poly, coord) {
   return Array.isArray(poly) && isLonLatRing(poly[0]) ? poly.filter(isLonLatRing).map(r => r.map(coord)) : null;
 }
+// Состояние приходит с сервера/из файла — проверяем форму и числа. Чего нет
+// в состоянии — сбрасываем: иначе при смене карты остались бы зоны прошлой.
 function cleanMp(mp) {
   if (!Array.isArray(mp)) return null;
   const out = mp.map(poly => cleanPolygon(poly, c => [+c[0], +c[1]])).filter(Boolean);
   return out.length ? out : null;
 }
 const bzId = v => String(v == null ? '' : v).replace(/[^\w-]/g, '').slice(0, 40);
-function applyBoundsState(st) {
-  distOpacity = typeof st.distOpacity === 'number' && Number.isFinite(st.distOpacity) ? Math.min(.6, Math.max(.04, st.distOpacity)) : .16;
-  boundLayers = (Array.isArray(st.boundLayers) ? st.boundLayers : []).filter(l => l && bzId(l.id)).map(l => ({
+// Слой границ из состояния или с сервера: форма, цвет, геометрия; null — негоден.
+function cleanBoundLayer(l) {
+  if (!l || !bzId(l.id)) return null;
+  return {
     id: bzId(l.id), name: String(l.name || 'Граница').slice(0, 40), color: boundColor(l.color), visible: l.visible !== false,
     zones: (Array.isArray(l.zones) ? l.zones : [])
       .map(z => z && { id: bzId(z.id), name: String(z.name || 'Зона').slice(0, 60), mp: cleanMp(z.mp) })
       .filter(z => z && z.id && z.mp),
-  }));
+  };
+}
+
+/* Личные границы (решение владельца, 28.10.2026): создавать границы может
+   любая учётка. Границы админа — часть карты, их видят все. Границы зрителя
+   — личные: видны только ему, хранятся на сервере отдельно от карты
+   (/my/bounds) и переживают перезаход. В boundLayers лежат вместе с
+   границами карты с пометкой own; в состояние карты не попадают. */
+let _ownBounds = [];           // личные слои в том виде, как сохранены на сервере
+let _ownBoundsMap = null;      // карта, для которой их уже запросили
+let _ownSaveTimer = 0;
+function canEditBound(l) { return isAdmin() ? !l.own : !!l.own; }
+function attachOwnBounds() {
+  boundLayers = boundLayers.filter(l => !l.own).concat(_ownBounds.map(l => ({ ...l, own: true })));
+  bzInvalidate();
+}
+async function loadOwnBounds() {
+  if (isAdmin() || !SERVER_URL || !currentMap || _ownBoundsMap === currentMap) return;
+  const mapId = currentMap;
+  _ownBoundsMap = mapId;
+  try {
+    const res = await authFetch(SERVER_URL + '/my/bounds?map=' + encodeURIComponent(mapId), { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(await serverErrorText(res));
+    const j = await res.json();
+    if (mapId !== currentMap) return;
+    _ownBounds = (Array.isArray(j.layers) ? j.layers : []).map(cleanBoundLayer).filter(Boolean);
+    attachOwnBounds();
+    boundsChanged(false);
+  } catch (e) {
+    console.warn('Own boundaries load failed:', e.message);
+  }
+}
+function scheduleOwnBoundsSave() {
+  if (isAdmin()) return;
+  const next = boundLayers.filter(l => l.own).map(({ own, ...l }) => l);
+  if (JSON.stringify(next) === JSON.stringify(_ownBounds)) return;
+  _ownBounds = next;
+  clearTimeout(_ownSaveTimer);
+  _ownSaveTimer = setTimeout(saveOwnBounds, 800);
+}
+async function saveOwnBounds() {
+  try {
+    const res = await postJson(SERVER_URL + '/my/bounds?map=' + encodeURIComponent(currentMap), { layers: _ownBounds }, 30000);
+    if (!res.ok) throw new Error(await serverErrorText(res));
+  } catch (e) {
+    toast('Границы не сохранились: ' + e.message, 'err', 5000);
+  }
+}
+
+function applyBoundsState(st) {
+  distOpacity = typeof st.distOpacity === 'number' && Number.isFinite(st.distOpacity) ? Math.min(.6, Math.max(.04, st.distOpacity)) : .16;
+  boundLayers = (Array.isArray(st.boundLayers) ? st.boundLayers : []).map(cleanBoundLayer).filter(Boolean);
   // Старые написания районов в сохранённом выборе («Сергилийский») — к официальным.
   const dIdx = districtBoundsIndex();
   boundSel = (Array.isArray(st.boundSel) ? st.boundSel.filter(k => typeof k === 'string').slice(0, 500) : [])
@@ -3771,8 +3823,9 @@ function geojsonZones(gj) {
   });
   return out;
 }
+// Лимит вершин — на то, что учётка сохраняет сама: карту (админ) или личные слои.
 function boundVertexCount() {
-  return boundLayers.reduce((a, l) => a + l.zones.reduce((b, z) => b + z.mp.reduce((c, poly) => c + poly.reduce((d, r) => d + r.length, 0), 0), 0), 0);
+  return boundLayers.filter(canEditBound).reduce((a, l) => a + l.zones.reduce((b, z) => b + z.mp.reduce((c, poly) => c + poly.reduce((d, r) => d + r.length, 0), 0), 0), 0);
 }
 function importGeojsonInto(layerId, file) {
   const l = boundLayers.find(x => x.id === layerId);
@@ -3836,7 +3889,7 @@ function buildBoundsUI() {
   const zoneRow = (key, name, color, delKey) => `
     <div class="bz-zone${sel.has(key) ? ' on' : ''}">
       <button type="button" class="bz-zbtn" data-bzsel="${esc(key)}" aria-pressed="${sel.has(key)}" title="${sel.has(key) ? 'Снять выбор' : 'Выбрать'}"><i style="--c:${color}"></i><span>${esc(name)}</span></button>
-      ${delKey ? `<button type="button" class="lc-ic admin-only" data-bzzdel="${esc(delKey)}" title="Удалить зону" aria-label="Удалить зону «${esc(name)}»">${uiIcon('x', 13)}</button>` : ''}
+      ${delKey ? `<button type="button" class="lc-ic" data-bzzdel="${esc(delKey)}" title="Удалить зону" aria-label="Удалить зону «${esc(name)}»">${uiIcon('x', 13)}</button>` : ''}
     </div>`;
   const allSel = keys => keys.length && keys.every(k => sel.has(k));
   const pickAll = (id, keys) => keys.length ? `<button type="button" class="lc-link" data-bzall="${esc(id)}">${allSel(keys) ? 'Снять выбор' : 'Выбрать все'}</button>` : '<span></span>';
@@ -3864,58 +3917,62 @@ function buildBoundsUI() {
     </div>`;
   }
 
-  html += `<div class="bz-sec">Свои границы</div>`;
-  if (!boundLayers.length) {
-    html += `<div class="lc-empty">${admin
-      ? 'Своих границ пока нет. Создайте слой и нарисуйте зоны на карте или загрузите GeoJSON.'
-      : 'Своих границ пока нет — их добавляет владелец карты.'}</div>`;
-  }
-  boundLayers.forEach(l => {
+  const layerCard = l => {
     const id = esc(l.id);
+    const edit = canEditBound(l);
     const keys = l.zones.map(z => l.id + ':' + z.id);
     const open = _bzOpen.has(l.id);
     const nSel = keys.filter(k => sel.has(k)).length;
     const col = boundColor(l.color);
-    html += `
+    return `
     <div class="lc bz-layer${open ? ' open' : ''}${l.visible ? '' : ' off'}" data-bzid="${id}">
       <div class="lc-row">
-        <label class="lc-sw bz-sw" style="background:${col}" title="${admin ? 'Цвет границы' : ''}">${admin ? `<input type="color" data-bzcol="${id}" value="${col}" aria-label="Цвет границы «${esc(l.name)}»"/>` : ''}</label>
-        <div class="lc-name"><span class="lc-t" title="${esc(l.name)}">${esc(l.name)}</span>${admin ? `<button type="button" class="lc-ic lc-ren" data-bzren="${id}" title="Переименовать" aria-label="Переименовать «${esc(l.name)}»">${uiIcon('pencil', 13)}</button>` : ''}</div>
+        <label class="lc-sw bz-sw" style="background:${col}" title="${edit ? 'Цвет границы' : ''}">${edit ? `<input type="color" data-bzcol="${id}" value="${col}" aria-label="Цвет границы «${esc(l.name)}»"/>` : ''}</label>
+        <div class="lc-name"><span class="lc-t" title="${esc(l.name)}">${esc(l.name)}</span>${edit ? `<button type="button" class="lc-ic lc-ren" data-bzren="${id}" title="Переименовать" aria-label="Переименовать «${esc(l.name)}»">${uiIcon('pencil', 13)}</button>` : ''}</div>
         <div class="cbx sm${l.visible ? ' on' : ''}" data-bzvis="${id}" role="switch" tabindex="0" aria-checked="${l.visible}" aria-label="Показывать «${esc(l.name)}» на карте"></div>
       </div>
       <div class="lc-sub">
         <span class="lc-n" data-bzmore="${id}">${zonesWord(l.zones.length)}${nSel ? ` · выбрано ${nSel}` : ''}</span>
         <div class="lc-tools">
-          <button type="button" class="lc-ic admin-only" data-bzdraw="${id}" title="Нарисовать зону на карте" aria-label="Нарисовать зону">${uiIcon('plus')}</button>
-          <button type="button" class="lc-ic admin-only" data-bzup="${id}" title="Загрузить зоны из GeoJSON" aria-label="Загрузить GeoJSON">${uiIcon('upload')}</button>
-          <button type="button" class="lc-ic lc-del admin-only" data-bzdel="${id}" title="Удалить слой границ" aria-label="Удалить слой границ">${uiIcon('trash')}</button>
+          ${edit ? `<button type="button" class="lc-ic" data-bzdraw="${id}" title="Нарисовать зону на карте" aria-label="Нарисовать зону">${uiIcon('plus')}</button>
+          <button type="button" class="lc-ic" data-bzup="${id}" title="Загрузить зоны из GeoJSON" aria-label="Загрузить GeoJSON">${uiIcon('upload')}</button>
+          <button type="button" class="lc-ic lc-del" data-bzdel="${id}" title="Удалить слой границ" aria-label="Удалить слой границ">${uiIcon('trash')}</button>` : ''}
           <button type="button" class="lc-ic lc-more" data-bzmore="${id}" title="Список зон" aria-label="Список зон" aria-expanded="${open}">${uiIcon('chevron')}</button>
         </div>
       </div>
       <div class="lc-body">
-        ${l.zones.length ? `<div class="bz-zones">${l.zones.map(z => zoneRow(l.id + ':' + z.id, z.name, col, l.id + ':' + z.id)).join('')}</div>`
-          : `<div class="bz-none">Зон нет — нажмите «+» и обведите участок на карте.</div>`}
+        ${l.zones.length ? `<div class="bz-zones">${l.zones.map(z => zoneRow(l.id + ':' + z.id, z.name, col, edit ? l.id + ':' + z.id : '')).join('')}</div>`
+          : `<div class="bz-none">Зон нет${edit ? ' — нажмите «+» и обведите участок на карте' : ''}.</div>`}
         <div class="lc-foot"><span></span>${pickAll(l.id, keys)}</div>
       </div>
     </div>`;
-  });
+  };
+  const mapLayers = boundLayers.filter(l => !l.own), ownLayers = boundLayers.filter(l => l.own);
   if (admin) {
-    if (_bzCreating) {
-      const c = boundColor(_bzNewColor || SWATCHES[(boundLayers.length + 6) % SWATCHES.length]);
-      _bzNewColor = c;
-      html += `
-      <div class="bz-new">
-        <input type="text" id="bz-new-name" maxlength="40" placeholder="Название, например «Зона доставки»"/>
-        <div class="pp2-sw">${SWATCHES.map(s => `<button type="button" class="sw${s.toLowerCase() === c.toLowerCase() ? ' on' : ''}" data-bzsw="${s}" style="background:${s}" aria-label="Цвет ${s}"></button>`).join('')}</div>
-        <div class="bz-new-act">
-          <button type="button" class="create-btn" data-bznew="draw">${uiIcon('pencil', 14)} Нарисовать на карте</button>
-          <button type="button" class="create-btn ghost" data-bznew="file">${uiIcon('upload', 14)} Из GeoJSON</button>
-          <button type="button" class="lc-link" data-bznew="cancel">Отмена</button>
-        </div>
-      </div>`;
-    } else {
-      html += `<button type="button" class="create-btn ghost bz-add" data-bzcreate>${uiIcon('plus', 14)} Новая граница</button>`;
-    }
+    html += `<div class="bz-sec">Свои границы</div>`;
+    if (!mapLayers.length) html += `<div class="lc-empty">Своих границ пока нет. Создайте слой и нарисуйте зоны на карте или загрузите GeoJSON — их увидят все, кому открыта карта.</div>`;
+    html += mapLayers.map(layerCard).join('');
+  } else {
+    if (mapLayers.length) html += `<div class="bz-sec">Границы владельца карты</div>` + mapLayers.map(layerCard).join('');
+    html += `<div class="bz-sec">Мои границы</div>`;
+    if (!ownLayers.length) html += `<div class="lc-empty">Своих границ пока нет. Нарисуйте зону на карте или загрузите GeoJSON — их видите только вы.</div>`;
+    html += ownLayers.map(layerCard).join('');
+  }
+  if (_bzCreating) {
+    const c = boundColor(_bzNewColor || SWATCHES[(boundLayers.length + 6) % SWATCHES.length]);
+    _bzNewColor = c;
+    html += `
+    <div class="bz-new">
+      <input type="text" id="bz-new-name" maxlength="40" placeholder="Название, например «Зона доставки»"/>
+      <div class="pp2-sw">${SWATCHES.map(s => `<button type="button" class="sw${s.toLowerCase() === c.toLowerCase() ? ' on' : ''}" data-bzsw="${s}" style="background:${s}" aria-label="Цвет ${s}"></button>`).join('')}</div>
+      <div class="bz-new-act">
+        <button type="button" class="create-btn" data-bznew="draw">${uiIcon('pencil', 14)} Нарисовать на карте</button>
+        <button type="button" class="create-btn ghost" data-bznew="file">${uiIcon('upload', 14)} Из GeoJSON</button>
+        <button type="button" class="lc-link" data-bznew="cancel">Отмена</button>
+      </div>
+    </div>`;
+  } else {
+    html += `<button type="button" class="create-btn ghost bz-add" data-bzcreate>${uiIcon('plus', 14)} Новая граница</button>`;
   }
 
   const op = Math.min(.6, Math.max(.04, +distOpacity || .16));
@@ -4014,7 +4071,9 @@ function buildBoundsUI() {
     if (act === 'cancel') { _bzCreating = false; buildBoundsUI(); return; }
     const nameEl = box.querySelector('#bz-new-name');
     const name = capFirst(nameEl && nameEl.value) || `Граница ${boundLayers.length + 1}`;
-    const l = { id: 'b' + Date.now().toString(36), name: name.slice(0, 40), color: boundColor(_bzNewColor), visible: true, zones: [] };
+    // Админ рисует границы карты, остальные — личные (own, префикс «u»).
+    const own = !admin;
+    const l = { id: (own ? 'u' : 'b') + Date.now().toString(36), name: name.slice(0, 40), color: boundColor(_bzNewColor), visible: true, zones: [], ...(own ? { own } : {}) };
     boundLayers.push(l);
     _bzCreating = false;
     _bzOpen.add(l.id);
@@ -5365,7 +5424,7 @@ function buildStateSnapshot() {
     ...plainSettings(),
     recBasis, heatBoost,
     // «Границы»: свои зоны (геометрия — только контуры), выбор и режим отбора.
-    distOpacity, boundLayers: boundLayers.map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, zones: l.zones })),
+    distOpacity, boundLayers: boundLayers.filter(l => !l.own).map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, zones: l.zones })),
     boundSel: boundSel.slice(), boundFilter: { ...boundFilter },
     showPointsAll, heatStyle,
     cityScope,
@@ -8042,7 +8101,8 @@ function applyViewerDefaults() {
   districtsOn = COUNTRY === 'uz';
   distOpacity = .04;
   boundSel = [];
-  bzInvalidate();
+  attachOwnBounds();
+  loadOwnBounds();
 }
 // Город, выбранный админом: рамка по его настоящим границам (если они есть),
 // иначе по центру. Без выбранного города — по видимым точкам, как раньше.
