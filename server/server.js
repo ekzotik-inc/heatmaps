@@ -818,9 +818,12 @@ app.get('/photo/:id', requireSession, async (req, res) => {
 const OWN_BOUNDS_MAX_LAYERS = 20;
 const OWN_BOUNDS_MAX_VERTICES = 20000;   // как BZ_MAX_VERTICES у клиента
 
-function ownBoundsKey(map, username) {
-  return `ubounds.${map}.${crypto.createHash('sha256').update(username).digest('hex').slice(0, 24)}`;
+// Личные данные учётки на карте: kind — ubounds (границы) или ulayers (слои).
+const OWN_KINDS = ['ubounds', 'ulayers'];
+function ownKey(kind, map, username) {
+  return `${kind}.${map}.${crypto.createHash('sha256').update(username).digest('hex').slice(0, 24)}`;
 }
+const ownBoundsKey = (map, username) => ownKey('ubounds', map, username);
 const boundId = v => String(v == null ? '' : v).replace(/[^\w-]/g, '').slice(0, 40);
 const boundLayerColor = c => (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c) ? c : '#12ADC1');
 
@@ -876,6 +879,51 @@ app.post('/my/bounds', requireSession, requireMapAccess, async (req, res) => {
   } catch (e) {
     console.error('Own bounds write error:', e.message);
     res.status(500).json({ error: 'Не удалось сохранить границы' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Личные слои: тепловые слои и слои точек, которые учётка загрузила сама.
+// Видны только ей, лежат отдельно от состояния карты (ulayers.<карта>.<хэш>).
+// Форма — как в снимке клиента: heatKeys + layers{key: слой} + points[].
+// Содержимое слоёв клиент проверяет при загрузке (applyHeatLayerLook,
+// cleanPointLayer); сервер следит за формой и объёмом.
+// ---------------------------------------------------------------------------
+const OWN_LAYERS_MAX = 20;            // тепловых и столько же слоёв точек
+const OWN_LAYERS_MAX_RECORDS = 200000;
+
+const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
+const recCount = l => (Array.isArray(l.recs) ? l.recs.length : 0);
+
+// { heatKeys, layers, points } или { status, error }.
+function parseOwnLayers(body) {
+  const { heatKeys, layers, points } = body;
+  if (!Array.isArray(heatKeys) || !isObj(layers) || !Array.isArray(points)) return { status: 400, error: 'Неверный формат слоёв' };
+  if (heatKeys.length > OWN_LAYERS_MAX || points.length > OWN_LAYERS_MAX) return { status: 400, error: `Не больше ${OWN_LAYERS_MAX} слоёв каждого вида` };
+  if (!heatKeys.every(k => typeof k === 'string' && /^custom_[\w-]{1,60}$/.test(k) && isObj(layers[k]))) return { status: 400, error: 'Неверные ключи слоёв' };
+  if (!points.every(l => isObj(l) && typeof l.id === 'string' && l.id)) return { status: 400, error: 'Неверные слои точек' };
+  const own = { heatKeys, layers: Object.fromEntries(heatKeys.map(k => [k, layers[k]])), points };
+  const total = heatKeys.reduce((a, k) => a + recCount(own.layers[k]), 0) + points.reduce((a, l) => a + recCount(l), 0);
+  if (total > OWN_LAYERS_MAX_RECORDS) return { status: 413, error: `Слишком много точек: не больше ${OWN_LAYERS_MAX_RECORDS.toLocaleString('ru-RU')}` };
+  return { own };
+}
+
+app.get('/my/layers', requireSession, requireMapAccess, async (req, res) => {
+  noStore(res);
+  const saved = await readState(ownKey('ulayers', req.map, req.user.username));
+  res.json(saved ? { heatKeys: saved.heatKeys, layers: saved.layers, points: saved.points } : { heatKeys: [], layers: {}, points: [] });
+});
+
+app.post('/my/layers', requireSession, requireMapAccess, async (req, res) => {
+  noStore(res);
+  const parsed = parseOwnLayers(req.body);
+  if (parsed.error) return res.status(parsed.status).json({ error: parsed.error });
+  try {
+    await writeState(ownKey('ulayers', req.map, req.user.username), { ...parsed.own, _savedAt: new Date().toISOString() });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Own layers write error:', e.message);
+    res.status(500).json({ error: 'Не удалось сохранить слои' });
   }
 });
 
@@ -1152,24 +1200,25 @@ function deleteMapPhotoFiles(id) {
   }
 }
 
-// Личные границы карты (ubounds.<карта>.*) уходят вместе с ней.
-function deleteOwnBoundsFiles(id) {
-  const prefix = `state.ubounds.${id}.`;
+// Личные данные карты (ubounds.<карта>.*, ulayers.<карта>.*) уходят вместе с ней.
+const ownPrefixes = id => OWN_KINDS.map(kind => `${kind}.${id}.`);
+function deleteOwnFiles(id) {
+  const prefixes = ownPrefixes(id).map(p => 'state.' + p);
   for (const f of fs.readdirSync(DATA_DIR)) {
-    if (f.startsWith(prefix)) fs.rmSync(path.join(DATA_DIR, f), { force: true });
+    if (prefixes.some(p => f.startsWith(p))) fs.rmSync(path.join(DATA_DIR, f), { force: true });
   }
 }
 
 async function deleteMapStorage(id) {
   if (db) {
-    await db.query('DELETE FROM app_state WHERE key = $1 OR key LIKE $2', [id, `ubounds.${id}.%`]);
+    await db.query('DELETE FROM app_state WHERE key = $1 OR key LIKE ANY($2::text[])', [id, ownPrefixes(id).map(p => p + '%')]);
     await db.query('DELETE FROM photos WHERE map = $1', [id]);
   } else {
     try { fs.unlinkSync(stateFileFor(id)); } catch (_) {}
     deleteMapPhotoFiles(id);
-    deleteOwnBoundsFiles(id);
+    deleteOwnFiles(id);
   }
-  for (const key of stateReadCache.keys()) if (key.startsWith(`ubounds.${id}.`)) stateReadCache.delete(key);
+  for (const key of stateReadCache.keys()) if (ownPrefixes(id).some(p => key.startsWith(p))) stateReadCache.delete(key);
   stateReadCache.delete(id);
   clearLayerChunkCache(id);
 }

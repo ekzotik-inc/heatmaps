@@ -332,6 +332,48 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     await boss.close();
   });
 
+  // Решение владельца 03.11.2026: любая учётка загружает свои слои и точки,
+  // видит их только она.
+  await t.test('a viewer uploads own layers and points that persist and stay private', async () => {
+    const s = await open('guest', 'other');
+    const upload = async (createBtn, name, csv) => {
+      await s.page.click(createBtn);
+      await s.page.fill('#cl-name', name);
+      await s.page.click('#cl-create');
+      const [chooser] = await Promise.all([s.page.waitForEvent('filechooser'), s.page.click('#cl-upload')]);
+      const saved = s.page.waitForResponse(r => r.url().includes('/my/layers') && r.request().method() === 'POST', { timeout: 30000 });
+      await chooser.setFiles({ name: 'data.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+      assert.equal((await saved).status(), 200);
+    };
+    await s.page.waitForFunction(() => _ownLayersReady === currentMap);
+    await upload('#add-layer-btn', 'мои продажи', 'Название,Широта,Долгота,Значение\nА,41.3,69.2,5\nБ,41.31,69.21,3\n');
+    await s.page.click('.side-tab[data-tab="tab-points"]');
+    await upload('#add-custom-pt-btn', 'мои киоски', 'Название,Широта,Долгота\nКиоск,41.305,69.205\n');
+    assert.deepEqual(s.errors, []);
+    await s.close();
+
+    const again = await open('guest', 'other');
+    await again.page.waitForFunction(() => _ownLayersReady === currentMap && customPtLayers.some(l => l.own));
+    const kept = await again.page.evaluate(() => {
+      const snap = buildStateSnapshot();
+      return {
+        heat: heatKeys.filter(k => DS[k].own).map(k => [DS[k].name, DS[k].recs.length]),
+        points: customPtLayers.filter(l => l.own).map(l => [l.name, l.recs.length]),
+        inMapSnapshot: [Object.values(snap.layers).map(l => l.name), snap.customPtLayers.map(l => l.name)],
+      };
+    });
+    assert.deepEqual(kept, {
+      heat: [['Мои продажи', 2]], points: [['Мои киоски', 1]],
+      inMapSnapshot: [['Продажи'], ['Мои точки']],
+    });
+    await again.close();
+
+    const boss = await open('boss', 'other');
+    const adminSees = await boss.page.evaluate(() => [heatKeys.map(k => DS[k].name), customPtLayers.map(l => l.name)]);
+    assert.deepEqual(adminSees, [['Продажи'], ['Мои точки']], 'the admin does not see a viewer\'s layers');
+    await boss.close();
+  });
+
   await t.test('admin signs in and the map starts without page errors', async () => {
     const s = await open('boss');
     assert.deepEqual(s.errors, []);

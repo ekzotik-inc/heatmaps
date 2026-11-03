@@ -952,6 +952,81 @@ async function saveOwnBounds() {
   }
 }
 
+/* Личные слои (решение владельца 03.11.2026): любая учётка загружает свои
+   тепловые слои и слои точек; видит их только она. Хранятся на сервере
+   отдельно от карты (/my/layers), у админа своих слоёв нет — его слои и есть
+   карта. В DS / customPtLayers лежат с пометкой own, в снимок карты не
+   попадают. Править слой (загрузка, шаблон, удаление) — canEditLayer. */
+let _ownLayers = { heatKeys: [], layers: {}, points: [] };
+let _ownLayersMap = null;     // карта, для которой уже запросили
+let _ownLayersReady = null;   // карта, для которой свои слои загружены
+let _ownLayersSaved = '';
+let _ownLayersTimer = 0;
+function canEditLayer(x) { return isAdmin() ? !x.own : !!x.own; }
+function ownMark() { return isAdmin() ? {} : { own: true }; }
+function ownLayersPayload() {
+  const keys = heatKeys.filter(k => DS[k] && DS[k].own);
+  return {
+    heatKeys: keys,
+    layers: Object.fromEntries(keys.map(k => [k, heatLayerSnapshot(k, DS[k])])),
+    points: customPtLayers.filter(l => l.own).map(pointLayerSnapshot),
+  };
+}
+// Вернуть свои слои в DS / customPtLayers после применения состояния карты
+// (оно заменяет heatKeys и customPtLayers целиком).
+function attachOwnLayers() {
+  const own = structuredClone(_ownLayers);
+  const index = buildPtIndex(ourPts());
+  own.heatKeys.forEach(k => {
+    const sv = own.layers[k];
+    if (!sv || !k.startsWith('custom_')) return;
+    if (!DS[k]) DS[k] = { key: k };
+    applyHeatLayerLook(DS[k], sv);
+    applyHeatLayerRecords(DS[k], sv, false, index);
+    DS[k].own = true;
+    if (!heatKeys.includes(k)) heatKeys.push(k);
+  });
+  customPtLayers = customPtLayers.filter(l => !l.own)
+    .concat(own.points.map(l => ({ ...cleanPointLayer(l), own: true })));
+}
+async function loadOwnLayers() {
+  if (isAdmin() || !SERVER_URL || !currentMap || _ownLayersMap === currentMap) return;
+  const mapId = currentMap;
+  _ownLayersMap = mapId;
+  try {
+    const res = await authFetch(SERVER_URL + '/my/layers?map=' + encodeURIComponent(mapId), { signal: AbortSignal.timeout(30000) });
+    if (!res.ok) throw new Error(await serverErrorText(res));
+    const j = await res.json();
+    if (mapId !== currentMap) return;
+    _ownLayers = { heatKeys: Array.isArray(j.heatKeys) ? j.heatKeys : [], layers: j.layers || {}, points: Array.isArray(j.points) ? j.points : [] };
+    _ownLayersSaved = JSON.stringify(_ownLayers);
+    _ownLayersReady = mapId;
+    attachOwnLayers();
+    reenrichAll();
+    buildHeatUI(); buildCustomPtUI(); buildAddrSrcSel(); buildRecBasisSel(); buildRtExclUI();
+    renderHeat(); renderCustomPoints(); renderRecs();
+  } catch (e) {
+    console.warn('Own layers load failed:', e.message);
+  }
+}
+function scheduleOwnLayersSave() {
+  if (isAdmin() || _ownLayersReady !== currentMap) return;   // до загрузки своих не перетираем их
+  const next = ownLayersPayload();
+  const json = JSON.stringify(next);
+  if (json === _ownLayersSaved) return;
+  _ownLayers = next;
+  clearTimeout(_ownLayersTimer);
+  _ownLayersTimer = setTimeout(async () => {
+    try {
+      const res = await postJson(SERVER_URL + '/my/layers?map=' + encodeURIComponent(currentMap), next, 60000);
+      if (!res.ok) throw new Error(await serverErrorText(res));
+      _ownLayersSaved = json;
+    } catch (e) {
+      toast('Свои слои не сохранились: ' + e.message, 'err', 5000);
+    }
+  }, 800);
+}
+
 function applyBoundsState(st) {
   distOpacity = typeof st.distOpacity === 'number' && Number.isFinite(st.distOpacity) ? Math.min(.6, Math.max(.04, st.distOpacity)) : .16;
   boundLayers = (Array.isArray(st.boundLayers) ? st.boundLayers : []).map(cleanBoundLayer).filter(Boolean);
@@ -2137,7 +2212,7 @@ function buildHeatUI() {
   if (!heatKeys.length) {
     el.innerHTML = `<div class="lc-empty">${isAdmin()
       ? 'Слоёв пока нет. Нажмите «Создать слой», задайте поля, скачайте шаблон Excel и загрузите его заполненным.'
-      : 'Слоёв пока нет — их добавляет владелец карты.'}</div>`;
+      : 'Слоёв пока нет. «Создать слой» — свой слой из Excel, его видите только вы.'}</div>`;
   }
   heatKeys.forEach(k => {
     const d = DS[k];
@@ -2157,9 +2232,9 @@ function buildHeatUI() {
         <span class="lc-n">${n.toLocaleString('ru-RU')} ${plural(n, 'точка', 'точки', 'точек')}${fields.length ? ' · ' + fields.length + ' ' + plural(fields.length, 'поле', 'поля', 'полей') : ''}</span>
         <div class="lc-tools">
           <button type="button" class="lc-ic lc-xls" title="Выгрузить точки слоя в Excel — те же колонки, что в шаблоне, со всеми вашими полями" aria-label="Выгрузить в Excel">${uiIcon('sheet')}</button>
-          <button type="button" class="lc-ic lc-tpl admin-only" title="Скачать шаблон Excel для этого слоя" aria-label="Скачать шаблон">${uiIcon('download')}</button>
-          <button type="button" class="lc-ic lc-up admin-only" title="Загрузить или обновить данные из файла" aria-label="Загрузить данные">${uiIcon('upload')}</button>
-          <button type="button" class="lc-ic lc-del admin-only" title="Удалить слой" aria-label="Удалить слой">${uiIcon('trash')}</button>
+          ${canEditLayer(d) ? `<button type="button" class="lc-ic lc-tpl" title="Скачать шаблон Excel для этого слоя" aria-label="Скачать шаблон">${uiIcon('download')}</button>
+          <button type="button" class="lc-ic lc-up" title="Загрузить или обновить данные из файла" aria-label="Загрузить данные">${uiIcon('upload')}</button>
+          <button type="button" class="lc-ic lc-del" title="Удалить слой" aria-label="Удалить слой">${uiIcon('trash')}</button>` : ''}
           <button type="button" class="lc-ic lc-more" title="Настройки слоя" aria-label="Настройки слоя" aria-expanded="${open}">${uiIcon('chevron')}</button>
         </div>
       </div>
@@ -2235,14 +2310,14 @@ function buildHeatUI() {
       inp.addEventListener('blur', () => commit(true));
     });
 
-    card.querySelector('.lc-tpl').addEventListener('click', () => downloadLayerTemplate('heat', d));
+    card.querySelector('.lc-tpl')?.addEventListener('click', () => downloadLayerTemplate('heat', d));
     card.querySelector('.lc-xls').addEventListener('click', () => exportLayerXlsx('heat', k));
-    card.querySelector('.lc-up').addEventListener('click', () => {
+    card.querySelector('.lc-up')?.addEventListener('click', () => {
       _heatUpdateTarget = k;
       document.getElementById('heat-update-file').click();
     });
-    card.querySelector('.lc-del').addEventListener('click', () => {
-      if (!confirm(`Удалить слой «${d.name}»? Его точки будут удалены с карты у всех пользователей.`)) return;
+    card.querySelector('.lc-del')?.addEventListener('click', () => {
+      if (!confirm(d.own ? `Удалить свой слой «${d.name}»?` : `Удалить слой «${d.name}»? Его точки будут удалены с карты у всех пользователей.`)) return;
       if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
       delete DS[k];
       heatKeys = heatKeys.filter(x => x !== k);
@@ -2305,7 +2380,7 @@ function clCreate() {
     const color = LAYER_PALETTE.find(c => !used.includes(c)) || LAYER_PALETTE[heatKeys.length % LAYER_PALETTE.length];
     const key = 'custom_' + Date.now();
     DS[key] = { key, name, color, color2: '', ramp: 'custom', icon: DEFAULT_PIN_ICON, shape: DEFAULT_SHAPE, fields: _cl.fields.slice(),
-      opacity: 1, intensity: 1, visible: true, volUnit: '', recs: [], stats: statsOf([]), _userData: true, _recordsLoaded: true };
+      opacity: 1, intensity: 1, visible: true, volUnit: '', recs: [], stats: statsOf([]), _userData: true, _recordsLoaded: true, ...ownMark() };
     heatKeys.push(key);
     _lyrOpen.add(key);
     _cl.key = key;
@@ -2315,7 +2390,7 @@ function clCreate() {
     const used = customPtLayers.map(l => String(l.color).toLowerCase());
     const color = SWATCHES.find(c => !used.includes(c.toLowerCase())) || SWATCHES[customPtLayers.length % SWATCHES.length];
     customPtLayers.push({ id, name, color, icon: DEFAULT_PIN_ICON, fields: _cl.fields.slice(), visible: true, shape: DEFAULT_SHAPE, size: 32, opacity: 1,
-      radiusOn: false, radiusM: 1500, radiusColor: color, radiusOpacity: 0.15, recs: [], _group: null });
+      radiusOn: false, radiusM: 1500, radiusColor: color, radiusOpacity: 0.15, recs: [], _group: null, ...ownMark() });
     _cptOpen.add(id);
     _cl.key = id;
     buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); saveState();
@@ -4732,7 +4807,7 @@ function buildCustomPtUI() {
   if (!customPtLayers.length) {
     box.innerHTML = `<div class="lc-empty">${isAdmin()
       ? 'Слоёв точек пока нет. «Создать слой» — для точек из Excel, «Добавить точку вручную» — по одной с фото.'
-      : 'Слоёв точек пока нет — их добавляет владелец карты.'}</div>`;
+      : 'Слоёв точек пока нет. «Создать слой» — свои точки из Excel, их видите только вы.'}</div>`;
     return;
   }
 
@@ -4758,9 +4833,9 @@ function buildCustomPtUI() {
             ? `<button type="button" class="lc-ic admin-only" data-cptaddpt="${id}" title="Добавить точку вручную" aria-label="Добавить точку">${uiIcon('plus')}</button>
                ${n ? `<button type="button" class="lc-ic" data-rpexport="${id}" title="Выгрузить точки слоя в Excel" aria-label="Выгрузить в Excel">${uiIcon('download')}</button>` : ''}`
             : `${n ? `<button type="button" class="lc-ic" data-cptxls="${id}" title="Выгрузить точки слоя в Excel — те же колонки, что в шаблоне, со всеми вашими полями" aria-label="Выгрузить в Excel">${uiIcon('sheet')}</button>` : ''}
-               <button type="button" class="lc-ic admin-only" data-cpttpl="${id}" title="Скачать шаблон Excel для этого слоя" aria-label="Скачать шаблон">${uiIcon('download')}</button>
-               <button type="button" class="lc-ic admin-only" data-cptup="${id}" title="Загрузить или обновить точки из файла" aria-label="Загрузить данные">${uiIcon('upload')}</button>`}
-          <button type="button" class="lc-ic lc-del admin-only" data-cpdel="${id}" title="Удалить слой" aria-label="Удалить слой">${uiIcon('trash')}</button>
+               ${canEditLayer(l) ? `<button type="button" class="lc-ic" data-cpttpl="${id}" title="Скачать шаблон Excel для этого слоя" aria-label="Скачать шаблон">${uiIcon('download')}</button>
+               <button type="button" class="lc-ic" data-cptup="${id}" title="Загрузить или обновить точки из файла" aria-label="Загрузить данные">${uiIcon('upload')}</button>` : ''}`}
+          ${canEditLayer(l) ? `<button type="button" class="lc-ic lc-del" data-cpdel="${id}" title="Удалить слой" aria-label="Удалить слой">${uiIcon('trash')}</button>` : ''}
           <button type="button" class="lc-ic lc-more" data-cpmore="${id}" title="Настройки слоя" aria-label="Настройки слоя" aria-expanded="${open}">${uiIcon('chevron')}</button>
         </div>
       </div>
@@ -5413,11 +5488,12 @@ function pointLayerSnapshot(l) {
 
 function buildStateSnapshot() {
   const layers = {};
-  heatKeys.forEach(k => { if (DS[k]) layers[k] = heatLayerSnapshot(k, DS[k]); });
+  const mapKeys = heatKeys.filter(k => DS[k] && !DS[k].own);
+  mapKeys.forEach(k => { layers[k] = heatLayerSnapshot(k, DS[k]); });
   return {
     _v: 1, _app: 'hm-br', _savedAt: new Date().toISOString(), _date: new Date().toISOString().slice(0, 10),
     _lazy: heatKeys.some(k => DS[k] && DS[k]._recordsLoaded === false),
-    heatKeys, layers, incCol: { ...incCol },
+    heatKeys: mapKeys, layers, incCol: { ...incCol },
     selectedCities: selectedCities.slice(),
     // Keep the legacy field for older consumers; it represents only a single selection.
     city: selectedCities.length === 1 ? selectedCities[0] : '',
@@ -5429,7 +5505,7 @@ function buildStateSnapshot() {
     showPointsAll, heatStyle,
     cityScope,
     addrSrcKeys, addrRefKeys, rtExclKeys,
-    customPtLayers: customPtLayers.map(pointLayerSnapshot),
+    customPtLayers: customPtLayers.filter(l => !l.own).map(pointLayerSnapshot),
   };
 }
 
@@ -7022,6 +7098,7 @@ function doSave() {
   // fallback. Full layer records are versioned in IndexedDB instead.
   try { localStorage.setItem(storeKey(), JSON.stringify(manifest)); } catch (e) {}
   cacheStateSnapshot(snapshot);
+  scheduleOwnLayersSave();
   // Local cache writes are still allowed, but identical admin state is not
   // posted again. This removes duplicate autosave transactions after startup,
   // repeated clicks and delegated sidebar events.
@@ -7352,7 +7429,7 @@ function wireEvents() {
     const color = $('cpt-modal-color').value;
     $('cpt-modal-overlay').classList.remove('open');
     const id = 'cpt_' + Date.now();
-    customPtLayers.push({ id, name, color, visible: true, shape: 'teardrop', size: 30, opacity: 1, radiusOn: false, radiusM: 1500, radiusColor: color, radiusOpacity: 0.15, recs: [], _group: null });
+    customPtLayers.push({ id, name, color, visible: true, shape: 'teardrop', size: 30, opacity: 1, radiusOn: false, radiusM: 1500, radiusColor: color, radiusOpacity: 0.15, recs: [], _group: null, ...ownMark() });
     buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); saveState();
     toast(`Слой «${name}» создан — загрузите данные`, 'ok');
   });
@@ -8103,6 +8180,8 @@ function applyViewerDefaults() {
   boundSel = [];
   attachOwnBounds();
   loadOwnBounds();
+  attachOwnLayers();
+  loadOwnLayers();
 }
 // Город, выбранный админом: рамка по его настоящим границам (если они есть),
 // иначе по центру. Без выбранного города — по видимым точкам, как раньше.

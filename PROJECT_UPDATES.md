@@ -1170,3 +1170,20 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   a viewer creates a zone, it is saved, survives a new sign-in, stays out of
   the map state and is invisible to the admin.
 - Cache version `20261028a`. Server changed — Render redeploys on push.
+
+## 2026-11-03 — Every account can upload its own layers and points
+
+- Owner: let each user upload own layers and points, visible only to them.
+- Server: `GET/POST /my/layers?map=` — personal heat layers and point layers
+  stored apart from the map (`ulayers.<map>.<sha256(login)>`), map access and
+  the session write key required; shape and volume checked (≤ 20 heat + 20
+  point layers, ≤ 200 000 points); removed with the map.
+- Client: viewers now see «Создать слой» on the Map and Points tabs; for
+  their own layers — template, upload/update from Excel/CSV, delete. Own
+  layers are marked `own`, never enter the map snapshot, are saved after
+  every change and restored on sign-in. The admin does not see them. Manual
+  points with photos stay admin-only (the button is hidden for viewers).
+- Tests: server suite (files + PostgreSQL) and a browser test — a viewer
+  creates a heat layer and a point layer through the UI, uploads CSV, signs
+  in again and finds them; the admin does not see them.
+- Cache version `20261103a`. Server changed — Render redeploys on push.

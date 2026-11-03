@@ -1653,8 +1653,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 }
 
 /* ── VIEWER ROLE — hide all upload / create / delete / data controls ───── */
-body.viewer #add-layer-btn,
-body.viewer #add-custom-pt-btn,
+body.viewer #add-manual-pt-btn,
 body.viewer .lyr-del,
 body.viewer .cpt-del,
 body.viewer #tab-data,
