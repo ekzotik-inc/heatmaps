@@ -1336,3 +1336,28 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   own upload), manual write key, «Сохранить базу на сервере».
 - Tests: 113/113 (server on files and PostgreSQL, browser). Cache
   `20261106e`. Server changed — Render redeploys on push.
+
+## 2026-11-06 — Admin page made easy to use
+
+- Owner: «проработай админ панель. Сделай её удобной и френдли. Очень тяжело
+  с ней работать».
+- Menu on the left (a scrolling strip on a phone) with counts: Главная,
+  Учётки, Карты, Слои и точки, Роли и права, Сервер.
+- **Главная**: greeting, quick actions (new account, new map, shared layer
+  from Excel), tiles for accounts, maps, layers/points and server memory
+  with a plain status («в норме» / «много занято» / «почти на пределе»).
+- **Учётки**: search and role filter; each row says what maps the account
+  sees and what it may do. A click opens a side panel: role as cards with
+  what each role opens, maps «Как у роли» / «Выбрать вручную», rights with
+  descriptions, password with «Придумать», delete. A new account is created
+  in the same panel; the password is shown once to pass on.
+- **Карты**: rows with roles as chips; «Настроить» opens the panel: name,
+  icon, country, roles, backup download/upload, delete (type the name).
+- **Слои и точки**: sources on the left (each map, shared, personal); the
+  points of a layer open in a wide panel with search and a bottom bar
+  «Выбрано: N — Удалить выбранные».
+- **Роли и права**: a card per role with its maps and switches.
+- **Сервер**: memory, storage, photos; free space; stored data grouped
+  (maps, personal data, service records folded away).
+- Own confirmation window instead of browser confirm/prompt.
+- Tests: browser 17/17. Cache `20261106f`. Server unchanged.

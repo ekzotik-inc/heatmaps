@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.1/maplibre-gl.css"/>
-  <link rel="stylesheet" href="style.css?v=20261106e"/>
+  <link rel="stylesheet" href="style.css?v=20261106f"/>
 </head>
 <body>
 
@@ -589,7 +589,7 @@
 <!-- Границы районов Ташкента (OSM) и их население (Нацкомстат, 01.01.2026) -->
 <script src="district-bounds.js?v=20261027a"></script>
 <!-- Общие помощники карты и страницы «Админ» (admin.html) -->
-<script src="common.js?v=20261106e"></script>
+<script src="common.js?v=20261106f"></script>
 <!-- PapaParse + XLSX (~900 KB) are loaded on demand (ensureSheetLibs) only when
      a file is uploaded or exported — not at initial page load. -->
 <script>
@@ -614,7 +614,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20261106e'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20261106f'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();

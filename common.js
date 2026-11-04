@@ -2,7 +2,7 @@
    экранирование, иконки Lucide, значки карт, уведомления, разбор Excel/CSV
    в записи слоёв. Подключается раньше app.js / admin.js. Правишь файл —
    подними его ?v= в обоих HTML. */
-/* exported capFirst, esc, plural, uiIcon, toCustomPtRecs, mergeFields, toast,
+/* exported UI_ICONS, capFirst, esc, plural, uiIcon, toCustomPtRecs, mergeFields, toast,
    LAYER_PALETTE, ensureSheetLibs, parseSheet, toRecs, slimRecs, MAP_ICONS, mapIconHtml, sharedOnMap, fmtBytes */
 /* global cityOf */
 'use strict';

@@ -181,7 +181,7 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     const page = await ctx.newPage();
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
-    page.on('dialog', d => (d.type() === 'prompt' ? d.accept(page._promptAnswer || '') : d.accept()));
+    page.on('dialog', d => d.accept());
     await page.route(`${web.base}/admin.html`, async route => {
       const res = await route.fetch();
       route.fulfill({ response: res, body: (await res.text()).replace(PROD_SERVER, `window._HM_SERVER_URL = '${api.base}'`) });
@@ -402,20 +402,24 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
   // карт и права учёток.
   await t.test('admin uploads a shared layer and sets account rights on the admin page', async () => {
     const adm = await openAdmin('#layers');
-    await adm.page.waitForSelector('#ly-list .ad-group');
-    await adm.page.fill('#sh-name', 'общий рынок');
-    const [chooser] = await Promise.all([adm.page.waitForEvent('filechooser'), adm.page.click('#sh-upload')]);
-    const saved = adm.page.waitForResponse(r => r.url().endsWith('/shared/layers/one') && r.request().method() === 'POST');
+    const { page } = adm;
+    await page.waitForSelector('#l-src [data-src]');
+    await page.click('#l-shared');
+    await page.fill('#s-name', 'общий рынок');
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('#s-pick')]);
+    const saved = page.waitForResponse(r => r.url().endsWith('/shared/layers/one') && r.request().method() === 'POST');
     await chooser.setFiles({ name: 'm.csv', mimeType: 'text/csv', buffer: Buffer.from('Название,Широта,Долгота,Значение\nА,41.3,69.2,5\nБ,42.8,74.6,3\n') });
     assert.equal((await saved).status(), 200);
     // Права: guest получает ручные точки и теряет свои слои.
-    await adm.page.click('.ad-nav a[data-sec="users"]');
-    await adm.page.waitForSelector('[data-permuser="guest"][data-perm="manual"]');
+    await page.click('.a-nav a[data-sec="users"]');
+    await page.click('[data-user="guest"]');
     for (const perm of ['manual', 'layers']) {
-      const done = adm.page.waitForResponse(r => r.url().endsWith('/auth/perms'));
-      await adm.page.click(`[data-permuser="guest"][data-perm="${perm}"]`);
+      await page.waitForSelector(`[data-uperm="${perm}"]`);
+      const done = page.waitForResponse(r => r.url().endsWith('/auth/perms'));
+      const fresh = page.waitForResponse(r => r.url().endsWith('/auth/users'));
+      await page.click(`[data-uperm="${perm}"]`);
       assert.equal((await done).status(), 200);
-      await adm.page.waitForResponse(r => r.url().endsWith('/auth/users'));
+      await fresh;
     }
     assert.deepEqual(adm.errors, []);
     await adm.close();
@@ -509,22 +513,26 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
   // Владелец 06.11.2026: создавать новые учётки на странице «Админ».
   await t.test('admin creates and deletes an account on the admin page', async () => {
     const boss = await openAdmin('#users');
-    await boss.page.waitForSelector('[data-pwtoggle="viewer"]');
-    await boss.page.click('#acc-form-group summary');
-    await boss.page.fill('#acc-name', 'Anna.K');
-    await boss.page.selectOption('#acc-role', 'comdep');
-    await boss.page.fill('#acc-pass', 'anna-pass-123');
-    const created = boss.page.waitForResponse(r => r.url().endsWith('/auth/users/create'));
-    await boss.page.click('#acc-create');
+    const { page } = boss;
+    await page.click('#u-new');
+    await page.fill('#n-name', 'Anna.K');
+    await page.fill('#n-pass', 'anna-pass-123');
+    await page.check('input[name="n-role"][value="comdep"]');
+    const created = page.waitForResponse(r => r.url().endsWith('/auth/users/create'));
+    await page.click('#n-create');
     assert.equal((await created).status(), 200);
+    await page.click('#a-dlg-ok');   // «Учётка создана»: логин и пароль для человека
     const canLogin = async () => (await api.request('/auth/login', json({ username: 'anna.k', password: 'anna-pass-123' }))).status;
     assert.equal(await canLogin(), 200, 'the new account signs in');
-    await boss.page.waitForSelector('[data-userdel="anna.k"]');
-    const deleted = boss.page.waitForResponse(r => r.url().endsWith('/auth/users/delete'));
-    await boss.page.click('[data-userdel="anna.k"]');
+    await page.waitForSelector('#u-del');
+    await page.click('#u-del');
+    const deleted = page.waitForResponse(r => r.url().endsWith('/auth/users/delete'));
+    await page.click('#a-dlg-ok');
     assert.equal((await deleted).status(), 200);
     assert.equal(await canLogin(), 401, 'deleted account cannot sign in');
-    assert.equal(await boss.page.isVisible('[data-userdel="viewer"]'), false, 'accounts from Render have no delete button');
+    await page.click('[data-user="viewer"]');
+    await page.waitForSelector('#u-pw');
+    assert.equal(await page.isVisible('#u-del'), false, 'accounts from Render have no delete button');
     assert.deepEqual(boss.errors, []);
     await boss.close();
   });
@@ -575,21 +583,26 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
 
   await t.test('admin chooses which maps an account sees', async () => {
     const boss = await openAdmin('#users');
-    const box = id => `[data-umuser="viewer"][value="${id}"]`;
-    await boss.page.waitForSelector(box('kg'));
-    assert.deepEqual([await boss.page.isChecked(box('comdep')), await boss.page.isChecked(box('kg'))], [true, false], 'by role at first');
+    const { page } = boss;
+    await page.click('[data-user="viewer"]');
     const viewerMaps = async () => {
       const { token } = await (await api.request('/auth/login', json({ username: 'viewer', password: USERS.viewer.password }))).json();
       return (await (await api.request('/maps', { headers: bearer(token) })).json()).maps.map(m => m.id);
     };
-    let done = boss.page.waitForResponse(r => r.url().endsWith('/auth/maps'));
-    await boss.page.check(box('kg'));
-    assert.equal((await done).status(), 200);
+    const saved = async action => {
+      const done = page.waitForResponse(r => r.url().endsWith('/auth/maps'));
+      const fresh = page.waitForResponse(r => r.url().endsWith('/auth/users'));
+      await action();
+      assert.equal((await done).status(), 200);
+      await fresh;
+    };
+    assert.equal(await page.isChecked('input[name="u-mapmode"][value="role"]'), true, 'by role at first');
+    await saved(() => page.check('input[name="u-mapmode"][value="custom"]'));
+    await page.waitForSelector('[data-umap][value="kg"]');
+    assert.deepEqual([await page.isChecked('[data-umap][value="comdep"]'), await page.isChecked('[data-umap][value="kg"]')], [true, false], 'starts from the role maps');
+    await saved(() => page.check('[data-umap][value="kg"]'));
     assert.deepEqual(await viewerMaps(), ['comdep', 'kg']);
-    await boss.page.waitForSelector('[data-umreset="viewer"]');
-    done = boss.page.waitForResponse(r => r.url().endsWith('/auth/maps'));
-    await boss.page.click('[data-umreset="viewer"]');
-    assert.equal((await done).status(), 200);
+    await saved(() => page.check('input[name="u-mapmode"][value="role"]'));
     assert.deepEqual(await viewerMaps(), ['comdep'], 'back to the role');
     assert.deepEqual(boss.errors, []);
     await boss.close();
@@ -605,32 +618,37 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
 
     const adm = await openAdmin('#layers');
     const { page } = adm;
-    await page.selectOption('#ly-filter', 'map:comdep');
-    await page.click('[data-lyact="points"][data-key="cpt_del"]');
-    await page.waitForSelector('#pt-table [data-pti]');
-    assert.deepEqual(await page.$$eval('#pt-table tbody tr td:nth-child(2)', tds => tds.map(td => td.textContent)), ['Киоск 1']);
-    await page.check('#pt-table [data-pti="0"]');
+    await page.click('[data-src="map:comdep"]');
+    await page.click('[data-lpts][data-key="cpt_del"]');
+    await page.waitForSelector('#p-table [data-pti]');
+    assert.deepEqual(await page.$$eval('#p-table tbody tr td:nth-child(2)', tds => tds.map(td => td.textContent)), ['Киоск 1']);
+    await page.check('#p-table [data-pti="0"]');
+    await page.click('#p-del');
     let done = page.waitForResponse(r => r.url().endsWith('/admin/points/delete'));
-    await page.click('#pt-del');
+    await page.click('#a-dlg-ok');
     assert.equal((await done).status(), 200);
-    page._promptAnswer = 'тепло новое';
+    await page.keyboard.press('Escape');
+    await page.click('[data-lren][data-key="custom_del"]');
+    await page.fill('#a-dlg-input', 'тепло новое');
     done = page.waitForResponse(r => r.url().endsWith('/admin/layers/update'));
-    await page.click('[data-lyact="rename"][data-key="custom_del"]');
+    await page.click('#a-dlg-ok');
     assert.equal((await done).status(), 200);
     const st = await api.readStored('comdep');
     assert.deepEqual([st.customPtLayers.find(l => l.id === 'cpt_del').recs.length, st.layers.custom_del.name], [0, 'Тепло новое']);
 
-    await page.click('.ad-nav a[data-sec="rules"]');
+    await page.click('.a-nav a[data-sec="roles"]');
     await page.waitForSelector('[data-rule="kg"][data-perm="manual"]');
     done = page.waitForResponse(r => r.url().endsWith('/auth/rules') && r.request().method() === 'POST');
     await page.click('[data-rule="kg"][data-perm="manual"]');
     assert.equal((await done).status(), 200);
     await page.waitForSelector('[data-rule="kg"][data-perm="manual"][aria-checked="true"]');
 
-    await page.click('.ad-nav a[data-sec="overview"]');
-    await page.waitForSelector('#ov-keys td');
-    assert.ok((await page.textContent('#ov-keys')).includes('Карта «Com Dep»'));
-    assert.ok((await page.textContent('#ov-cards')).includes('Память сервера'));
+    await page.click('.a-nav a[data-sec="server"]');
+    await page.waitForSelector('#s-body .a-row');
+    assert.ok((await page.textContent('#s-body')).includes('Карта «Com Dep»'));
+    assert.ok((await page.textContent('#s-body')).includes('Память сервера'));
+    await page.click('.a-nav a[data-sec="home"]');
+    await page.waitForSelector('.a-stat');
     assert.deepEqual(adm.errors, []);
     await adm.close();
   });

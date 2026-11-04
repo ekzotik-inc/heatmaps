@@ -5,178 +5,74 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
   <title>Админ · Тепловая карта</title>
-  <meta name="theme-color" content="#12ADC1"/>
+  <meta name="theme-color" content="#097382"/>
   <meta name="color-scheme" content="light"/>
   <meta name="robots" content="noindex, nofollow"/>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23097382'/%3E%3Cpath d='M12 4.5 5.5 7v5c0 4 3 6.5 6.5 7.5 3.5-1 6.5-3.5 6.5-7.5V7z' fill='none' stroke='%23ffffff' stroke-width='1.8' stroke-linejoin='round'/%3E%3C/svg%3E"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"/>
-  <link rel="stylesheet" href="style.css?v=20261106e"/>
-  <link rel="stylesheet" href="admin.css?v=20261106e"/>
+  <link rel="stylesheet" href="style.css?v=20261106f"/>
+  <link rel="stylesheet" href="admin.css?v=20261106f"/>
 </head>
 <body class="admin-page">
 
-<noscript><div class="ad-note">Для работы страницы нужен JavaScript.</div></noscript>
+<noscript><div class="a-note">Для работы страницы нужен JavaScript.</div></noscript>
 
 <!-- Вход: та же сессия, что у карты; если её нет — войти здесь -->
-<div id="ad-login" class="ad-login" hidden>
-  <form class="auth-card" id="ad-login-form" autocomplete="on">
-    <h1 class="auth-title">Админ панель</h1>
-    <p class="auth-sub" id="ad-login-sub">Войдите под учёткой владельца</p>
-    <div class="auth-field">
-      <label for="ad-user">Логин</label>
-      <input type="text" id="ad-user" autocomplete="username" required/>
-    </div>
-    <div class="auth-field">
-      <label for="ad-pass">Пароль</label>
-      <input type="password" id="ad-pass" autocomplete="current-password" required/>
-    </div>
-    <button type="submit" class="auth-btn" id="ad-login-btn">Войти</button>
-    <div class="ad-err" id="ad-login-err" role="alert"></div>
-    <a class="lnk ad-tomap" href="index.html">Вернуться к карте</a>
+<div id="ad-login" class="a-login" hidden>
+  <form class="a-login-card" id="ad-login-form" autocomplete="on">
+    <span class="a-logo" aria-hidden="true"></span>
+    <h1>Админ панель</h1>
+    <p id="ad-login-sub">Войдите под учёткой владельца</p>
+    <label class="a-field"><span>Логин</span><input type="text" class="mf-input" id="ad-user" autocomplete="username" required/></label>
+    <label class="a-field"><span>Пароль</span><input type="password" class="mf-input" id="ad-pass" autocomplete="current-password" required/></label>
+    <button type="submit" class="a-btn wide" id="ad-login-btn">Войти</button>
+    <div class="a-err" id="ad-login-err" role="alert"></div>
+    <a class="a-link" href="index.html">Вернуться к карте</a>
   </form>
 </div>
 
-<div id="ad-app" class="ad-app" hidden>
-  <header class="ad-top">
-    <div class="ad-brand">
-      <span class="ad-brand-ic" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
-      <div><h1>Админ панель</h1><p id="ad-who"></p></div>
+<div id="ad-app" class="a-shell" hidden>
+  <aside class="a-side" id="a-side">
+    <div class="a-brand"><span class="a-logo" aria-hidden="true"></span><div><b>Админ панель</b><small>Тепловая карта</small></div></div>
+    <nav class="a-nav" id="a-nav" aria-label="Разделы"></nav>
+    <div class="a-side-foot">
+      <a class="a-btn ghost wide" href="index.html" id="a-tomap"></a>
+      <div class="a-me"><span class="a-av" id="a-me-av" aria-hidden="true"></span><div><b id="a-me-name"></b><small>Админ</small></div>
+        <button type="button" class="a-icon-btn" id="ad-logout" title="Выйти" aria-label="Выйти"></button></div>
     </div>
-    <div class="ad-top-acts">
-      <a class="lyr-act ad-link" href="index.html">К карте</a>
-      <button type="button" class="lyr-act" id="ad-logout">Выйти</button>
-    </div>
-  </header>
-
-  <nav class="ad-nav" aria-label="Разделы">
-    <a href="#overview" data-sec="overview">Сервер и память</a>
-    <a href="#maps" data-sec="maps">Карты</a>
-    <a href="#layers" data-sec="layers">Слои и точки</a>
-    <a href="#users" data-sec="users">Учётки</a>
-    <a href="#rules" data-sec="rules">Роли и правила</a>
-  </nav>
-
-  <main class="ad-main">
-    <!-- СЕРВЕР И ПАМЯТЬ -->
-    <section class="ad-sec" id="sec-overview" hidden>
-      <div class="ad-sec-head"><h2>Сервер и память</h2><button type="button" class="lyr-act" data-refresh="overview">Обновить</button></div>
-      <div class="ad-cards" id="ov-cards"></div>
-      <div class="ad-acts">
-        <button type="button" class="lyr-act" id="ov-prune">Удалить ненужные фото</button>
-        <button type="button" class="lyr-act" id="ov-cache">Очистить кэш сервера</button>
-      </div>
-      <p class="ad-hint">Ненужные фото — снимки, на которые больше не ссылается ни одна точка (точку удалили, а фото осталось). Кэш — разобранные карты в памяти сервера: он сам очищается каждые 30 секунд, кнопка нужна, если память на пределе.</p>
-      <h3 class="ad-h3">Что лежит в хранилище</h3>
-      <div class="ad-table-wrap"><table class="ad-table" id="ov-keys"></table></div>
-      <p class="ad-hint">Удалить отсюда можно только личные данные учёток (их свои слои и границы) и записи карт, которых уже нет. Карты удаляются в разделе «Карты».</p>
-    </section>
-
-    <!-- КАРТЫ -->
-    <section class="ad-sec" id="sec-maps" hidden>
-      <div class="ad-sec-head"><h2>Карты</h2><button type="button" class="lyr-act" data-refresh="maps">Обновить</button></div>
-      <div id="maps-list"></div>
-      <details class="adv-group map-form-group ad-form" id="map-form-group">
-        <summary><span id="mf-title">＋ Новая карта</span><span class="chev">›</span></summary>
-        <div class="adv-body map-form">
-          <label class="mf-label" for="mf-name">Название</label>
-          <input type="text" class="mf-input" id="mf-name" maxlength="60" placeholder="Например: Самарканд — HoReCa" autocomplete="off"/>
-          <label class="mf-label" for="mf-desc">Описание <span>— видно при выборе карты</span></label>
-          <input type="text" class="mf-input" id="mf-desc" maxlength="120" placeholder="Для кого эта карта" autocomplete="off"/>
-          <div class="mf-label">Значок</div>
-          <div class="mf-icons" id="mf-icons"></div>
-          <label class="mf-label" for="mf-country">Страна</label>
-          <select id="mf-country" class="mf-input">
-            <option value="uz">Узбекистан — города, районы, статистика УЗ</option>
-            <option value="kg">Кыргызстан — города и статистика КГ</option>
-          </select>
-          <div class="mf-label">Какие роли видят <span>— админ видит все карты</span></div>
-          <div class="mf-roles" id="mf-roles"></div>
-          <div id="mf-copy-row">
-            <label class="mf-label" for="mf-copy">Начать с</label>
-            <select id="mf-copy" class="mf-input"></select>
-          </div>
-          <button type="button" class="btn" id="mf-submit">Создать карту</button>
-          <button type="button" class="lnk" id="mf-cancel" hidden>Отменить правку</button>
-        </div>
-      </details>
-      <input type="file" id="map-import-file" accept=".json,application/json" hidden/>
-      <p class="ad-hint">«Скачать настройки» — вся карта одним файлом (слои, точки, вид). «Загрузить настройки» заменяет карту содержимым такого файла.</p>
-    </section>
-
-    <!-- СЛОИ И ТОЧКИ -->
-    <section class="ad-sec" id="sec-layers" hidden>
-      <div class="ad-sec-head"><h2>Слои и точки</h2><button type="button" class="lyr-act" data-refresh="layers">Обновить</button></div>
-      <div class="ad-filter">
-        <label class="mf-label" for="ly-filter">Показать</label>
-        <select id="ly-filter" class="mf-input"></select>
-      </div>
-      <div id="ly-list"></div>
-      <div class="ad-points" id="ly-points" hidden>
-        <div class="ad-sec-head"><h3 class="ad-h3" id="pt-title"></h3><button type="button" class="lyr-act" id="pt-close">Закрыть</button></div>
-        <div class="ad-search">
-          <input type="search" class="mf-input" id="pt-q" placeholder="Поиск по названию, адресу, коду" aria-label="Поиск точек"/>
-          <button type="button" class="btn ad-danger" id="pt-del" disabled>Удалить выбранные</button>
-        </div>
-        <p class="ad-hint" id="pt-count"></p>
-        <div class="ad-table-wrap"><table class="ad-table" id="pt-table"></table></div>
-        <button type="button" class="lyr-act" id="pt-more" hidden>Показать ещё</button>
-      </div>
-      <h3 class="ad-h3">Новый общий слой</h3>
-      <div class="sh-upload">
-        <input type="text" class="mf-input" id="sh-name" maxlength="40" placeholder="Название слоя" autocomplete="off" aria-label="Название общего слоя"/>
-        <div class="sh-upload-row">
-          <select id="sh-kind" class="mf-input" aria-label="Вид слоя">
-            <option value="heat">Тепловой слой</option>
-            <option value="pt">Слой точек</option>
-          </select>
-          <button type="button" class="btn" id="sh-upload">Загрузить Excel / CSV</button>
-        </div>
-        <input type="file" id="sh-file" accept=".csv,.xlsx,.xls" hidden/>
-      </div>
-      <p class="ad-hint">Общий слой появляется на отмеченных картах у всех, кому они открыты; «Все карты» — и на будущих. Удаление точки или слоя здесь действует сразу для всех. Если карта открыта в другой вкладке, обновите её, прежде чем править там.</p>
-    </section>
-
-    <!-- УЧЁТКИ -->
-    <section class="ad-sec" id="sec-users" hidden>
-      <div class="ad-sec-head"><h2>Учётки</h2><button type="button" class="lyr-act" data-refresh="users">Обновить</button></div>
-      <div id="users-list"></div>
-      <details class="adv-group map-form-group ad-form" id="acc-form-group">
-        <summary><span>＋ Новая учётка</span><span class="chev">›</span></summary>
-        <div class="adv-body map-form">
-          <label class="mf-label" for="acc-name">Логин <span>— латиница, цифры, точка, дефис</span></label>
-          <input type="text" class="mf-input" id="acc-name" maxlength="32" placeholder="Например: anna.k" autocomplete="off" autocapitalize="none" spellcheck="false"/>
-          <label class="mf-label" for="acc-role">Роль</label>
-          <select id="acc-role" class="mf-input"></select>
-          <label class="mf-label" for="acc-pass">Пароль</label>
-          <div class="user-pw-row">
-            <input type="text" class="mf-input" id="acc-pass" autocomplete="new-password" placeholder="От 8 символов" maxlength="128"/>
-            <button type="button" class="lyr-act" id="acc-gen">Сгенерировать</button>
-          </div>
-          <button type="button" class="btn" id="acc-create">Создать учётку</button>
-        </div>
-      </details>
-      <p class="ad-hint">Смена роли или пароля сразу завершает все сессии этого логина — человек входит заново. Права и карты действуют на сервере сразу, кнопки у человека меняются после повторного входа.</p>
-    </section>
-
-    <!-- РОЛИ И ПРАВИЛА -->
-    <section class="ad-sec" id="sec-rules" hidden>
-      <div class="ad-sec-head"><h2>Роли и правила</h2><button type="button" class="lyr-act" data-refresh="rules">Обновить</button></div>
-      <p class="ad-hint">Правило роли — права, которые получает каждая учётка этой роли. Если учётке права заданы отдельно (раздел «Учётки»), они сильнее правила. Админ может всё.</p>
-      <div class="ad-table-wrap"><table class="ad-table" id="rules-table"></table></div>
-      <h3 class="ad-h3">Что открывает роль</h3>
-      <div id="rules-maps"></div>
-    </section>
-  </main>
+  </aside>
+  <main class="a-main" id="a-main" tabindex="-1"></main>
 </div>
+
+<!-- Выезжающая панель и окно подтверждения -->
+<div class="a-scrim" id="a-scrim" hidden></div>
+<section class="a-drawer" id="a-drawer" role="dialog" aria-modal="true" aria-labelledby="a-drawer-title" hidden>
+  <header class="a-drawer-head">
+    <div><h2 id="a-drawer-title"></h2><p id="a-drawer-sub"></p></div>
+    <button type="button" class="a-icon-btn" id="a-drawer-close" aria-label="Закрыть"></button>
+  </header>
+  <div class="a-drawer-body" id="a-drawer-body"></div>
+</section>
+<div class="a-dialog-wrap" id="a-dialog" hidden>
+  <div class="a-dialog" role="alertdialog" aria-modal="true" aria-labelledby="a-dlg-title" aria-describedby="a-dlg-text">
+    <h2 id="a-dlg-title"></h2>
+    <div id="a-dlg-text"></div>
+    <div class="a-dialog-acts">
+      <button type="button" class="a-btn ghost" id="a-dlg-cancel">Отмена</button>
+      <button type="button" class="a-btn" id="a-dlg-ok">Да</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="a-file" hidden/>
 
 <div id="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
 <script>
   window._HM_SERVER_URL = 'https://hm-server-xpg0.onrender.com';
 </script>
-<script src="common.js?v=20261106e"></script>
-<script src="admin.js?v=20261106e"></script>
+<script src="common.js?v=20261106f"></script>
+<script src="admin.js?v=20261106f"></script>
 </body>
 </html>

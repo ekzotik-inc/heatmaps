@@ -28,7 +28,8 @@
     "mapIconHtml": "readonly",
     "EXTRA_MAX_COLS": "readonly",
     "sharedOnMap": "readonly",
-    "fmtBytes": "readonly"
+    "fmtBytes": "readonly",
+    "UI_ICONS": "readonly"
   },
   "extends": "eslint:recommended",
   "ignorePatterns": [
