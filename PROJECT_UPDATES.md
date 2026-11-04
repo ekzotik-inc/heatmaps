@@ -1199,7 +1199,7 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   they never enter a map's own state.
 - Rights under each account: «Свои слои из Excel», «Точки вручную с фото»,
   «Свои границы» (defaults: on, off, on). Enforced by the server on
-  `/my/layers`, `/my/photo` uploads and `/my/bounds`; buttons follow the
+  `/my/layers`, `/photo` uploads and `/my/bounds`; buttons follow the
   rights after the next sign-in. A viewer with the manual right adds points
   with photos into own manual layers (visible only to them).
 - Fixed on the way: a map without saved state skipped the viewer clean start
