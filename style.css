@@ -15,7 +15,7 @@
   --acc-d:    #097382;   /* dark teal: текст, иконки и заливки с белым текстом — 5.6:1 */
   --acc-l:    #E1F5F8;   /* accent soft plate */
   --acc-l2:   #D2EFF4;   /* accent hover/active */
-  --rec:      #14B87D;   /* success / recommendations */
+  --rec:      #14B87D;   /* success / зелёный акцент */
   --rec-d:    #0B7F55;   /* заливки с белым текстом — 5.0:1 */
   --rec-l:    #E3F7EF;
   --rec-ink:  #0A7A52;   /* зелёный текст — 5.4:1 */
@@ -730,45 +730,6 @@ input[type=range].full { width: 100%; }
 .pt-radius-ctl .grp.full input[type=range] { flex: 1; }
 .pt-radius-ctl .grp { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--mut); }
 
-/* ── REC BASIS BUTTONS (pill group) ──────────────────────────────────── */
-.rec-basis {
-  display: grid; grid-template-columns: 1fr 1fr 1fr;
-  gap: 7px; margin-bottom: 12px;
-}
-.rec-basis button {
-  font-family: "Inter"; font-size: 12px; font-weight: 600;
-  color: var(--mut); background: var(--card);
-  border: 1px solid var(--line2); border-radius: 100px;
-  padding: 9px 4px; cursor: pointer; transition: .2s var(--ease);
-}
-.rec-basis button:hover { color: var(--ink); border-color: var(--rec); }
-.rec-basis button.on {
-  background: var(--rec); border-color: var(--rec); color: #fff;
-  box-shadow: 0 3px 10px rgba(20,184,125,.28);
-}
-
-/* ── REC SUMMARY ─────────────────────────────────────────────────────── */
-.rec-summary {
-  background: var(--rec-l);
-  border: 1px solid rgba(20,184,125,.22); border-radius: 14px;
-  padding: 14px 16px; margin: 2px 0 12px;
-  display: flex; align-items: center; gap: 15px;
-}
-.rec-summary-icon {
-  width: 40px; height: 40px; border-radius: 12px; flex: 0 0 auto;
-  background: linear-gradient(135deg, #17D08D, var(--rec-d));
-  display: flex; align-items: center; justify-content: center;
-  font-size: 19px; box-shadow: 0 4px 14px rgba(20,184,125,.3);
-}
-.rec-summary .big {
-  font-family: "Inter"; font-weight: 800;
-  font-size: 24px; color: var(--rec-ink); line-height: 1;
-}
-.rec-summary .lbl {
-  font-size: 11.5px; color: var(--mut); margin-top: 5px; line-height: 1.45;
-}
-.rec-summary .lbl b { color: var(--rec-ink); }
-
 /* ── CHECKLABEL ──────────────────────────────────────────────────────── */
 .chk {
   display: flex; align-items: center; gap: 11px;
@@ -789,68 +750,6 @@ input[type=range].full { width: 100%; }
   color: var(--rec); font-weight: 700;
 }
 .ctrl .val.blue { color: var(--acc); }
-
-/* ── REC LIST ────────────────────────────────────────────────────────── */
-.rec-list { margin-top: 6px; }
-.rec-preview { display: flex; flex-direction: column; gap: 7px; }
-.rec-item {
-  display: flex; gap: 11px; align-items: center;
-  padding: 11px 13px; border-radius: 12px;
-  cursor: pointer; border: 1px solid var(--line);
-  background: var(--card);
-  box-shadow: var(--shadow-card);
-  transition: .2s var(--ease);
-}
-.rec-item:hover {
-  border-color: var(--rec);
-  box-shadow: 0 2px 6px rgba(40,55,90,.08), 0 8px 20px rgba(20,184,125,.12);
-  transform: translateX(3px);
-}
-.rec-rank {
-  width: 28px; height: 28px; border-radius: 50%; flex: 0 0 auto;
-  background: linear-gradient(135deg, #17D08D, var(--rec-d));
-  color: #fff; font-family: "Inter"; font-weight: 800; font-size: 12px;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 3px 10px rgba(20,184,125,.3);
-}
-.rec-main { flex: 1; min-width: 0; }
-.rec-main b {
-  font-size: 12.5px; font-weight: 700; display: block; color: var(--ink);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.rec-main .meta {
-  font-size: 9.5px; color: var(--mut);
-  font-family: "Inter"; margin-top: 3px;
-}
-.rec-main .meta .hi { color: var(--rec-ink); }
-.rec-demand { text-align: right; flex: 0 0 auto; }
-.rec-demand .dv {
-  font-family: "Inter"; font-weight: 800;
-  font-size: 15px; color: var(--rec-ink); line-height: 1;
-}
-.rec-demand .dl { font-size: 9px; color: var(--dim); font-family: "Inter"; margin-top: 3px; }
-
-/* expand/collapse */
-.rec-expand-wrap {
-  overflow: hidden;
-  transition: max-height .4s var(--ease-io);
-  max-height: 0;
-}
-.rec-expand-wrap.open { max-height: 2400px; }
-.rec-expand-inner { display: flex; flex-direction: column; gap: 7px; padding-top: 7px; }
-
-.rec-toggle {
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  width: 100%; margin-top: 10px; padding: 11px 14px;
-  font-family: "Inter"; font-weight: 700; font-size: 12px;
-  color: var(--rec-ink);
-  background: var(--rec-l);
-  border: 1px solid rgba(20,184,125,.22); border-radius: 12px;
-  cursor: pointer; transition: .2s var(--ease);
-}
-.rec-toggle:hover { background: rgba(20,184,125,.16); border-color: var(--rec); }
-.rec-toggle .arrow { transition: transform .3s var(--ease-io); font-size: 10px; }
-.rec-toggle.open .arrow { transform: rotate(180deg); }
 
 /* ── BUTTONS ─────────────────────────────────────────────────────────── */
 .btn {
@@ -1349,31 +1248,6 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
   cursor: pointer; transition: transform .15s;
 }
 .core-pin:hover { transform: scale(1.18); }
-.rec-pin { position: relative; width: 30px; height: 30px; cursor: pointer; transition: transform .15s; }
-.rec-pin:hover { transform: scale(1.15); }
-.rec-pin .core {
-  position: absolute; inset: 0; margin: auto;
-  width: 26px; height: 26px;
-  border-radius: 50% 50% 50% 8px; transform: rotate(45deg);
-  background: linear-gradient(135deg, #17D08D, var(--rec-d));
-  border: 2.5px solid #fff; box-shadow: 0 4px 10px rgba(8,60,40,.5);
-}
-.rec-pin span {
-  position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  color: #fff; font-family: "Inter"; font-weight: 800; font-size: 13px; z-index: 2;
-}
-.rec-pin .ring {
-  position: absolute; inset: -6px; border-radius: 50%;
-  border: 2px solid var(--rec); opacity: .7;
-  animation: ring-pulse 2.4s ease-out infinite;
-}
-@keyframes ring-pulse {
-  0%   { transform: scale(.55); opacity: .7; }
-  70%  { transform: scale(1.35); opacity: 0; }
-  100% { opacity: 0; }
-}
-
 /* ── ADD-LAYER BUTTON ────────────────────────────────────────────────── */
 .add-layer-btn {
   width: 100%; margin-top: 8px; height: 42px;
@@ -1610,7 +1484,6 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
   .auth-title { font-size: 19px; }
 
   /* Rec items: bigger tap area */
-  .rec-item { padding: 13px 14px; }
 
   /* Buttons inside sidebar: ensure 44px min height */
   .btn { min-height: 44px; }
@@ -1893,10 +1766,6 @@ body.no-manual #add-manual-pt-btn { display: none !important; }
   transition: opacity .2s;
 }
 .acc-badge:empty { display: none; }
-.acc-badge.acc-badge-green {
-  color: var(--rec-ink); background: var(--rec-l);
-  border-color: rgba(20,184,125,.25);
-}
 
 /* ── CSS TOOLTIPS ────────────────────────────────────────────────────── */
 .tip-icon {
@@ -2590,7 +2459,6 @@ button, input, select, textarea, optgroup, option, kbd, code, pre,
   background-color: var(--acc-d); border-color: var(--acc-d);
 }
 .cl-big:not(:hover) { background-color: var(--acc-d); }
-.rec-basis button.on { background: var(--rec-d); border-color: var(--rec-d); }
 .mk-glyphs > .liquid, .bdraw-modes > .liquid { background: var(--acc-d); }
 /* Акцент как цвет текста — тёмный бирюзовый */
 .map-switch-ic, .map-switch-name, .lc-sl b, .city-scope-btn.on, .side-tab.active .tab-label,
@@ -2644,7 +2512,6 @@ small, .vt-txt small { font-size: 11px; }
 .mode-icon { color: var(--acc-d); }
 .map-row-ic, .mm-ic { color: var(--mut); }
 .map-flag { display: inline-grid; place-items: center; min-width: 22px; height: 18px; padding: 0 4px; border-radius: 4px; border: 1px solid var(--line2); font: 700 10.5px "Inter"; color: var(--mut); }
-.rec-summary-icon { color: var(--acc-d); display: grid; place-items: center; }
 .rp-item-ph { color: var(--mut); display: inline-grid; place-items: center; min-width: 16px; }
 .rp-edit svg, .rp-item-edit svg, .lyr-act svg { vertical-align: -2px; }
 

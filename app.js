@@ -278,7 +278,7 @@ function nearestPt(ix, lat, lon) {
 /* НАШИ ТОЧКИ — это все слои вкладки «Точки» (`customPtLayers`). Отдельного
    зашитого в базу набора IQOS BR/SE больше нет: пользователь загружает свои
    слои сам, и всё, что там лежит, считается нашей сетью. От этих точек
-   считаются: покрытие в рекомендациях (`nd`), расстояния в адресной программе
+   считаются: расстояния в адресной программе
    и метрика «Курильщиков на 1 нашу точку».
    Видимость слоя на карте на расчёты НЕ влияет — скрытый слой всё равно наш. */
 function ourPts() {
@@ -459,7 +459,7 @@ let heatRadius = 28;
 // UI state
 // An empty selection means «Все города»; otherwise the array contains the
 // explicitly selected city names. This keeps multi-select semantics unambiguous.
-let selectedCities = [], covR = 600, topN = 12, recShow = true, recBasis = '';
+let selectedCities = [];
 function hasCityFilter() { return selectedCities.length > 0; }
 function allCitiesSelected() {
   return CITIES.length > 0 && selectedCities.length === CITIES.length;
@@ -628,7 +628,6 @@ const distRenderer  = L.svg({ pane: 'districts' });
 const radiusRenderer = L.svg({ pane: 'ptradius' });
 const districtGroup = L.layerGroup().addTo(map);
 const coresGroup    = L.layerGroup().addTo(map);
-const recLayer      = L.layerGroup().addTo(map);
 const addrLayer     = L.layerGroup().addTo(map); // address-program preview markers
 const cptRoot       = L.layerGroup().addTo(map); // parent for ALL custom-point layer groups
 const tagRoot       = L.layerGroup().addTo(map); // «Ярлыки»: тачпоинты тепловых слоёв
@@ -872,7 +871,7 @@ function boundsChanged(save = true, rebuildUI = true) {
   boundSel = boundSel.filter(k => known.has(k) || (!dists.length && k.startsWith('city:')));
   _bzActive = null;
   renderDistricts();
-  renderHeat(); renderCustomPoints(); renderRecs();
+  renderHeat(); renderCustomPoints();
   if (rebuildUI) buildBoundsUI(); else syncBoundsStatus();
   updateLayerLegend();   // блок «районы» в легенде — площади выбранных
   syncBoundsBadge();
@@ -1018,9 +1017,8 @@ async function loadOwnLayers() {
     _ownLayersSaved = JSON.stringify(_ownLayers);
     _ownLayersReady = mapId;
     attachOwnLayers();
-    reenrichAll();
-    buildHeatUI(); buildCustomPtUI(); buildAddrSrcSel(); buildRecBasisSel(); buildRtExclUI();
-    renderHeat(); renderCustomPoints(); renderRecs();
+    buildHeatUI(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI();
+    renderHeat(); renderCustomPoints();
   } catch (e) {
     console.warn('Own layers load failed:', e.message);
   }
@@ -1173,9 +1171,8 @@ async function hideSharedLayer(kind, key) {
     customPtLayers = customPtLayers.filter(x => x.id !== key);
   }
   _sharedSaved.delete(id);
-  reenrichAll();
-  buildHeatUI(); buildCustomPtUI(); buildAddrSrcSel(); buildRecBasisSel(); buildRtExclUI(); rebuildUpTarget();
-  renderHeat(); renderCustomPoints(); renderRecs();
+  buildHeatUI(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); rebuildUpTarget();
+  renderHeat(); renderCustomPoints();
   toast(`Слой «${src.name}» убран с этой карты, на других остался`, 'ok', 4000);
   if (typeof renderSharedAdmin === 'function') renderSharedAdmin();
 }
@@ -1214,9 +1211,8 @@ async function loadSharedLayers(force) {
     _sharedLayers = Array.isArray(j.layers) ? j.layers : [];
     attachSharedLayers();
     rememberSharedSaved();
-    reenrichAll();
-    buildHeatUI(); buildCustomPtUI(); buildAddrSrcSel(); buildRecBasisSel(); buildRtExclUI();
-    renderHeat(); renderCustomPoints(); renderRecs();
+    buildHeatUI(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI();
+    renderHeat(); renderCustomPoints();
   } catch (e) {
     console.warn('Shared layers load failed:', e.message);
   }
@@ -1736,7 +1732,6 @@ function updateLayerLegend() {
       items.push({ color: l.color, pin: pinSvg(l.icon, l.color, l.color2, 18, l.shape).html, name: l.name, count: shownCount(l) });
     }
   });
-  if (recShow && lastRecs.length) items.push({ color: '#14B87D', name: 'Рекомендации' });
   // Превью адресной программы рисуется поверх слоёв (оранжевые кандидаты и
   // синие ориентиры) — без строк в легенде было непонятно, что это за точки.
   if (addrPreview) {
@@ -1902,159 +1897,6 @@ function renderTags(force) {
 // Видимая часть карты меняется — пересобираем только когда ярлыки включены.
 map.on('moveend zoomend', () => { if (tagLayerKeys().length) renderTags(); });
 
-/* ── RECOMMENDATIONS ─────────────────────────────────────────────────── */
-const SUPPRESS = 1100;
-const PREVIEW  = 3;
-let lastRecs = [], lastBasisName = '';
-
-function mkRecItem(s, idx) {
-  const x = document.createElement('div');
-  x.className = 'rec-item';
-  x.innerHTML = `
-    <div class="rec-rank">${idx}</div>
-    <div class="rec-main">
-      <b>${esc(s.name)}</b>
-      <div class="meta"><span class="hi">спрос ${Math.round(s.ld)}</span> · ${s.lc} тч · ${esc(s.fil)} · ${fmtD(s.nd)}</div>
-    </div>
-    <div class="rec-demand">
-      <div class="dv">${Math.round(s.ld)}</div>
-      <div class="dl">ед/км²</div>
-    </div>`;
-  x.addEventListener('click', () => {
-    map.flyTo([s.lat, s.lon], 15, { duration: .8 });
-    setTimeout(() => openRec(s, idx), 700);
-  });
-  return x;
-}
-
-function openRec(s, rank) {
-  const d = DS[recBasis];
-  if (!d) return;
-  L.popup({ maxWidth: 260 })
-   .setLatLng([s.lat, s.lon])
-   .setContent(`
-     <div class="pp-title">Зона #${rank} — кандидат на ТТ BR</div>
-     <div class="pp-row"><span>Основа</span><b>${esc(d.name)}</b></div>
-     <div class="pp-row"><span>Город</span><b>${esc(s.fil)}</b></div>
-     <div class="pp-row"><span>Спрос рядом</span><b>${Math.round(s.ld)} ед.</b></div>
-     <div class="pp-row"><span>Точек рынка в зоне</span><b>${s.lc}</b></div>
-     <div class="pp-row"><span>До ближайшей ТТ</span><b>${fmtD(s.nd)}</b></div>
-     <div class="pp-why">Высокий спрос (${esc(d.name).toLowerCase()}) в радиусе ~700 м без нашей ТТ ближе ${fmtD(covR)}. Ориентир — «${esc(s.name)}». Рекомендуется открытие BR.</div>
-     <span class="pp-tag" style="background:var(--rec-l);color:var(--rec-ink);border:1px solid rgba(20,184,125,.35)">РЕКОМЕНДАЦИЯ BR</span>
-     ${yandexLinkHtml(s.lat, s.lon)}`)
-   .openOn(map);
-}
-
-/* Populate the recommendation-basis dropdown from uploaded layers */
-function buildRecBasisSel() {
-  const sel = document.getElementById('rec-basis-sel');
-  if (!sel) return;
-  if (!heatKeys.includes(recBasis)) recBasis = heatKeys[0] || '';
-  sel.innerHTML = heatKeys.length
-    ? heatKeys.map(k => `<option value="${k}"${k === recBasis ? ' selected' : ''}>${esc(DS[k] ? DS[k].name : k)}</option>`).join('')
-    : '<option value="">Нет слоёв — загрузите на вкладке «Карта»</option>';
-}
-
-function renderRecs() {
-  recLayer.clearLayers();
-  const d = DS[recBasis];
-  if (!d) {
-    lastRecs = [];
-    const rc = document.getElementById('rec-count'); if (rc) rc.textContent = '—';
-    const rl = document.getElementById('rec-lbl'); if (rl) rl.innerHTML = 'Загрузите слой на вкладке «Карта», чтобы получить рекомендации';
-    const list = document.getElementById('rec-list'); if (list) list.innerHTML = '';
-    const tgl = document.getElementById('rec-toggle'); if (tgl) tgl.style.display = 'none';
-    updateAccBadges(); updateLayerLegend();
-    return;
-  }
-  lastBasisName = d.name;
-  // `ld/lc` is needed only for the currently selected recommendation basis.
-  // Deferred hydration keeps hidden layers from blocking the first map paint.
-  ensureLayerDensity(d);
-
-  // Compute candidates
-  const cand = d.recs
-    .filter(s => recInSelection(s) && s.nd > covR)
-    .sort((a, b) => b.ld - a.ld || b.vol - a.vol);
-
-  // Greedy suppression O(n log n) via Set
-  const recs = [], used = new Set();
-  for (const s of cand) {
-    if (used.has(s)) continue;
-    recs.push(s);
-    for (const o of cand) {
-      if (!used.has(o) && hav(s.lat, s.lon, o.lat, o.lon) <= SUPPRESS) used.add(o);
-    }
-    if (recs.length >= topN) break;
-  }
-  lastRecs = recs;
-  updateAccBadges(); updateLayerLegend();
-
-  // Summary
-  const uncSum    = cand.reduce((a, s) => a + s.vol, 0);
-  const cityTotal = d.recs.filter(recInSelection).reduce((a, s) => a + s.vol, 0) || 1;
-  document.getElementById('rec-count').textContent = recs.length;
-  document.getElementById('rec-lbl').innerHTML =
-    // Доля от общего объёма понятна всегда; абсолютную сумму для процентных
-    // слоёв не печатаем — сумма процентов ничего не значит.
-    `зон для новой <b>BR</b> · основа: <b>${esc(d.name).toLowerCase()}</b> · вне покрытия <b>${Math.round(uncSum / cityTotal * 100)}%</b>${
-      volUnitOf(d) ? '' : ` (${Math.round(uncSum).toLocaleString('ru-RU')} ед.)`}`;
-
-  // Render list
-  const el = document.getElementById('rec-list');
-  el.innerHTML = '';
-
-  const preview = document.createElement('div');
-  preview.className = 'rec-preview';
-  recs.slice(0, PREVIEW).forEach((s, i) => preview.appendChild(mkRecItem(s, i + 1)));
-  el.appendChild(preview);
-
-  const tog = document.getElementById('rec-toggle');
-  if (recs.length > PREVIEW) {
-    const wrap  = document.createElement('div');
-    const inner = document.createElement('div');
-    wrap.className  = 'rec-expand-wrap';
-    inner.className = 'rec-expand-inner';
-    recs.slice(PREVIEW).forEach((s, i) => inner.appendChild(mkRecItem(s, i + PREVIEW + 1)));
-    wrap.appendChild(inner);
-    el.appendChild(wrap);
-
-    const rest = recs.length - PREVIEW;
-    const plural = n => n === 1 ? 'зону' : n < 5 ? 'зоны' : 'зон';
-    tog.style.display = '';
-    tog.className = 'rec-toggle';
-    tog.innerHTML = `<span>Показать ещё ${rest} ${plural(rest)}</span><span class="arrow">▼</span>`;
-    tog.onclick = () => {
-      const open = wrap.classList.toggle('open');
-      tog.className = 'rec-toggle' + (open ? ' open' : '');
-      tog.innerHTML  = open
-        ? `<span>Скрыть</span><span class="arrow">▼</span>`
-        : `<span>Показать ещё ${rest} ${plural(rest)}</span><span class="arrow">▼</span>`;
-    };
-  } else {
-    tog.style.display = 'none';
-  }
-
-  // Map pins
-  if (!recShow) return;
-  recs.forEach((s, i) => {
-    const m = L.marker([s.lat, s.lon], {
-      icon: L.divIcon({
-        className: '',
-        html: `<div class="rec-pin"><div class="ring"></div><div class="core"></div><span>${i + 1}</span></div>`,
-        iconSize: [30, 30], iconAnchor: [15, 15],
-      }),
-      zIndexOffset: 2000,
-    });
-    m.bindTooltip(
-      `<b style="font-weight:700">Зона #${i + 1} · ${esc(s.fil)}</b><br>спрос ${Math.round(s.ld)} (${esc(d.name).toLowerCase()})`,
-      { className: 'tt', direction: 'top', offset: [0, -14] }
-    );
-    m.on('click', () => openRec(s, i + 1));
-    recLayer.addLayer(m);
-  });
-}
-
 /* ── SLIDER FILL HELPER ──────────────────────────────────────────────── */
 /* Закраска ползунка до центра кружка. `--f` — доля 0…1, CSS переводит её в
    позицию с поправкой на ширину кружка: иначе у краёв полоса уходила за
@@ -2125,9 +1967,6 @@ function updateAccBadges() {
     const cptVis = customPtLayers.filter(l => l.visible).length;
     cptBadge.textContent = customPtLayers.length ? `${cptVis}/${customPtLayers.length}` : '';
   }
-  // Rec badge — очищаем, когда рекомендаций нет (иначе висит старое число)
-  const recBadge = document.getElementById('acc-badge-rec');
-  if (recBadge) recBadge.textContent = lastRecs.length ? lastRecs.length : '';
   // City summary tab depends on the same inputs (city, layers, recs)
   renderCityInfo();
 }
@@ -2503,7 +2342,7 @@ function buildHeatUI() {
       const commit = save => {
         if (done) return; done = true;
         if (save) { const v = capFirst(inp.value); if (v) d.name = v; }
-        buildHeatUI(); buildAddrSrcSel(); buildRecBasisSel(); rebuildUpTarget(); updateLayerLegend(); if (save) saveState();
+        buildHeatUI(); buildAddrSrcSel(); rebuildUpTarget(); updateLayerLegend(); if (save) saveState();
       };
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') commit(true); else if (e.key === 'Escape') commit(false); });
       inp.addEventListener('blur', () => commit(true));
@@ -2522,7 +2361,7 @@ function buildHeatUI() {
       if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
       delete DS[k];
       heatKeys = heatKeys.filter(x => x !== k);
-      buildHeatUI(); buildAddrSrcSel(); buildRecBasisSel(); buildRtExclUI(); rebuildUpTarget(); renderHeat(); renderTags(true); renderRecs(); saveState();
+      buildHeatUI(); buildAddrSrcSel(); buildRtExclUI(); rebuildUpTarget(); renderHeat(); renderTags(true); saveState();
     });
     el.appendChild(card);
     card.querySelectorAll('input[type=range]').forEach(fillSlider);
@@ -2561,7 +2400,7 @@ function openCreateLayer(kind) {
   document.getElementById('cl-title').textContent = kind === 'heat' ? 'Новый слой' : 'Новый слой точек';
   document.getElementById('cl-sub').textContent = kind === 'heat'
     ? 'Тепловой слой: точки рынка со значением. Задайте название и поля — соберём шаблон Excel.'
-    : 'Слой наших точек: они рисуются метками и служат ориентиром для рекомендаций и адрески.';
+    : 'Слой наших точек: они рисуются метками и служат ориентиром для адрески.';
   document.getElementById('cl-name').value = '';
   document.getElementById('cl-field-inp').value = '';
   document.getElementById('cl-step1').hidden = false;
@@ -2629,7 +2468,7 @@ function scheduleCityRender(after) {
   const seq = ++cityRenderSeq;
   const run = () => {
     if (seq !== cityRenderSeq) return;
-    renderHeat(); renderCustomPoints(); renderRecs(); renderCityInfo(); saveState();
+    renderHeat(); renderCustomPoints(); renderCityInfo(); saveState();
     if (after) after();
   };
   if (typeof window.requestIdleCallback === 'function') {
@@ -4885,7 +4724,6 @@ async function saveRetailForm() {
   closeRetailForm();
   buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI();
   renderCustomPoints();
-  reenrichAll();   // ручные точки входят в нашу сеть — покрытие пересчитать
   saveState();
   if (SERVER_URL && !SERVER_KEY) {
     toast('Точка сохранена только в этом браузере: без ключа записи она не уйдёт на сервер', 'err', 6000);
@@ -4918,7 +4756,7 @@ function deleteRetailPoint() {
   layer.recs = layer.recs.filter(x => x.id !== p.id);
   closeRetailForm();
   buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI();
-  renderCustomPoints(); reenrichAll(); saveState();
+  renderCustomPoints(); saveState();
   toast('Точка удалена', 'ok');
 }
 
@@ -5314,7 +5152,6 @@ function buildCustomPtUI() {
       _cptOpen.delete(id);
       clearAddrPreview();
       renderCustomPoints(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI();
-      reenrichAll();
       renderCityInfo(); saveState();
       toast(`Слой «${l.name}» удалён`, 'info');
     });
@@ -5393,7 +5230,7 @@ function confirmLayerModal() {
   closeLayerModal();
   const rows = pendingHeatRows; pendingHeatRows = null;
   const parsed = rows ? toRecs(rows) : [];
-  const recs = rows ? enrich(parsed) : [];
+  const recs = parsed;
   const key  = 'custom_' + Date.now();
   DS[key] = { key, name, color, ramp: 'custom', opacity: 1, intensity: 1, visible: true,
               volUnit: parsed._percent ? '%' : '', recs, stats: statsOf(recs), _userData: true,
@@ -5410,8 +5247,8 @@ function focusNewLayer(key) {
   if (hasCityFilter() && d.recs.length && !d.recs.some(recInCities)) { selectedCities = []; buildCityUI(); }
   // buildRtExclUI обязателен: без него новый слой не появлялся в списке
   // исключений адресной программы до перезагрузки страницы.
-  buildHeatUI(); rebuildUpTarget(); buildAddrSrcSel(); buildRecBasisSel(); buildRtExclUI();
-  renderHeat(); renderRecs(); saveState();
+  buildHeatUI(); rebuildUpTarget(); buildAddrSrcSel(); buildRtExclUI();
+  renderHeat(); saveState();
   const bpts = d.recs.filter(recInSelection).map(r => [r.lat, r.lon]);
   if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6, maxZoom: 16 });
 }
@@ -5571,79 +5408,14 @@ function fmtVol(d, v) {
   return volUnitOf(d) ? text + '%' : text;
 }
 
-/* nd — расстояние до ближайшей НАШЕЙ точки (все слои вкладки «Точки»).
-   Пока наших точек нет, расстояние неизвестно: Infinity честно означает
-   «не покрыто», а в интерфейсе печатается как «—».
-   Вынесено отдельно, потому что пересчитывать это надо при каждом изменении
-   наших точек, а тяжёлый расчёт локального спроса (ld/lc) — не надо. */
-function enrichNd(recs, ix) {
-  ix = ix || buildPtIndex(ourPts());
-  for (const s of recs) {
-    const n = nearestPt(ix, s.lat, s.lon);
-    s.nd = n ? Math.round(n.dist) : Infinity;
-  }
-  return recs;
-}
-
-/* Наши точки изменились (загрузка/добавление/удаление слоя) — пересчитать
-   покрытие во всех тепловых слоях и обновить рекомендации. */
-function reenrichAll() {
-  const ix = buildPtIndex(ourPts());
-  heatKeys.forEach(k => { const d = DS[k]; if (d && d.recs) enrichNd(d.recs, ix); });
-  renderRecs();
-}
-
-// The former 0.01° grid made a single cell roughly 1 km tall. Dense layers
-// therefore compared far too many point pairs during startup. A 0.005° grid
-// keeps the same exact 700 m Haversine criterion but narrows candidates before
-// that calculation; ±2 cells safely covers the radius throughout UZ and KG.
-const DENSITY_GRID = 200;
-const DENSITY_NEIGHBOURS = 2;
-function enrichLocalDemand(recs) {
-  const grid = new Map();
-  recs.forEach((s, i) => {
-    const la = Math.floor(s.lat * DENSITY_GRID), lo = Math.floor(s.lon * DENSITY_GRID);
-    const key = la + '_' + lo;
-    const bucket = grid.get(key);
-    if (bucket) bucket.push(i); else grid.set(key, [i]);
-  });
-  for (const s of recs) {
-    let ld = 0, lc = 0;
-    const kla = Math.floor(s.lat * DENSITY_GRID), klo = Math.floor(s.lon * DENSITY_GRID);
-    for (let dla = -DENSITY_NEIGHBOURS; dla <= DENSITY_NEIGHBOURS; dla++) {
-      for (let dlo = -DENSITY_NEIGHBOURS; dlo <= DENSITY_NEIGHBOURS; dlo++) {
-        const arr = grid.get((kla + dla) + '_' + (klo + dlo));
-        if (!arr) continue;
-        for (const j of arr) {
-          const t = recs[j];
-          if (hav(s.lat, s.lon, t.lat, t.lon) <= 700) { ld += t.vol; lc++; }
-        }
-      }
-    }
-    s.ld = Math.round(ld * 100) / 100;
-    s.lc = lc;
-  }
-  // Array metadata is intentionally non-serialised; saved snapshots contain
-  // only source fields and reconstruct density only when recommendations need it.
-  recs._densityReady = true;
-  return recs;
-}
-function ensureLayerDensity(d) {
-  if (d && d.recs && !d.recs._densityReady) enrichLocalDemand(d.recs);
-}
-function enrich(recs, ix) {
-  enrichNd(recs, ix);
-  return enrichLocalDemand(recs);
-}
-
 function statsOf(recs) {
   const v = recs.map(r => r.vol).sort((a, b) => a - b), n = v.length;
   return { n, sum: Math.round(v.reduce((a, b) => a + b, 0) * 10) / 10, max: v[n - 1] || 0, p50: v[Math.floor(n * 0.5)] || 0, p90: v[Math.floor(n * 0.9)] || 0.01 };
 }
 
 /* ── SHARE STATE (export / import JSON) ──────────────────────────────── */
-// Persist only the essential input fields — derived nd/ld/lc/fil and stats are
-// recomputed on load (enrich + cityOf + statsOf). Coords rounded to ~1 m. This
+// Persist only the essential input fields — derived fil and stats are
+// recomputed on load (cityOf + statsOf). Coords rounded to ~1 m. This
 // keeps the saved per-map state small enough to POST reliably (the full recs
 // grew past ~7 MB and saves started failing).
 function slimRecs(recs) {
@@ -5662,9 +5434,6 @@ function slimRecs(recs) {
 // строка таблицы — и поле сохраняется, восстанавливается и попадает в
 // отпечаток (stateFingerprint берёт весь снимок).
 const PLAIN_SETTINGS = [
-  ['covR', 'number', () => covR, v => { covR = v; }],
-  ['topN', 'number', () => topN, v => { topN = v; }],
-  ['recShow', 'boolean', () => recShow, v => { recShow = v; }],
   ['heatBlend', 'string', () => heatBlend, v => { heatBlend = v; }],
   ['heatRadius', 'number', () => heatRadius, v => { heatRadius = v; }],
   ['districtsOn', 'boolean', () => districtsOn, v => { districtsOn = v; }],
@@ -5711,7 +5480,7 @@ function buildStateSnapshot() {
     // Keep the legacy field for older consumers; it represents only a single selection.
     city: selectedCities.length === 1 ? selectedCities[0] : '',
     ...plainSettings(),
-    recBasis, heatBoost,
+    heatBoost,
     // «Границы»: свои зоны (геометрия — только контуры), выбор и режим отбора.
     distOpacity, boundLayers: boundLayers.filter(l => !l.own).map(l => ({ id: l.id, name: l.name, color: l.color, visible: l.visible, zones: l.zones })),
     boundSel: boundSel.slice(), boundFilter: { ...boundFilter },
@@ -5743,7 +5512,7 @@ function importState(file) {
     // Apply — reuse loadState logic
     applySnapshot(st);
     buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
-    renderHeat(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
+    renderHeat(); renderCustomPoints(); renderDistricts(); renderIncome();
     doSave(); // persist locally too
     toast('Настройки загружены', 'ok');
   };
@@ -5809,15 +5578,11 @@ function applyHeatLayerLook(d, sv) {
 
 const EMPTY_STATS = () => ({ n: 0, sum: 0, max: 0, p50: 0, p90: 0.01 });
 
-function applyHeatLayerRecords(d, sv, isManifest, ownPointIndex) {
+function applyHeatLayerRecords(d, sv, isManifest) {
   if (Array.isArray(sv.recs)) {
-    // Saved recs are slim (see slimRecs). Rebuild city and nearest-own-point
-    // fields during hydration; defer expensive local-demand (`ld/lc`) work
-    // until this layer is selected as the recommendation basis.
+    // Saved recs are slim (see slimRecs). Rebuild the city during hydration.
     sv.recs.forEach(r => { r.fil = cityOf(r.lat, r.lon); });
     d.recs = sv.recs;
-    enrichNd(d.recs, ownPointIndex);
-    d.recs._densityReady = false;
     d.stats = sv.stats || statsOf(d.recs);
     d._recordsLoaded = true;
     d._userData = true;
@@ -5843,14 +5608,11 @@ function applyHeatLayersState(st) {
   // that older saved states may still carry.
   if (Array.isArray(st.heatKeys)) heatKeys = st.heatKeys.filter(k => k.startsWith('custom_'));
   if (!st.layers) return;
-  // All hydrated heat layers share the same closest-own-point lookup. Build it
-  // once rather than rebuilding it per layer while the map is starting.
-  const ownPointIndex = buildPtIndex(ourPts());
   for (const k of heatKeys) {
     const sv = st.layers[k]; if (!sv) continue;
     if (!DS[k]) DS[k] = { key: k };
     applyHeatLayerLook(DS[k], sv);
-    applyHeatLayerRecords(DS[k], sv, !!st._meta, ownPointIndex);
+    applyHeatLayerRecords(DS[k], sv, !!st._meta);
   }
 }
 
@@ -5875,7 +5637,6 @@ function applyViewState(st) {
   if (st.incCol) Object.keys(incCol).forEach(k => { incCol[k] = safeColor(st.incCol[k], incCol[k]); });
   applyCitySelection(st);
   applyPlainSettings(st);
-  if (typeof st.recBasis === 'string' && DS[st.recBasis]) recBasis = st.recBasis;
   // Общая яркость убрана из интерфейса — старое значение не применяем, иначе
   // его нельзя было бы вернуть назад.
   heatBoost = 1;
@@ -5942,27 +5703,6 @@ function markPercentColumn(ws, colIndex, rowCount, values) {
   } catch (e) { console.warn('Percent format skipped:', e.message); }
 }
 
-function exportRecs() {
-  if (!lastRecs.length) { toast('Нет рекомендаций для экспорта', 'err'); return; }
-  if (!window.XLSX) { ensureSheetLibs().then(exportRecs).catch(() => toast('Не удалось загрузить XLSX', 'err')); return; }
-  const basis = DS[recBasis] || null;
-  const volCol = volUnitOf(basis) ? 'Значение, %' : 'Объём';
-  const header = ['Ранг', 'Название зоны', 'Город', 'Широта', 'Долгота', 'Спрос (ед/км²)', 'Точек рядом', volCol, 'До ближайшей ТТ, м'];
-  const rows   = [header];
-  lastRecs.forEach((s, i) => rows.push([
-    i + 1, s.name || ('Зона ' + (i + 1)), s.fil || '',
-    +s.lat.toFixed(6), +s.lon.toFixed(6),
-    Math.round(s.ld), s.lc, exportNum(s.vol),
-    isFinite(s.nd) ? s.nd : '',
-  ]));
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 6 }, { wch: 30 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 20 }];
-  if (volUnitOf(basis)) markPercentColumn(ws, 7, lastRecs.length, lastRecs.map(s => s.vol));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Рекомендации BR');
-  XLSX.writeFile(wb, 'rekomendacii_BR_' + lastBasisName.toLowerCase() + '_' + new Date().toISOString().slice(0, 10) + '.xlsx');
-  toast('Файл скачан', 'ok');
-}
 
 const MANUAL_EXPORT_HEAD = ['Название', 'ДМС-код', 'Оборудование', 'Продажи',
   'Широта', 'Долгота', 'Город', 'Цвет', 'Комментарий', 'Фото, шт', 'Ссылки на фото'];
@@ -6147,7 +5887,7 @@ function exportManualPts(layerId) {
 /* ── RETRAFFIC FILTERED EXPORT ───────────────────────────────────────── */
 // Layers eligible for use as "exclusions" — custom layers, not base shipment layers
 // Сколько точек в слое НА САМОМ ДЕЛЕ. Записи тепловых слоёв грузятся лениво
-// (только видимые и основа рекомендаций), поэтому у остальных `recs` пуст, хотя
+// (только видимые), поэтому у остальных `recs` пуст, хотя
 // данные на сервере есть. Число берём из манифеста (`stats.n`).
 function layerRecordCount(d) {
   if (!d) return 0;
@@ -6967,14 +6707,12 @@ let _loadProgressHook = null;
 function reportLoadProgress(n) {
   if (_loadProgressHook && n > 0) _loadProgressHook(n);
 }
-function hydrateLayerRecords(key, recs, stats, ownPointIndex, complete = true) {
+function hydrateLayerRecords(key, recs, stats, complete = true) {
   const d = DS[key];
   if (!d) return;
   const rows = Array.isArray(recs) ? recs : [];
   rows.forEach(r => { r.fil = cityOf(r.lat, r.lon); });
   d.recs = rows;
-  enrichNd(rows, ownPointIndex || buildPtIndex(ourPts()));
-  rows._densityReady = false;
   d.stats = stats || statsOf(rows);
   d._recordsLoaded = complete;
   d._recordsLoading = !complete;
@@ -7033,7 +6771,7 @@ async function fetchLayerChunk(key, offset) {
     if (_layerChunkInFlight.get(chunkKey) === pending) _layerChunkInFlight.delete(chunkKey);
   }
 }
-async function loadChunkedLayer(key, ownPointIndex, firstResolve, firstReject) {
+async function loadChunkedLayer(key, firstResolve, firstReject) {
   const d = DS[key];
   let revisionRetried = false;
   let firstResolved = false;
@@ -7042,7 +6780,7 @@ async function loadChunkedLayer(key, ownPointIndex, firstResolve, firstReject) {
       const fullCacheKey = cacheKey('state-layer', _activeStateRevision + ':' + key);
       const fullCached = await cacheGet(fullCacheKey);
       if (fullCached && Array.isArray(fullCached.recs)) {
-        hydrateLayerRecords(key, fullCached.recs, fullCached.stats, ownPointIndex);
+        hydrateLayerRecords(key, fullCached.recs, fullCached.stats);
         reportLoadProgress(fullCached.recs.length);
         d._recordsLoading = false; d._recordsLoaded = true;
         if (!firstResolved) { firstResolved = true; firstResolve(); }
@@ -7057,14 +6795,13 @@ async function loadChunkedLayer(key, ownPointIndex, firstResolve, firstReject) {
           const chunk = expandLayerChunk(payload);
           rows = rows.concat(chunk);
           reportLoadProgress(chunk.length);
-          hydrateLayerRecords(key, rows, d.stats, ownPointIndex, payload.nextOffset == null);
+          hydrateLayerRecords(key, rows, d.stats, payload.nextOffset == null);
           d._recordsLoading = payload.nextOffset != null;
           if (first) {
             first = false;
             if (!firstResolved) { firstResolved = true; firstResolve(); }
             else if (d.visible) renderHeat();
           } else if (d.visible) renderHeat();
-          if (key === recBasis && !first) renderRecs();
           if (payload.nextOffset == null) break;
           offset = payload.nextOffset;
           await yieldToBrowser();
@@ -7074,7 +6811,6 @@ async function loadChunkedLayer(key, ownPointIndex, firstResolve, firstReject) {
         d._recordsReady = null;
         d._recordsLoad = null;
         if (d.visible) renderHeat();
-        if (key === recBasis) renderRecs();
         return;
       } catch (err) {
         if (isStaleLayerError(err) && !revisionRetried && await refreshStateRevision()) {
@@ -7098,7 +6834,6 @@ async function loadChunkedLayer(key, ownPointIndex, firstResolve, firstReject) {
 async function ensureLayerRecords(keys, allowRevisionRecovery = true) {
   const todo = [...new Set((Array.isArray(keys) ? keys : [keys]).filter(k => DS[k] && !DS[k]._recordsLoaded))];
   if (!todo.length) return;
-  const ownPointIndex = buildPtIndex(ourPts());
   try {
     await Promise.all(todo.map(async key => {
     const d = DS[key];
@@ -7108,7 +6843,7 @@ async function ensureLayerRecords(keys, allowRevisionRecovery = true) {
       let resolveFirst, rejectFirst;
       d._recordsReady = new Promise((resolve, reject) => { resolveFirst = resolve; rejectFirst = reject; });
       d._recordsLoading = true;
-      d._recordsLoad = loadChunkedLayer(key, ownPointIndex, resolveFirst, rejectFirst);
+      d._recordsLoad = loadChunkedLayer(key, resolveFirst, rejectFirst);
       await d._recordsReady;
       return;
     }
@@ -7126,7 +6861,7 @@ async function ensureLayerRecords(keys, allowRevisionRecovery = true) {
         }
         await cachePut(layerCacheKey, { revision: payload._revision, recs: payload.recs, stats: payload.stats, cachedAt: Date.now() });
       }
-      hydrateLayerRecords(key, payload.recs, payload.stats, ownPointIndex);
+      hydrateLayerRecords(key, payload.recs, payload.stats);
       reportLoadProgress(Array.isArray(payload.recs) ? payload.recs.length : 0);
     })();
       try { await d._recordsLoad; } finally { d._recordsLoad = null; }
@@ -7140,7 +6875,6 @@ async function ensureLayerRecords(keys, allowRevisionRecovery = true) {
 }
 function eagerStateLayers() {
   const keys = heatKeys.filter(k => DS[k] && DS[k].visible);
-  if (recBasis && DS[recBasis]) keys.push(recBasis);
   return keys;
 }
 
@@ -7328,13 +7062,10 @@ function saveState() {
 
 function syncControls() {
   const $ = id => document.getElementById(id);
-  $('s-cov').value         = covR;  $('v-cov').textContent  = fmtD(covR);
-  $('s-top').value         = topN;  $('v-top').textContent  = topN;
   $('s-heat-radius').value = heatRadius; $('v-heat-radius').textContent = heatRadius + ' px';
   $('heat-blend').value    = heatBlend;
   syncHeatStyleBtns();
-  $('rec-show').classList.toggle('on', recShow);
-  buildRecBasisSel();
+ 
   syncBoundsBadge();
   syncDistCtl('rt-radius', rtRadius);
   $('op-rt-radius').value = rtRadiusOp;
@@ -7351,17 +7082,6 @@ function syncControls() {
 /* ── EVENT WIRING ────────────────────────────────────────────────────── */
 function wireEvents() {
   const $ = id => document.getElementById(id);
-
-  // Rec basis — pick which uploaded layer drives the recommendations
-  $('rec-basis-sel').addEventListener('change', async e => {
-    recBasis = e.target.value;
-    try { await ensureLayerRecords(recBasis); } catch (_) { toast('Не удалось загрузить данные слоя', 'err'); return; }
-    renderRecs();
-  });
-
-  $('rec-show').addEventListener('click', e => { recShow = !recShow; e.target.classList.toggle('on', recShow); renderRecs(); });
-  $('s-cov').addEventListener('input', e => { covR = +e.target.value; $('v-cov').textContent = fmtD(covR); fillSlider(e.target); renderRecs(); });
-  $('s-top').addEventListener('input', e => { topN = +e.target.value; $('v-top').textContent = topN; fillSlider(e.target); renderRecs(); });
 
   // Что показывать: точки и/или тепло
   [['vt-points', () => setShowPoints(!showPointsAll)], ['vt-heat', () => setShowHeat(!showHeatAll)]].forEach(([id, fn]) => {
@@ -7404,7 +7124,7 @@ function wireEvents() {
     if (!f || !k || !DS[k]) return;
     parseSheet(f, rows => {
       const parsed = toRecs(rows);
-      const recs = enrich(parsed);
+      const recs = parsed;
       if (!recs.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
       DS[k].recs = recs; DS[k].stats = statsOf(recs); DS[k].visible = true; DS[k]._userData = true; DS[k]._recordsLoaded = true;
       DS[k].volUnit = parsed._percent ? '%' : '';
@@ -7497,14 +7217,14 @@ function wireEvents() {
 
     const d = DS[tk]; if (!d) { toast('Выберите слой для загрузки', 'err'); return; }
     const parsedUpload = toRecs(pendingUpload);
-    d.recs = enrich(parsedUpload); d.stats = statsOf(d.recs); d.visible = true; d._userData = true;
+    d.recs = parsedUpload; d.stats = statsOf(d.recs); d.visible = true; d._userData = true;
     d.volUnit = parsedUpload._percent ? '%' : '';
     d.fields = mergeFields(d.fields, parsedUpload._fields);
     reset();
     // The selected-city filter would otherwise silently hide points that fall
     // in other cities — reset to "Все" so the freshly uploaded layer is visible.
     if (hasCityFilter() && !d.recs.some(recInCities)) { selectedCities = []; buildCityUI(); }
-    buildHeatUI(); renderHeat(); renderRecs(); buildRtExclUI();
+    buildHeatUI(); renderHeat(); buildRtExclUI();
     // Frame the map on the new data so it's obvious it loaded.
     const bpts = d.recs.filter(recInSelection).map(r => [r.lat, r.lon]);
     if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6, maxZoom: 16 });
@@ -7551,7 +7271,6 @@ function wireEvents() {
   map.on('zoomend', refreshHeatMax);
 
   // Export recs
-  $('rec-export').addEventListener('click', exportRecs);
   $('btn-retraffic-export').addEventListener('click', exportRetraffic);
   $('btn-addr-preview').addEventListener('click', previewAddrOnMap);
 
@@ -7578,15 +7297,15 @@ function wireEvents() {
   const setSide = setSideDrawer;   // body.side-open — не прокручивать страницу под панелью
   $('burger').addEventListener('click', () => setSide(!sideEl.classList.contains('open')));
   backdrop.addEventListener('click', () => setSide(false));
-  // Keyboard shortcuts: Esc closes drawer; 1-6 switch tabs (when not typing)
+  // Keyboard shortcuts: Esc closes drawer; 1-5 switch tabs (when not typing)
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && isMobile()) { setSide(false); return; }
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'select' || tag === 'textarea' || e.metaKey || e.ctrlKey || e.altKey) return;
     // Порядок как в нижней навигации — иначе «Город» недостижим с клавиатуры,
     // а «4» открывает не то, что подписано.
-    const tabs = ['tab-map', 'tab-points', 'tab-bounds', 'tab-recs', 'tab-analysis', 'tab-data'];
-    if (e.key >= '1' && e.key <= '6') {
+    const tabs = ['tab-map', 'tab-points', 'tab-bounds', 'tab-analysis', 'tab-data'];
+    if (e.key >= '1' && e.key <= String(tabs.length)) {
       const t = document.querySelector(`.side-tab[data-tab="${tabs[+e.key - 1]}"]`);
       if (t && t.offsetParent !== null) t.click(); // skip if hidden (e.g. data tab for viewers)
     }
@@ -7669,7 +7388,6 @@ function wireEvents() {
       l.recs = recs;
       l.fields = mergeFields(l.fields, recs._fields);
       buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); renderCustomPoints();
-      reenrichAll();   // добавились наши точки — пересчитать покрытие и рекомендации
       renderCityInfo(); saveState();
       toast(`Слой «${l.name}»: загружено ${recs.length.toLocaleString('ru-RU')} ${plural(recs.length, 'точка', 'точки', 'точек')}`, 'ok');
     });
@@ -8524,7 +8242,7 @@ function readLocalSnapshot() {
 }
 function renderCurrentState() {
   buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
-  renderHeat(); renderCustomPoints(); renderRecs(); renderDistricts(); renderIncome();
+  renderHeat(); renderCustomPoints(); renderDistricts(); renderIncome();
   buildBoundsUI(); syncBoundsBadge();
   fillAllSliders();   // syncControls ставит value без события input
 }

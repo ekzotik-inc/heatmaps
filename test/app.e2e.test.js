@@ -223,7 +223,7 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
         ],
         retailLayer: { color: '#123456', visible: false },
         tashkentScope: 'city', addrSrcKey: 'custom_b', addrRefKey: '__cpt__cpt_retail_legacy',
-        city: 'Самарканд', heatBoost: 3, heatStyle: 'weird', recBasis: 'nope',
+        city: 'Самарканд', heatBoost: 3, heatStyle: 'weird', recBasis: 'nope', covR: 900, recShow: false,
       });
       const snap = buildStateSnapshot();
       const legacy = snap.customPtLayers.find(l => l.id === 'cpt_retail_legacy');
@@ -235,7 +235,7 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
         legacy: legacy && [legacy.color, legacy.visible, legacy.manual, legacy.shape, legacy.recs.map(r => [r.id, r.lat, r.lon, r.photos])],
         legacyColors: legacy && legacy.recs.map(r => r.color || ''),
         scope: snap.cityScope, addr: [snap.addrSrcKeys, snap.addrRefKeys], cities: snap.selectedCities,
-        heatBoost: snap.heatBoost, heatStyle: snap.heatStyle, showPointsAll: snap.showPointsAll, recBasisKept: snap.recBasis !== 'nope',
+        heatBoost: snap.heatBoost, heatStyle: snap.heatStyle, showPointsAll: snap.showPointsAll, recGone: !['recBasis', 'covR', 'topN', 'recShow'].some(k => k in snap),
         manifest: [m.name, m._recordsLoaded, m.recs.length, m.stats.n],
         after: [selectedCities, addrSrcKeys, cityScope],
       };
@@ -245,7 +245,7 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
       legacy: ['#123456', false, true, 'star', [['r1', 41.3, 69.2, [{ id: 'a' }]], ['r2', 41.4, 69.3, []]]],
       legacyColors: ['', ''],
       scope: 'city', addr: [['custom_b'], ['__cpt__cpt_retail_legacy']], cities: ['Самарканд'],
-      heatBoost: 1, heatStyle: 'spots', showPointsAll: true, recBasisKept: true,
+      heatBoost: 1, heatStyle: 'spots', showPointsAll: true, recGone: true,
       manifest: ['М', false, 0, 42],
       after: [[], ['x'], 'city'],
     });

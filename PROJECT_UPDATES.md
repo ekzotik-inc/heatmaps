@@ -1268,3 +1268,18 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   `POST /auth/users/delete`, loaded on start before password overrides.
 - Tests: server 85/85 (files and PostgreSQL), browser 15/15.
 - Cache version `20261106a`. Server changed — Render redeploys on push.
+
+## 2026-11-06 — «Рекомендации» removed
+
+- Owner: «полностью удали функционал "рекомендации" из проекта».
+- Removed the «Рекомен.» tab and its nav button, the green numbered pins and
+  their legend row, the Excel export, the badge, and the settings `covR`,
+  `topN`, `recShow`, `recBasis` (old saved states with them are ignored).
+- Removed the calculations that only served it: `nd` (distance to our
+  nearest point), local demand `ld/lc`, `enrich*`, `reenrichAll`. The address
+  program keeps its own nearest-point search (`buildPtIndex`/`nearestPt`).
+  Heat-layer hydration no longer builds a point index per load.
+- Hotkeys are now 1–5 (five tabs). `.rec-*` CSS removed; the `--rec` green
+  tokens stay — buttons and success states use them.
+- Tests: 100/100 (server + browser). Cache version `20261106b`. Server
+  unchanged.

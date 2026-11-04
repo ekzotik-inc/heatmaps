@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
   <title>Тепловая карта · Сигареты + Стики</title>
-  <meta name="description" content="Тепловая карта торговых точек: анализ спроса, рекомендации по открытию BR и адресная программа по городам Узбекистана и Кыргызстана."/>
+  <meta name="description" content="Тепловая карта торговых точек: анализ спроса и адресная программа по городам Узбекистана и Кыргызстана."/>
   <meta name="theme-color" content="#12ADC1"/>
   <meta name="color-scheme" content="light"/>
   <meta name="robots" content="noindex, nofollow"/>
   <meta property="og:title" content="Тепловая карта — аналитика торговых точек"/>
-  <meta property="og:description" content="Тепловые слои, рекомендации по открытию точек и адресная программа на карте 2ГИС."/>
+  <meta property="og:description" content="Тепловые слои, точки и адресная программа на карте."/>
   <meta property="og:type" content="website"/>
   <!-- Инлайновая иконка: без неё браузер на каждой загрузке ходил за
        несуществующим /favicon.ico и получал 404. -->
@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.1/maplibre-gl.css"/>
-  <link rel="stylesheet" href="style.css?v=20261106a"/>
+  <link rel="stylesheet" href="style.css?v=20261106b"/>
 </head>
 <body>
 
@@ -195,42 +195,6 @@
         <div id="bounds-ui"></div>
       </div>
 
-      <!-- TAB: АНАЛИЗ -->
-      <!-- TAB: РЕКОМЕНДАЦИИ -->
-      <div class="tab-panel" id="tab-recs">
-        <p class="tab-section-title">Рекомендации</p>
-        <div class="addr-step" style="margin-bottom:12px">
-          <div class="addr-step-label">Слой-основа спроса</div>
-          <select id="rec-basis-sel" class="addr-sel"></select>
-        </div>
-        <div class="rec-summary">
-          <div class="rec-summary-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div>
-          <div class="rec-summary-body">
-            <div class="big" id="rec-count">—</div>
-            <div class="lbl" id="rec-lbl"></div>
-          </div>
-        </div>
-        <label class="chk"><div class="cbx green on" id="rec-show"></div><span>Показывать на карте</span></label>
-        <div class="ctrl">
-          <div class="row">
-            <label>Радиус покрытия наших ТТ <span class="tip-icon" data-tip="Зоны ближе этого расстояния от наших точек исключаются из рекомендаций">ⓘ</span></label>
-            <span class="val" id="v-cov">600 м</span>
-          </div>
-          <input type="range" class="full green" id="s-cov" min="200" max="3000" step="50" value="600"/>
-        </div>
-        <div class="ctrl">
-          <div class="row">
-            <label>Сколько зон показать <span class="tip-icon" data-tip="Максимальное число рекомендованных зон в списке и на карте">ⓘ</span></label>
-            <span class="val" id="v-top">12</span>
-          </div>
-          <input type="range" class="full green" id="s-top" min="5" max="30" step="1" value="12"/>
-        </div>
-        <div class="rec-list" id="rec-list"></div>
-        <button class="rec-toggle" id="rec-toggle" style="display:none"></button>
-        <button class="btn" id="rec-export" style="margin-top:8px"><svg class="ic-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg> Экспорт рекомендаций (Excel)</button>
-
-      </div>
-
       <!-- TAB: АДРЕСНАЯ ПРОГРАММА -->
       <div class="tab-panel" id="tab-analysis">
         <div class="addr-intro">
@@ -395,7 +359,7 @@
             <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none"/>
             <div class="fname" id="fname" style="display:none"></div>
             <button class="btn" id="btn-update" disabled>Обновить карту</button>
-            <div class="foot">Здесь обновляются <b>тепловые слои</b> — колонки name / lat / lon / value, по желанию code / addr / hours — код и адрес попадут в карточку точки и в выгрузки. Наши точки загружаются во вкладке «Точки»: они рисуются на карте и служат отсчётом для рекомендаций и адресной программы.</div>
+            <div class="foot">Здесь обновляются <b>тепловые слои</b> — колонки name / lat / lon / value, по желанию code / addr / hours — код и адрес попадут в карточку точки и в выгрузки. Наши точки загружаются во вкладке «Точки»: они рисуются на карте и служат отсчётом для адресной программы.</div>
           </div>
         </details>
 
@@ -442,13 +406,6 @@
           <span class="acc-badge" id="acc-badge-bz"></span>
         </div>
         <span class="tab-label">Границы</span>
-      </button>
-      <button class="side-tab" data-tab="tab-recs">
-        <div class="tab-icon-wrap">
-          <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/></svg></span>
-          <span class="acc-badge acc-badge-green" id="acc-badge-rec"></span>
-        </div>
-        <span class="tab-label">Рекомен.</span>
       </button>
       <button class="side-tab" data-tab="tab-analysis">
         <div class="tab-icon-wrap">
@@ -784,7 +741,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20261106a'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20261106b'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();

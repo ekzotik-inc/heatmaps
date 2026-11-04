@@ -26,7 +26,7 @@ module.exports = {
   }],
   incCol: { high: '#1a9850', mid: '#fee08b', low: '#d73027' },
   selectedCities: ['Самарканд'], city: 'Самарканд',
-  covR: 1200, topN: 7, recBasis: 'custom_a', recShow: false, heatBoost: 1, heatBlend: 'normal', heatRadius: 35,
+  heatBoost: 1, heatBlend: 'normal', heatRadius: 35,
   districtsOn: true, incomeHeatOn: true, coresOn: true,
   distOpacity: 0.3,
   boundLayers: [{ id: 'bl1', name: 'Мои зоны', color: '#7b3294', visible: true,

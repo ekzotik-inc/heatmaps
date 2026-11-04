@@ -126,12 +126,12 @@
 | P5 | Point clicked | Popup shows: name, address, hours, code | All | ✅ | |
 | P6 | Point hovered | Tooltip shows name + layer name | All | ✅ | |
 | P7 | Admin creates point layer | Modal; name + color; card appears in list | Admin | ✅ | |
-| P8 | Admin uploads point CSV | Points appear on map; count shows in card; покрытие и рекомендации пересчитываются | Admin | ✅ | `reenrichAll()` |
+| P8 | Admin uploads point CSV | Points appear on map; count shows in card | Admin | ✅ | |
 | P9 | Custom point layer visibility toggled | Points appear/disappear | All | ✅ | |
 | P10 | Custom point layer color changed | Markers re-color | All | ✅ | |
 | P11 | Admin deletes point layer | Card removed; markers cleared; покрытие пересчитано | Admin | ✅ | |
 | P12 | Points tab badge | Shows "N/M" (visible/total layers) | All | ✅ | |
-| P13 | Точки удалены/добавлены | `nd` во всех тепловых слоях пересчитывается, рекомендации и метрика города обновляются | Admin | ✅ | Сверено с брутфорсом |
+| P13 | Точки удалены/добавлены | Метрика города и адресная считают по новому набору | Admin | ✅ | |
 | P14 | Наших точек нет вообще | Расстояния «—», адресная сообщает «нет точек-ориентиров», метрика города «—» | All | ✅ | |
 | P15 | Point card opened/closed | Uses the same accordion header, chevron and expandable settings pattern as heat-layer cards | All | ✅ | |
 | P16 | Point layer visibility toggled | Unified switch hides/shows markers, updates badge and persists state without changing `ourPts()` metrics semantics | All | ✅ | |
@@ -160,18 +160,7 @@
 
 | # | User Story | Expected Behaviour | Role | Status | Notes |
 |---|---|---|---|---|---|
-| R1 | Recs basis changed (cig/sticks/combined) | Pins re-render; summary panel updates; list updates; deferred records are fetched once before calculation | All | ✅ | |
-| R2 | Coverage radius slider moved | Zones re-computed; summary updates | All | ✅ | |
-| R3 | Top-N slider moved | Pin count changes on map + in list | All | ✅ | |
-| R4 | Show-on-map toggle ON | Green numbered pins appear | All | ✅ | |
-| R5 | Show-on-map toggle OFF | Pins removed from map | All | ✅ | |
-| R6 | Rec item clicked in list | Map flies to zone; popup opens | All | ✅ | |
-| R7 | "Show N more" clicked | Hidden rec items expand with animation | All | ✅ | |
-| R8 | Rec pin clicked | Popup with zone name, demand, basis, distance, count | All | ✅ | |
-| R9 | Export recommendations | Excel downloaded; contains top-N rows with all columns | All | ✅ | |
-| R10 | City filter active | Recs show only zones in selected city | All | ✅ | |
-| R11 | Summary panel shows correct stats | Leads with uncovered share; absolute volume omitted for percent layers | All | ✅ | 2026-09-24 |
-| R12 | Recommendations live in their own tab | «Рекомен.» tab holds basis, sliders, list, export and the count badge | All | ✅ | 2026-09-30 |
+| — | Рекомендации удалены по просьбе владельца (06.11.2026) | | | | |
 
 ---
 

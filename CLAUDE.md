@@ -99,7 +99,7 @@ _pinchZoom/_resize` ещё существуют с тем же смыслом.
    Охраняет тест «saved state» в `test/app.e2e.test.js` — новое поле добавить
    в `test/app-state.fixture.js`.
 2. **Новый слой → перестроить ВСЕ зависимые списки:** `buildHeatUI`,
-   `buildAddrSrcSel`, `buildRecBasisSel`, `buildRtExclUI`. Пропуск любого —
+   `buildAddrSrcSel`, `buildRtExclUI`. Пропуск любого —
    слой «не появляется» в соответствующем шаге до перезагрузки.
 3. **Записи тепловых слоёв грузятся лениво.** Нельзя судить о пустоте слоя по
    `recs.length` — бери `stats.n` (`layerRecordCount`). Перед чтением `recs`
