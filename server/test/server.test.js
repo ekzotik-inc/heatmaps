@@ -70,7 +70,7 @@ test('server', async t => {
     const viaCookie = await srv.request('/auth/me', { headers: { Cookie: cookie.split(';')[0] } });
     assert.equal((await viaCookie.json()).username, 'boss');
     const viaBearer = await srv.request('/auth/me', { headers: bearer(body.token) });
-    assert.deepEqual(await viaBearer.json(), { ok: true, username: 'boss', role: 'admin', writeKey: body.writeKey });
+    assert.deepEqual(await viaBearer.json(), { ok: true, username: 'boss', role: 'admin', writeKey: body.writeKey, perms: { layers: true, manual: true, bounds: true } });
     // Негодный bearer не мешает рабочей cookie: и чтение, и ключ записи от неё.
     const mixed = { Cookie: cookie.split(';')[0], Authorization: 'Bearer junk.token' };
     assert.equal((await (await srv.request('/auth/me', { headers: mixed })).json()).writeKey, body.writeKey);

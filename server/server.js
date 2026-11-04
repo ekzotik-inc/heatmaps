@@ -612,6 +612,7 @@ app.post('/auth/login', express.json({ limit: '32kb' }), rateLimitLogin, (req, r
   res.json({
     ok: true, username: user.username, role: user.role, token,
     writeKey: writeTokenFor(token),
+    perms: permsOf(user),
     expiresIn: SESSION_TTL_SEC,
   });
 });
@@ -629,6 +630,7 @@ app.get('/auth/me', requireSession, (req, res) => {
   res.json({
     ok: true, username: req.user.username, role: req.user.role,
     writeKey: writeTokenFor(req.sessionToken),
+    perms: permsOf(req.user),
   });
 });
 
@@ -778,7 +780,7 @@ function parsePhotoDataUrl(data) {
 
 // Загрузка снимка (только владелец). Принимаем data URL — так не нужен
 // multipart-парсер, а клиент всё равно сжимает изображение перед отправкой.
-app.post('/photo', requireSession, requireAdmin, requireMapAccess, async (req, res) => {
+app.post('/photo', requireSession, requirePerm('manual'), requireMapAccess, async (req, res) => {
   noStore(res);
   const photo = parsePhotoDataUrl(String(req.body.data || ''));
   if (photo.error) return res.status(photo.status).json({ error: photo.error });
@@ -869,7 +871,7 @@ app.get('/my/bounds', requireSession, requireMapAccess, async (req, res) => {
   res.json({ layers: (saved && saved.layers) || [] });
 });
 
-app.post('/my/bounds', requireSession, requireMapAccess, async (req, res) => {
+app.post('/my/bounds', requireSession, requirePerm('bounds'), requireMapAccess, async (req, res) => {
   noStore(res);
   const parsed = parseOwnBounds(req.body);
   if (parsed.error) return res.status(parsed.status).json({ error: parsed.error });
@@ -908,6 +910,15 @@ function parseOwnLayers(body) {
   return { own };
 }
 
+// Свои слои из файлов — право layers, ручные точки (manual: true) — право manual.
+function ownLayersDenied(perms, own) {
+  const manual = own.points.filter(l => l.manual === true).length;
+  const files = own.heatKeys.length + own.points.length - manual;
+  if (files && !perms.layers) return 'Нет права загружать свои слои';
+  if (manual && !perms.manual) return 'Нет права заводить точки вручную';
+  return '';
+}
+
 app.get('/my/layers', requireSession, requireMapAccess, async (req, res) => {
   noStore(res);
   const saved = await readState(ownKey('ulayers', req.map, req.user.username));
@@ -918,12 +929,114 @@ app.post('/my/layers', requireSession, requireMapAccess, async (req, res) => {
   noStore(res);
   const parsed = parseOwnLayers(req.body);
   if (parsed.error) return res.status(parsed.status).json({ error: parsed.error });
+  const denied = ownLayersDenied(permsOf(req.user), parsed.own);
+  if (denied) return res.status(403).json({ error: denied });
   try {
     await writeState(ownKey('ulayers', req.map, req.user.username), { ...parsed.own, _savedAt: new Date().toISOString() });
     res.json({ ok: true });
   } catch (e) {
     console.error('Own layers write error:', e.message);
     res.status(500).json({ error: 'Не удалось сохранить слои' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Права учёток (решение владельца 04.11.2026). Админ может всё; остальным
+// он включает: layers — свои слои из файлов, manual — точки вручную с фото,
+// bounds — свои границы. Хранятся в app_state под ключом account_perms.
+// ---------------------------------------------------------------------------
+const PERMS_KEY = 'account_perms';
+const PERM_NAMES = ['layers', 'manual', 'bounds'];
+const DEFAULT_PERMS = { layers: true, manual: false, bounds: true };
+let accountPerms = {};
+let permsChain = Promise.resolve();
+
+function permsOf(user) {
+  if (user.role === 'admin') return { layers: true, manual: true, bounds: true };
+  const saved = accountPerms[user.username] || {};
+  return Object.fromEntries(PERM_NAMES.map(p => [p, typeof saved[p] === 'boolean' ? saved[p] : DEFAULT_PERMS[p]]));
+}
+function requirePerm(name) {
+  return (req, res, next) => (permsOf(req.user)[name] ? next() : res.status(403).json({ error: 'Нет права на это действие' }));
+}
+async function loadAccountPerms() {
+  const v = await readState(PERMS_KEY);
+  stateReadCache.delete(PERMS_KEY);
+  accountPerms = (v && v.users && typeof v.users === 'object') ? v.users : {};
+}
+
+app.post('/auth/perms', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const b = req.body || {};
+  const username = String(b.username || '').trim().toLowerCase();
+  const user = AUTH_USERS.get(username);
+  if (!user) return res.status(404).json({ error: 'Учётная запись не найдена' });
+  if (user.role === 'admin') return res.status(400).json({ error: 'У админа есть все права' });
+  const perms = { ...permsOf(user) };
+  PERM_NAMES.forEach(p => { if (typeof (b.perms || {})[p] === 'boolean') perms[p] = b.perms[p]; });
+  try {
+    const run = permsChain.then(async () => {
+      const next = { ...accountPerms, [username]: perms };
+      await writeState(PERMS_KEY, { users: next, _savedAt: new Date().toISOString() });
+      accountPerms = next;
+    });
+    permsChain = run.catch(() => {});
+    await run;
+    res.json({ ok: true, username, perms });
+  } catch (e) {
+    console.error('Perms write error:', e.message);
+    res.status(500).json({ error: 'Не удалось сохранить права' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Общие слои: админ загружает слой один раз и выбирает карты — все ('*',
+// включая будущие) или перечисленные. Хранятся под ключом shared_layers.
+// ---------------------------------------------------------------------------
+const SHARED_KEY = 'shared_layers';
+const SHARED_MAX_LAYERS = 50;
+const SHARED_MAX_RECORDS = 500000;
+
+function sharedLayerOk(l) {
+  return isObj(l) && typeof l.id === 'string' && /^[\w-]{1,40}$/.test(l.id) && ['heat', 'pt'].includes(l.kind) &&
+    Array.isArray(l.maps) && l.maps.every(m => typeof m === 'string') && Array.isArray(l.recs);
+}
+// { layers } или { status, error }.
+function parseSharedLayers(body) {
+  const layers = body.layers;
+  if (!Array.isArray(layers) || layers.length > SHARED_MAX_LAYERS || !layers.every(sharedLayerOk)) {
+    return { status: 400, error: 'Неверный формат общих слоёв' };
+  }
+  if (new Set(layers.map(l => l.id)).size !== layers.length) return { status: 400, error: 'Повторяются идентификаторы слоёв' };
+  if (layers.reduce((a, l) => a + l.recs.length, 0) > SHARED_MAX_RECORDS) return { status: 413, error: 'Слишком много точек в общих слоях' };
+  return { layers: layers.map(l => ({ ...l, name: cleanText(l.name, 40) || 'Слой' })) };
+}
+async function sharedLayers() {
+  const v = await readState(SHARED_KEY);
+  return (v && Array.isArray(v.layers)) ? v.layers : [];
+}
+
+app.get('/shared/layers', requireSession, requireMapAccess, async (req, res) => {
+  noStore(res);
+  const layers = (await sharedLayers()).filter(l => l.maps.includes('*') || l.maps.includes(req.map));
+  res.json({ layers });
+});
+
+app.get('/shared/layers/all', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  res.json({ layers: await sharedLayers() });
+});
+
+app.post('/shared/layers', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const parsed = parseSharedLayers(req.body);
+  if (parsed.error) return res.status(parsed.status).json({ error: parsed.error });
+  try {
+    await writeState(SHARED_KEY, { layers: parsed.layers, _savedAt: new Date().toISOString() });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Shared layers write error:', e.message);
+    res.status(500).json({ error: 'Не удалось сохранить общие слои' });
   }
 });
 
@@ -980,7 +1093,7 @@ async function loadAuthOverrides() {
 app.get('/auth/users', requireSession, requireAdmin, (req, res) => {
   noStore(res);
   const users = [...AUTH_USERS.values()]
-    .map(u => ({ username: u.username, role: u.role, changedAt: u.changedAt ? new Date(u.changedAt).toISOString() : '' }))
+    .map(u => ({ username: u.username, role: u.role, changedAt: u.changedAt ? new Date(u.changedAt).toISOString() : '', perms: permsOf(u) }))
     .sort((a, b) => (a.role === 'admin' ? -1 : 0) - (b.role === 'admin' ? -1 : 0) || a.username.localeCompare(b.username));
   res.json({ users, min: PASSWORD_MIN });
 });
@@ -1415,6 +1528,7 @@ initDb()
   })
   .then(() => loadMapRegistry().catch(e => console.error('Map registry load error:', e.message)))
   .then(() => loadAuthOverrides().catch(e => console.error('Auth overrides load error:', e.message)))
+  .then(() => loadAccountPerms().catch(e => console.error('Account perms load error:', e.message)))
   .then(() => {
     server.listen(PORT, () => {
       console.log(`\nHeat Map state server running on port ${PORT}`);
