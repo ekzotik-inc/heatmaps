@@ -802,7 +802,7 @@ app.get('/photo/:id', requireSession, async (req, res) => {
   if (!/^[0-9a-f]{32}$/.test(id)) return res.status(400).json({ error: 'Bad photo id' });
   const photo = await readPhoto(id);
   if (!photo) { noStore(res); return res.status(404).json({ error: 'Photo not found' }); }
-  if (!canAccessMap(req.user, findMap(photo.map))) {
+  if (!canAccessMap(req.user, findMap(photo.map)) && !(await sharedPhotoAllowed(req.user, id))) {
     noStore(res);
     return res.status(403).json({ error: 'Photo access denied' });
   }
@@ -1015,11 +1015,41 @@ async function sharedLayers() {
   const v = await readState(SHARED_KEY);
   return (v && Array.isArray(v.layers)) ? v.layers : [];
 }
+async function writeSharedLayers(layers) {
+  await writeState(SHARED_KEY, { layers, _savedAt: new Date().toISOString() });
+}
+// Фото ручных точек общего слоя видны всем, до чьих карт этот слой доходит.
+async function sharedPhotoAllowed(user, photoId) {
+  const maps = allMaps().filter(m => canAccessMap(user, m)).map(m => m.id);
+  return (await sharedLayers()).some(l =>
+    (l.maps.includes('*') || l.maps.some(m => maps.includes(m))) &&
+    l.recs.some(r => r && Array.isArray(r.photos) && r.photos.some(ph => ph && ph.id === photoId)));
+}
 
 app.get('/shared/layers', requireSession, requireMapAccess, async (req, res) => {
   noStore(res);
   const layers = (await sharedLayers()).filter(l => l.maps.includes('*') || l.maps.includes(req.map));
   res.json({ layers });
+});
+
+// Один слой: создать или обновить по id (так слой с карты становится общим и
+// так админ правит его на карте). Без maps — карты остаются прежними ('*' для нового).
+app.post('/shared/layers/one', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const layer = isObj(req.body.layer) ? { ...req.body.layer } : null;
+  const current = await sharedLayers();
+  const prev = layer && current.find(l => l.id === layer.id);
+  if (layer && !Array.isArray(layer.maps)) layer.maps = prev ? prev.maps : ['*'];
+  const next = prev ? current.map(l => (l.id === layer.id ? layer : l)) : current.concat(layer ? [layer] : []);
+  const parsed = parseSharedLayers({ layers: layer ? next : null });
+  if (parsed.error) return res.status(parsed.status).json({ error: parsed.error });
+  try {
+    await writeSharedLayers(parsed.layers);
+    res.json({ ok: true, maps: layer.maps });
+  } catch (e) {
+    console.error('Shared layer write error:', e.message);
+    res.status(500).json({ error: 'Не удалось сохранить общий слой' });
+  }
 });
 
 app.get('/shared/layers/all', requireSession, requireAdmin, async (req, res) => {
@@ -1032,7 +1062,7 @@ app.post('/shared/layers', requireSession, requireAdmin, async (req, res) => {
   const parsed = parseSharedLayers(req.body);
   if (parsed.error) return res.status(parsed.status).json({ error: parsed.error });
   try {
-    await writeState(SHARED_KEY, { layers: parsed.layers, _savedAt: new Date().toISOString() });
+    await writeSharedLayers(parsed.layers);
     res.json({ ok: true });
   } catch (e) {
     console.error('Shared layers write error:', e.message);

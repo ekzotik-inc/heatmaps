@@ -967,13 +967,16 @@ let _ownLayersTimer = 0;
 // границы. У админа есть всё. Сервер проверяет то же самое при записи.
 let myPerms = {};
 function can(p) { return isAdmin() || !!myPerms[p]; }
-// Общие слои (shared) правит только админ на странице «Админ», не на карте.
+// Общие слои (shared) правит только админ — прямо на карте, правка уходит во
+// все карты; удалить общий слой можно только на странице «Админ».
 function canEditLayer(x) {
-  if (x.shared) return false;
+  if (x.shared) return isAdmin();
   if (isAdmin()) return !x.own;
   return !!x.own && can(x.manual ? 'manual' : 'layers');
 }
 // Ручные слои, куда эта учётка может добавлять точки.
+function canDeleteLayer(x) { return canEditLayer(x) && !x.shared; }
+function canShareLayer(x) { return isAdmin() && !x.own && !x.shared; }
 function editableManualLayers() { return customPtLayers.filter(l => l.manual && canEditLayer(l)); }
 function ownMark() { return isAdmin() ? {} : { own: true }; }
 function ownLayersPayload() {
@@ -1070,6 +1073,64 @@ function attachSharedLayers() {
     return { ...cleanPointLayer({ ...structuredClone(l), id, visible: prev.has(id) ? prev.get(id) : isAdmin() }), shared: true };
   }));
 }
+// Слой карты → общий слой (без пометок клиента и видимости — она у каждого своя).
+function sharedLayerPayload(kind, src, id) {
+  if (kind === 'heat') {
+    const { _userData, _recordsOmitted, visible, ...o } = heatLayerSnapshot(src.key, src);
+    return { ...o, id, kind: 'heat', recs: o.recs || [] };
+  }
+  const { visible, ...o } = pointLayerSnapshot(src);
+  return { ...o, id, kind: 'pt' };
+}
+// Решение владельца 05.11.2026: любой слой карты, включая ручные точки, админ
+// может сделать общим. Слой уходит из состояния этой карты и возвращается
+// общим — на все карты (выбор карт — на странице «Админ»).
+async function makeLayerShared(kind, key) {
+  const src = kind === 'heat' ? DS[key] : customPtLayers.find(l => l.id === key);
+  if (!src || !canShareLayer(src)) return;
+  if (!confirm(`Сделать слой «${src.name}» общим? Он появится на всех картах (какие карты — можно выбрать на странице «Админ») и перестанет быть слоем только этой карты.`)) return;
+  try {
+    if (kind === 'heat') await ensureLayerRecords([key]);
+    await mapsPost('/shared/layers/one', { layer: { ...sharedLayerPayload(kind, src, 's' + Date.now().toString(36)), maps: ['*'] } }, 120000);
+  } catch (e) {
+    toast('Не удалось сделать слой общим: ' + e.message, 'err', 5000);
+    return;
+  }
+  if (kind === 'heat') {
+    if (src._leaf) { map.removeLayer(src._leaf); src._leaf = null; }
+    delete DS[key];
+    heatKeys = heatKeys.filter(x => x !== key);
+  } else {
+    customPtLayers = customPtLayers.filter(x => x.id !== key);
+  }
+  saveState();
+  await loadSharedLayers(true);
+  toast(`Слой «${src.name}» теперь общий — на всех картах`, 'ok', 4000);
+  if (typeof renderSharedAdmin === 'function') renderSharedAdmin();
+}
+// Правки админа в общих слоях на карте уходят в общий слой (по одному слою).
+let _sharedSaved = new Map();
+function sharedEditsPayloads() {
+  return heatKeys.filter(k => DS[k] && DS[k].shared).map(k => sharedLayerPayload('heat', DS[k], k.slice('custom_s_'.length)))
+    .concat(customPtLayers.filter(l => l.shared).map(l => sharedLayerPayload('pt', l, l.id.slice('cpt_s_'.length))));
+}
+function rememberSharedSaved() {
+  _sharedSaved = new Map(sharedEditsPayloads().map(l => [l.id, JSON.stringify(l)]));
+}
+function scheduleSharedSave() {
+  if (!isAdmin()) return;
+  sharedEditsPayloads().forEach(async layer => {
+    const json = JSON.stringify(layer);
+    if (!_sharedSaved.has(layer.id) || _sharedSaved.get(layer.id) === json) return;
+    _sharedSaved.set(layer.id, json);
+    try {
+      await mapsPost('/shared/layers/one', { layer }, 120000);
+    } catch (e) {
+      _sharedSaved.delete(layer.id);
+      toast('Общий слой не сохранился: ' + e.message, 'err', 5000);
+    }
+  });
+}
 async function loadSharedLayers(force) {
   if (!SERVER_URL || !currentMap || (!force && _sharedMap === currentMap)) return;
   const mapId = currentMap;
@@ -1081,6 +1142,7 @@ async function loadSharedLayers(force) {
     if (mapId !== currentMap) return;
     _sharedLayers = Array.isArray(j.layers) ? j.layers : [];
     attachSharedLayers();
+    rememberSharedSaved();
     reenrichAll();
     buildHeatUI(); buildCustomPtUI(); buildAddrSrcSel(); buildRecBasisSel(); buildRtExclUI();
     renderHeat(); renderCustomPoints(); renderRecs();
@@ -2072,6 +2134,7 @@ const UI_ICONS = {
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
   camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
+  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>',
   flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
   pin: '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
   sheet: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/>',
@@ -2297,8 +2360,9 @@ function buildHeatUI() {
         <div class="lc-tools">
           <button type="button" class="lc-ic lc-xls" title="Выгрузить точки слоя в Excel — те же колонки, что в шаблоне, со всеми вашими полями" aria-label="Выгрузить в Excel">${uiIcon('sheet')}</button>
           ${canEditLayer(d) ? `<button type="button" class="lc-ic lc-tpl" title="Скачать шаблон Excel для этого слоя" aria-label="Скачать шаблон">${uiIcon('download')}</button>
-          <button type="button" class="lc-ic lc-up" title="Загрузить или обновить данные из файла" aria-label="Загрузить данные">${uiIcon('upload')}</button>
-          <button type="button" class="lc-ic lc-del" title="Удалить слой" aria-label="Удалить слой">${uiIcon('trash')}</button>` : ''}
+          <button type="button" class="lc-ic lc-up" title="Загрузить или обновить данные из файла" aria-label="Загрузить данные">${uiIcon('upload')}</button>` : ''}
+          ${canShareLayer(d) ? `<button type="button" class="lc-ic lc-share" title="Сделать общим — слой появится на всех картах" aria-label="Сделать слой общим">${uiIcon('share')}</button>` : ''}
+          ${canDeleteLayer(d) ? `<button type="button" class="lc-ic lc-del" title="Удалить слой" aria-label="Удалить слой">${uiIcon('trash')}</button>` : ''}
           <button type="button" class="lc-ic lc-more" title="Настройки слоя" aria-label="Настройки слоя" aria-expanded="${open}">${uiIcon('chevron')}</button>
         </div>
       </div>
@@ -2380,6 +2444,7 @@ function buildHeatUI() {
       _heatUpdateTarget = k;
       document.getElementById('heat-update-file').click();
     });
+    card.querySelector('.lc-share')?.addEventListener('click', () => makeLayerShared('heat', k));
     card.querySelector('.lc-del')?.addEventListener('click', () => {
       if (!confirm(d.own ? `Удалить свой слой «${d.name}»?` : `Удалить слой «${d.name}»? Его точки будут удалены с карты у всех пользователей.`)) return;
       if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
@@ -4894,12 +4959,13 @@ function buildCustomPtUI() {
         <span class="lc-n" data-cpmore="${id}">${n.toLocaleString('ru-RU')} ${plural(n, 'точка', 'точки', 'точек')}${l.manual ? ' · вручную' : ''}${l.shared ? ' · общий' : l.own ? ' · только у вас' : ''}${fields.length ? ' · ' + fields.length + ' ' + plural(fields.length, 'поле', 'поля', 'полей') : ''}</span>
         <div class="lc-tools">
           ${l.manual
-            ? `<button type="button" class="lc-ic admin-only" data-cptaddpt="${id}" title="Добавить точку вручную" aria-label="Добавить точку">${uiIcon('plus')}</button>
+            ? `${canEditLayer(l) ? `<button type="button" class="lc-ic" data-cptaddpt="${id}" title="Добавить точку вручную" aria-label="Добавить точку">${uiIcon('plus')}</button>` : ''}
                ${n ? `<button type="button" class="lc-ic" data-rpexport="${id}" title="Выгрузить точки слоя в Excel" aria-label="Выгрузить в Excel">${uiIcon('download')}</button>` : ''}`
             : `${n ? `<button type="button" class="lc-ic" data-cptxls="${id}" title="Выгрузить точки слоя в Excel — те же колонки, что в шаблоне, со всеми вашими полями" aria-label="Выгрузить в Excel">${uiIcon('sheet')}</button>` : ''}
                ${canEditLayer(l) ? `<button type="button" class="lc-ic" data-cpttpl="${id}" title="Скачать шаблон Excel для этого слоя" aria-label="Скачать шаблон">${uiIcon('download')}</button>
                <button type="button" class="lc-ic" data-cptup="${id}" title="Загрузить или обновить точки из файла" aria-label="Загрузить данные">${uiIcon('upload')}</button>` : ''}`}
-          ${canEditLayer(l) ? `<button type="button" class="lc-ic lc-del" data-cpdel="${id}" title="Удалить слой" aria-label="Удалить слой">${uiIcon('trash')}</button>` : ''}
+          ${canShareLayer(l) ? `<button type="button" class="lc-ic" data-cpshare="${id}" title="Сделать общим — слой появится на всех картах" aria-label="Сделать слой общим">${uiIcon('share')}</button>` : ''}
+          ${canDeleteLayer(l) ? `<button type="button" class="lc-ic lc-del" data-cpdel="${id}" title="Удалить слой" aria-label="Удалить слой">${uiIcon('trash')}</button>` : ''}
           <button type="button" class="lc-ic lc-more" data-cpmore="${id}" title="Настройки слоя" aria-label="Настройки слоя" aria-expanded="${open}">${uiIcon('chevron')}</button>
         </div>
       </div>
@@ -5152,6 +5218,7 @@ function buildCustomPtUI() {
     });
   });
 
+  box.querySelectorAll('[data-cpshare]').forEach(el => el.addEventListener('click', () => makeLayerShared('pt', el.dataset.cpshare)));
   box.querySelectorAll('[data-cpdel]').forEach(el => {
     el.addEventListener('click', () => {
       const id = el.dataset.cpdel;
@@ -7163,6 +7230,7 @@ function doSave() {
   try { localStorage.setItem(storeKey(), JSON.stringify(manifest)); } catch (e) {}
   cacheStateSnapshot(snapshot);
   scheduleOwnLayersSave();
+  scheduleSharedSave();
   // Local cache writes are still allowed, but identical admin state is not
   // posted again. This removes duplicate autosave transactions after startup,
   // repeated clicks and delegated sidebar events.

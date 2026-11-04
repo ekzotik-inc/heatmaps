@@ -98,3 +98,26 @@ test('shared layers', async t => {
     assert.deepEqual(await onMap(kgu, 'kg'), ['Везде', 'Только KG'], 'rejected saves change nothing');
   });
 });
+
+test('a map layer made shared: upsert one layer, its photos open to every map it reaches', async t => {
+  const srv = await startServer(USERS);
+  t.after(() => srv.stop());
+  const boss = await signIn(srv, 'boss', USERS.boss.password);
+  const kgu = await signIn(srv, 'kgu', USERS.kgu.password);
+  const photoId = (await (await boss.post('/photo?map=comdep', { data: PNG })).json()).id;
+  assert.equal((await kgu.get('/photo/' + photoId)).status, 403, 'a comdep photo is closed to kg');
+  const manual = { id: 'm1', kind: 'pt', name: 'Ручные', manual: true, recs: [{ id: 'p1', name: 'Киоск', lat: 41.3, lon: 69.2, photos: [{ id: photoId }] }] };
+  const one = async layer => (await boss.post('/shared/layers/one', { layer })).status;
+
+  assert.equal(await one({ ...manual, maps: ['comdep'] }), 200);
+  assert.equal((await kgu.get('/photo/' + photoId)).status, 403, 'still closed: the layer is not on a kg map');
+  assert.equal(await one({ ...manual, maps: ['*'] }), 200, 'upsert by id');
+  assert.equal((await kgu.get('/photo/' + photoId)).status, 200, 'open once the shared layer reaches kg');
+  const edited = { ...manual, name: 'Ручные 2', recs: manual.recs.concat({ id: 'p2', name: 'Новая', lat: 41.31, lon: 69.21 }) };
+  delete edited.maps;
+  assert.equal(await one(edited), 200, 'an edit without maps keeps the maps');
+  const all = (await (await boss.get('/shared/layers/all')).json()).layers;
+  assert.deepEqual(all.map(l => [l.id, l.name, l.maps, l.recs.length]), [['m1', 'Ручные 2', ['*'], 2]]);
+  assert.equal((await kgu.post('/shared/layers/one', { layer: manual })).status, 403);
+  assert.equal(await one({ id: 'bad id', kind: 'pt', recs: [] }), 400);
+});

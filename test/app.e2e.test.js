@@ -414,6 +414,37 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     }
   });
 
+  // Решение владельца 05.11.2026: слой карты, в том числе ручные точки, можно
+  // сделать общим; админ продолжает править его на карте.
+  await t.test('admin makes the manual points layer shared and keeps editing it', async () => {
+    const boss = await open('boss', 'other');
+    boss.page.on('dialog', d => d.accept());
+    await boss.page.click('.side-tab[data-tab="tab-points"]');
+    const shared = boss.page.waitForResponse(r => r.url().endsWith('/shared/layers/one'));
+    await boss.page.click('[data-cpshare="cpt_1"]');
+    assert.equal((await shared).status(), 200);
+    await boss.page.waitForFunction(() => customPtLayers.some(l => l.shared && l.name === 'Мои точки'));
+    const after = await boss.page.evaluate(() => ({
+      inMap: buildStateSnapshot().customPtLayers.map(l => l.name),
+      shared: customPtLayers.filter(l => l.shared).map(l => [l.name, l.manual, l.recs.length, canEditLayer(l), canDeleteLayer(l)]),
+    }));
+    assert.deepEqual(after, { inMap: [], shared: [['Мои точки', true, 1, true, false]] });
+    const edit = boss.page.waitForResponse(r => r.url().endsWith('/shared/layers/one'));
+    await boss.page.evaluate(() => {
+      customPtLayers.find(l => l.shared).recs.push({ id: 'p2', name: 'Вторая', lat: 41.31, lon: 69.26 });
+      saveState();
+    });
+    assert.equal((await edit).status(), 200);
+    assert.deepEqual(boss.errors, []);
+    await boss.close();
+
+    const viewer = await open('viewer', 'comdep');
+    await viewer.page.waitForFunction(() => customPtLayers.some(l => l.shared && l.name === 'Мои точки'));
+    const seen = await viewer.page.evaluate(() => customPtLayers.filter(l => l.shared && l.manual).map(l => [l.name, l.recs.map(r => r.name), canEditLayer(l)]));
+    assert.deepEqual(seen, [['Мои точки', ['Киоск', 'Вторая'], false]]);
+    await viewer.close();
+  });
+
   await t.test('admin signs in and the map starts without page errors', async () => {
     const s = await open('boss');
     assert.deepEqual(s.errors, []);

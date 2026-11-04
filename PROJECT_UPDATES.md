@@ -1209,3 +1209,21 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   files and PostgreSQL; browser suite 12/12 (admin uploads a shared layer
   through the page, sets rights; viewers on two maps see it, rights apply).
 - Cache version `20261104a`. Server changed — Render redeploys on push.
+
+## 2026-11-05 — Any map layer, including manual points, can be made shared
+
+- Owner: the manual points layer made on a map should also be possible to
+  share with everyone, not only layers uploaded on the Admin page.
+- Admin sees «Сделать общим» on heat, point and manual-point layer cards. The
+  layer moves out of this map's state into the shared layers (all maps by
+  default; choose maps on the Admin page) with all records, cards and photo
+  ids.
+- The admin keeps editing a shared layer on any map: add/edit manual points
+  with photos, re-upload, colour, settings — each change is saved into the
+  shared layer (`POST /shared/layers/one`, keeps its maps). Deleting a shared
+  layer stays on the Admin page. Viewers see shared layers read-only.
+- Photos of manual points in a shared layer open to everyone whose map the
+  layer reaches (before: only the map where the photo was taken).
+- Tests: server 78/78 (files and PostgreSQL), browser 13/13 (share the
+  manual layer, add a point on the map, a viewer on another map sees both).
+- Cache version `20261105a`. Server changed — Render redeploys on push.
