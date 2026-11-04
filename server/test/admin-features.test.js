@@ -150,3 +150,43 @@ test('shared layer: removed from one map only; «all maps» keeps future maps', 
   assert.equal(await hide('nope', 'kg'), 404);
   assert.equal((await com.post('/shared/layers/hide', { id: 'b', map: 'comdep' })).status, 403);
 });
+
+test('map access per account: the admin picks the maps, «по роли» returns to the default', async t => {
+  const srv = await startServer(USERS);
+  t.after(() => srv.stop());
+  const boss = await signIn(srv, 'boss', USERS.boss.password);
+  const com = await signIn(srv, 'com', USERS.com.password);
+  const ids = async who => (await (await who.get('/maps')).json()).maps.map(m => m.id);
+  const setMaps = async (username, maps) => (await boss.post('/auth/maps', { username, maps })).status;
+  const listed = async () => (await (await boss.get('/auth/users')).json()).users.find(u => u.username === 'com');
+
+  assert.deepEqual(await ids(com), ['comdep'], 'by role at first');
+  assert.equal((await listed()).maps, null);
+
+  assert.equal(await setMaps('com', ['kg', 'other']), 200);
+  assert.deepEqual(await ids(com), ['other', 'kg'], 'exactly the chosen maps, the role map is gone');
+  assert.equal((await com.get('/state?map=comdep')).status, 403);
+  assert.equal((await com.get('/state?map=kg')).status, 200);
+  assert.deepEqual((await listed()).maps, ['kg', 'other']);
+  assert.equal((await boss.post('/auth/perms', { username: 'com', perms: { manual: true } })).status, 200);
+  assert.deepEqual((await listed()).maps, ['kg', 'other'], 'changing rights keeps the maps');
+
+  const fresh = (await (await boss.post('/maps', { name: 'Для comdep', viewers: ['comdep'] })).json()).map.id;
+  assert.ok(!(await ids(com)).includes(fresh), 'a chosen list is not widened by the role');
+
+  assert.equal(await setMaps('com', []), 200);
+  assert.deepEqual(await ids(com), [], 'no maps at all');
+
+  assert.equal(await setMaps('com', ['nope']), 400, 'unknown map');
+  assert.equal(await setMaps('boss', ['kg']), 400, 'the admin sees every map');
+  assert.equal(await setMaps('ghost', ['kg']), 404);
+  assert.equal((await com.post('/auth/maps', { username: 'com', maps: ['kg'] })).status, 403);
+
+  const again = await startServer(USERS, {}, { dir: srv.dir });
+  try {
+    assert.deepEqual(await ids(await signIn(again, 'com', USERS.com.password)), [], 'survives a restart');
+  } finally { await again.stop(); }
+
+  assert.equal(await setMaps('com', null), 200);
+  assert.deepEqual(await ids(com), ['comdep', fresh], 'back to the role');
+});

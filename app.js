@@ -7887,6 +7887,27 @@ function wireSharedAdmin() {
   });
 }
 
+// Карты учётки: галочки = что ей открыто сейчас. Пока админ не выбирал —
+// по роли (своя карта и те, где роль в «Кто видит»); выбранный список новыми
+// картами сам не пополняется, «По роли» возвращает правило роли.
+function userMapsOpen(u, m) {
+  return Array.isArray(u.maps) ? u.maps.includes(m.id) : (m.id === u.role || (m.viewers || []).includes(u.role));
+}
+function userMapsHtml(u) {
+  const custom = Array.isArray(u.maps);
+  return `<div class="sh-maps user-maps" role="group" aria-label="Карты «${esc(u.username)}»">
+    <div class="user-maps-head"><span>Карты: ${custom ? 'выбраны вручную' : 'по роли'}</span>${custom ? `<button type="button" class="lc-link" data-umreset="${esc(u.username)}">По роли</button>` : ''}</div>
+    ${MAP_LIST.map(m => `<label class="sh-map"><input type="checkbox" data-umuser="${esc(u.username)}" value="${esc(m.id)}"${userMapsOpen(u, m) ? ' checked' : ''}/> ${esc(m.name)}</label>`).join('')}
+  </div>`;
+}
+async function saveUserMaps(username, maps) {
+  try {
+    await mapsPost('/auth/maps', { username, maps }, 20000);
+    toast(`Карты «${username}» сохранены`, 'ok', 2500);
+  } catch (e) { toast(e.message, 'err', 5000); }
+  renderUsersAdmin();
+}
+
 async function renderUsersAdmin() {
   const box = document.getElementById('users-admin-list');
   if (!box || !isAdmin()) return;
@@ -7915,7 +7936,7 @@ async function renderUsersAdmin() {
       ${u.role === 'admin' ? '' : `<div class="user-perms" role="group" aria-label="Права «${esc(u.username)}»">${PERM_LABELS.map(([p, label]) => {
         const on = !!(u.perms && u.perms[p]);
         return `<div class="lc-opt"><div class="cbx sm${on ? ' on' : ''}" role="switch" tabindex="0" aria-checked="${on}" data-permuser="${esc(u.username)}" data-perm="${p}" aria-label="${esc(label)} — ${esc(u.username)}"></div><span>${esc(label)}</span></div>`;
-      }).join('')}</div>`}
+      }).join('')}</div>${userMapsHtml(u)}`}
       ${open ? `<div class="user-pw-form">
         <div class="user-pw-row">
           <input type="password" class="mf-input" data-pw1 autocomplete="new-password" placeholder="Новый пароль, от ${min} символов" minlength="${min}" maxlength="128"/>
@@ -7953,6 +7974,12 @@ async function renderUsersAdmin() {
     sw.addEventListener('click', toggle);
     sw.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(); } });
   });
+  box.querySelectorAll('[data-umuser]').forEach(cb => cb.addEventListener('change', () => {
+    const username = cb.dataset.umuser;
+    const maps = [...box.querySelectorAll('[data-umuser]')].filter(x => x.dataset.umuser === username && x.checked).map(x => x.value);
+    saveUserMaps(username, maps);
+  }));
+  box.querySelectorAll('[data-umreset]').forEach(b => b.addEventListener('click', () => saveUserMaps(b.dataset.umreset, null)));
   box.querySelectorAll('[data-pwtoggle]').forEach(b => b.addEventListener('click', () => {
     _pwOpen = _pwOpen === b.dataset.pwtoggle ? null : b.dataset.pwtoggle;
     renderUsersAdmin().then(() => { const i = box.querySelector('[data-pw1]'); if (i) i.focus(); });

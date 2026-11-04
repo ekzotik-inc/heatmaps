@@ -501,6 +501,29 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     await boss.close();
   });
 
+  await t.test('admin chooses which maps an account sees', async () => {
+    const boss = await open('boss', 'other');
+    await boss.page.click('.side-tab[data-tab="tab-data"]');
+    const box = id => `[data-umuser="viewer"][value="${id}"]`;
+    await boss.page.waitForSelector(box('kg'));
+    assert.deepEqual([await boss.page.isChecked(box('comdep')), await boss.page.isChecked(box('kg'))], [true, false], 'by role at first');
+    const viewerMaps = async () => {
+      const { token } = await (await api.request('/auth/login', json({ username: 'viewer', password: USERS.viewer.password }))).json();
+      return (await (await api.request('/maps', { headers: bearer(token) })).json()).maps.map(m => m.id);
+    };
+    let done = boss.page.waitForResponse(r => r.url().endsWith('/auth/maps'));
+    await boss.page.check(box('kg'));
+    assert.equal((await done).status(), 200);
+    assert.deepEqual(await viewerMaps(), ['comdep', 'kg']);
+    await boss.page.waitForSelector('[data-umreset="viewer"]');
+    done = boss.page.waitForResponse(r => r.url().endsWith('/auth/maps'));
+    await boss.page.click('[data-umreset="viewer"]');
+    assert.equal((await done).status(), 200);
+    assert.deepEqual(await viewerMaps(), ['comdep'], 'back to the role');
+    assert.deepEqual(boss.errors, []);
+    await boss.close();
+  });
+
   await t.test('admin signs in and the map starts without page errors', async () => {
     const s = await open('boss');
     assert.deepEqual(s.errors, []);

@@ -402,9 +402,14 @@ function allMaps() {
 function findMap(id) {
   return allMaps().find(m => m.id === id) || null;
 }
+// Админ видит все карты. Если админ выбрал учётке карты (страница «Админ»,
+// account_perms[логин].maps) — ровно их; иначе — по роли (своя карта и viewers).
 function canAccessMap(user, map) {
   if (!map) return false;
-  return user.role === 'admin' || user.role === map.id || map.viewers.includes(user.role);
+  if (user.role === 'admin') return true;
+  const chosen = accountMapsOf(user);
+  if (chosen) return chosen.includes(map.id);
+  return user.role === map.id || map.viewers.includes(user.role);
 }
 function mapKey(req) {
   const m = (req.query.map || '').toString();
@@ -956,6 +961,11 @@ function permsOf(user) {
   const saved = accountPerms[user.username] || {};
   return Object.fromEntries(PERM_NAMES.map(p => [p, typeof saved[p] === 'boolean' ? saved[p] : DEFAULT_PERMS[p]]));
 }
+// null — карты по роли; массив — выбранные админом карты.
+function accountMapsOf(user) {
+  const m = (accountPerms[user.username] || {}).maps;
+  return Array.isArray(m) ? m : null;
+}
 function requirePerm(name) {
   return (req, res, next) => (permsOf(req.user)[name] ? next() : res.status(403).json({ error: 'Нет права на это действие' }));
 }
@@ -976,7 +986,7 @@ app.post('/auth/perms', requireSession, requireAdmin, async (req, res) => {
   PERM_NAMES.forEach(p => { if (typeof (b.perms || {})[p] === 'boolean') perms[p] = b.perms[p]; });
   try {
     const run = permsChain.then(async () => {
-      const next = { ...accountPerms, [username]: perms };
+      const next = { ...accountPerms, [username]: { ...accountPerms[username], ...perms } };
       await writeState(PERMS_KEY, { users: next, _savedAt: new Date().toISOString() });
       accountPerms = next;
     });
@@ -986,6 +996,36 @@ app.post('/auth/perms', requireSession, requireAdmin, async (req, res) => {
   } catch (e) {
     console.error('Perms write error:', e.message);
     res.status(500).json({ error: 'Не удалось сохранить права' });
+  }
+});
+
+app.post('/auth/maps', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const b = req.body || {};
+  const username = String(b.username || '').trim().toLowerCase();
+  const user = AUTH_USERS.get(username);
+  if (!user) return res.status(404).json({ error: 'Учётная запись не найдена' });
+  if (user.role === 'admin') return res.status(400).json({ error: 'Админ видит все карты' });
+  let maps = null;
+  if (b.maps != null) {
+    if (!Array.isArray(b.maps) || !b.maps.every(id => typeof id === 'string' && findMap(id))) {
+      return res.status(400).json({ error: 'Неизвестная карта' });
+    }
+    maps = [...new Set(b.maps)];
+  }
+  try {
+    const run = permsChain.then(async () => {
+      const { maps: _old, ...rest } = accountPerms[username] || {};
+      const next = { ...accountPerms, [username]: maps ? { ...rest, maps } : rest };
+      await writeState(PERMS_KEY, { users: next, _savedAt: new Date().toISOString() });
+      accountPerms = next;
+    });
+    permsChain = run.catch(() => {});
+    await run;
+    res.json({ ok: true, username, maps });
+  } catch (e) {
+    console.error('Account maps write error:', e.message);
+    res.status(500).json({ error: 'Не удалось сохранить карты' });
   }
 });
 
@@ -1224,7 +1264,7 @@ async function loadAuthOverrides() {
 app.get('/auth/users', requireSession, requireAdmin, (req, res) => {
   noStore(res);
   const users = [...AUTH_USERS.values()]
-    .map(u => ({ username: u.username, role: u.role, changedAt: u.changedAt ? new Date(u.changedAt).toISOString() : '', perms: permsOf(u), created: !!u.created }))
+    .map(u => ({ username: u.username, role: u.role, changedAt: u.changedAt ? new Date(u.changedAt).toISOString() : '', perms: permsOf(u), maps: u.role === 'admin' ? null : accountMapsOf(u), created: !!u.created }))
     .sort((a, b) => (a.role === 'admin' ? -1 : 0) - (b.role === 'admin' ? -1 : 0) || a.username.localeCompare(b.username));
   res.json({ users, min: PASSWORD_MIN });
 });

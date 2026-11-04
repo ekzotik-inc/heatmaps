@@ -1283,3 +1283,17 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   tokens stay — buttons and success states use them.
 - Tests: 100/100 (server + browser). Cache version `20261106b`. Server
   unchanged.
+
+## 2026-11-06 — Choose the maps of each account
+
+- Owner: «на каждой учётке контролировать какие карты на этой учётке будут
+  доступны».
+- Admin page, each account: «Карты» with a checkbox per map. At first the
+  ticks show the role's maps («по роли»). Ticking/unticking saves a chosen
+  list: the account then sees exactly those maps (zero is allowed), new maps
+  are not added on their own. «По роли» returns to the role rule.
+- Server: `account_perms[login].maps`, `POST /auth/maps`, `canAccessMap`
+  honours the list everywhere (maps list, state, layers, photos). Changing
+  rights keeps the maps.
+- Tests: server + PostgreSQL, browser 15/15. Cache `20261106c`. Server
+  changed — Render redeploys on push.

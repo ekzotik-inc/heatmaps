@@ -161,6 +161,9 @@ html, body {
 .sh-map { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 12px; color: var(--ink); cursor: pointer; }
 .sh-map input { width: 16px; height: 16px; margin: 0; accent-color: var(--acc-d); }
 .sh-map.dim { color: var(--mut); cursor: default; }
+.user-maps { margin-top: 8px; }
+.user-maps-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--mut); }
+.user-maps-head .lc-link { min-height: 28px; }
 .sh-upload { display: grid; gap: 7px; margin-top: 4px; }
 .sh-upload-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: stretch; }
 .sh-upload-row select { min-width: 0; }
