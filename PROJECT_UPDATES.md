@@ -1187,3 +1187,25 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   creates a heat layer and a point layer through the UI, uploads CSV, signs
   in again and finds them; the admin does not see them.
 - Cache version `20261103a`. Server changed — Render redeploys on push.
+
+## 2026-11-04 — Admin page: shared layers and account rights
+
+- Owner: a full admin page — upload layers shown on all or chosen maps
+  (existing and future), and per-account rights to upload own layers and to
+  upload/create manual points.
+- «Общие слои» on the Admin tab: upload Excel/CSV as a heat or point layer,
+  tick «Все карты, включая новые» or particular maps, delete. On the maps
+  the layers appear for everyone with access, marked «общий», read-only;
+  they never enter a map's own state.
+- Rights under each account: «Свои слои из Excel», «Точки вручную с фото»,
+  «Свои границы» (defaults: on, off, on). Enforced by the server on
+  `/my/layers`, `/my/photo` uploads and `/my/bounds`; buttons follow the
+  rights after the next sign-in. A viewer with the manual right adds points
+  with photos into own manual layers (visible only to them).
+- Fixed on the way: a map without saved state skipped the viewer clean start
+  and never loaded personal boundaries/layers (now shared layers too).
+- Server: `account_perms`, `POST /auth/perms`, `GET /shared/layers?map=`,
+  `GET /shared/layers/all`, `POST /shared/layers`. Tests: server 77/77 on
+  files and PostgreSQL; browser suite 12/12 (admin uploads a shared layer
+  through the page, sets rights; viewers on two maps see it, rights apply).
+- Cache version `20261104a`. Server changed — Render redeploys on push.

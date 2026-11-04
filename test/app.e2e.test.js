@@ -374,6 +374,46 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     await boss.close();
   });
 
+  // Решение владельца 04.11.2026: страница «Админ» — общие слои для выбранных
+  // карт и права учёток.
+  await t.test('admin uploads a shared layer and sets account rights on the admin page', async () => {
+    const boss = await open('boss', 'other');
+    await boss.page.click('.side-tab[data-tab="tab-data"]');
+    await boss.page.fill('#sh-name', 'общий рынок');
+    const [chooser] = await Promise.all([boss.page.waitForEvent('filechooser'), boss.page.click('#sh-upload')]);
+    const saved = boss.page.waitForResponse(r => r.url().endsWith('/shared/layers') && r.request().method() === 'POST');
+    await chooser.setFiles({ name: 'm.csv', mimeType: 'text/csv', buffer: Buffer.from('Название,Широта,Долгота,Значение\nА,41.3,69.2,5\nБ,42.8,74.6,3\n') });
+    assert.equal((await saved).status(), 200);
+    await boss.page.waitForFunction(() => heatKeys.some(k => DS[k].shared));
+    assert.deepEqual(await boss.page.evaluate(() => [heatKeys.filter(k => DS[k].shared).map(k => DS[k].name), buildStateSnapshot().heatKeys.some(k => DS[k].shared)]),
+      [['Общий рынок'], false], 'shown on the map, not written into the map state');
+    // Права: guest получает ручные точки и теряет свои слои.
+    await boss.page.waitForSelector('[data-permuser="guest"][data-perm="manual"]');
+    for (const perm of ['manual', 'layers']) {
+      const done = boss.page.waitForResponse(r => r.url().endsWith('/auth/perms'));
+      await boss.page.click(`[data-permuser="guest"][data-perm="${perm}"]`);
+      assert.equal((await done).status(), 200);
+    }
+    assert.deepEqual(boss.errors, []);
+    await boss.close();
+
+    for (const [user, map] of [['guest', 'other'], ['viewer', 'comdep']]) {
+      const s = await open(user, map);
+      await s.page.waitForFunction(() => heatKeys.some(k => DS[k] && DS[k].shared));
+      const seen = await s.page.evaluate(() => {
+        const k = heatKeys.find(x => DS[x].shared);
+        return { name: DS[k].name, n: DS[k].recs.length, editable: canEditLayer(DS[k]) };
+      });
+      assert.deepEqual(seen, { name: 'Общий рынок', n: 2, editable: false }, `${user} on ${map}`);
+      if (user === 'guest') {
+        assert.equal(await s.page.isVisible('#add-layer-btn'), false, 'own layers right taken away');
+        await s.page.click('.side-tab[data-tab="tab-points"]');
+        assert.equal(await s.page.isVisible('#add-manual-pt-btn'), true, 'manual points right given');
+      }
+      await s.close();
+    }
+  });
+
   await t.test('admin signs in and the map starts without page errors', async () => {
     const s = await open('boss');
     assert.deepEqual(s.errors, []);

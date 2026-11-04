@@ -151,6 +151,19 @@ html, body {
 .user-pw-acts { display: flex; gap: 6px; align-items: center; }
 .user-pw-acts .lyr-act { flex: 0 0 auto; padding: 9px 10px; }
 .user-pw-save { flex: 1; margin: 0; }
+/* Права учётки и общие слои (страница «Админ») */
+.user-perms { display: grid; gap: 6px; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line2); }
+.user-perms .lc-opt { margin: 0; font-size: 12px; color: var(--ink); }
+.sh-row { padding: 10px 11px; margin-bottom: 7px; background: var(--card); border: 1px solid var(--line2);
+  border-radius: 12px; box-shadow: var(--shadow-card); }
+.sh-maps { display: grid; gap: 4px; margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line2); }
+.sh-map { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 12px; color: var(--ink); cursor: pointer; }
+.sh-map input { width: 16px; height: 16px; margin: 0; accent-color: var(--acc-d); }
+.sh-map.dim { color: var(--mut); cursor: default; }
+.sh-upload { display: grid; gap: 7px; margin-top: 4px; }
+.sh-upload-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: stretch; }
+.sh-upload-row select { min-width: 0; }
+.sh-upload-row .btn { width: auto; margin: 0; padding: 0 14px; white-space: nowrap; }
 
 /* Управление картами (вкладка «Данные») */
 .maps-head { display: flex; align-items: center; gap: 8px; }
@@ -1653,12 +1666,16 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 }
 
 /* ── VIEWER ROLE — hide all upload / create / delete / data controls ───── */
-body.viewer #add-manual-pt-btn,
 body.viewer .lyr-del,
 body.viewer .cpt-del,
 body.viewer #tab-data,
 body.viewer #btn-save-dataset,
 body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
+
+/* Права учётки (выдаёт админ): без права — нет кнопок создания. */
+body.no-layers #add-layer-btn,
+body.no-layers #add-custom-pt-btn,
+body.no-manual #add-manual-pt-btn { display: none !important; }
 
 /* ── MODE BADGE ──────────────────────────────────────────────────────── */
 .mode-badge {

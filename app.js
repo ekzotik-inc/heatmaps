@@ -914,7 +914,7 @@ function cleanBoundLayer(l) {
 let _ownBounds = [];           // личные слои в том виде, как сохранены на сервере
 let _ownBoundsMap = null;      // карта, для которой их уже запросили
 let _ownSaveTimer = 0;
-function canEditBound(l) { return isAdmin() ? !l.own : !!l.own; }
+function canEditBound(l) { return isAdmin() ? !l.own : !!l.own && can('bounds'); }
 function attachOwnBounds() {
   boundLayers = boundLayers.filter(l => !l.own).concat(_ownBounds.map(l => ({ ...l, own: true })));
   bzInvalidate();
@@ -962,7 +962,19 @@ let _ownLayersMap = null;     // карта, для которой уже зап
 let _ownLayersReady = null;   // карта, для которой свои слои загружены
 let _ownLayersSaved = '';
 let _ownLayersTimer = 0;
-function canEditLayer(x) { return isAdmin() ? !x.own : !!x.own; }
+// Права учётки (решение владельца 04.11.2026) — выдаёт сервер при входе:
+// layers — свои слои из файлов, manual — точки вручную с фото, bounds — свои
+// границы. У админа есть всё. Сервер проверяет то же самое при записи.
+let myPerms = {};
+function can(p) { return isAdmin() || !!myPerms[p]; }
+// Общие слои (shared) правит только админ на странице «Админ», не на карте.
+function canEditLayer(x) {
+  if (x.shared) return false;
+  if (isAdmin()) return !x.own;
+  return !!x.own && can(x.manual ? 'manual' : 'layers');
+}
+// Ручные слои, куда эта учётка может добавлять точки.
+function editableManualLayers() { return customPtLayers.filter(l => l.manual && canEditLayer(l)); }
 function ownMark() { return isAdmin() ? {} : { own: true }; }
 function ownLayersPayload() {
   const keys = heatKeys.filter(k => DS[k] && DS[k].own);
@@ -1012,6 +1024,8 @@ async function loadOwnLayers() {
 function scheduleOwnLayersSave() {
   if (isAdmin() || _ownLayersReady !== currentMap) return;   // до загрузки своих не перетираем их
   const next = ownLayersPayload();
+  const manual = next.points.filter(l => l.manual).length;
+  if ((next.heatKeys.length + next.points.length - manual && !can('layers')) || (manual && !can('manual'))) return;
   const json = JSON.stringify(next);
   if (json === _ownLayersSaved) return;
   _ownLayers = next;
@@ -1025,6 +1039,54 @@ function scheduleOwnLayersSave() {
       toast('Свои слои не сохранились: ' + e.message, 'err', 5000);
     }
   }, 800);
+}
+
+/* Общие слои (решение владельца 04.11.2026): админ загружает слой один раз
+   на странице «Админ» и выбирает карты — все (включая будущие) или
+   перечисленные. На карте лежат с пометкой shared (ключи custom_s_* /
+   cpt_s_*), в снимок карты не попадают, на карте их никто не правит.
+   Видимость — как у прочих слоёв: у админа включены, зритель начинает с
+   выключенных. */
+let _sharedLayers = [];
+let _sharedMap = null;
+function attachSharedLayers() {
+  const index = buildPtIndex(ourPts());
+  const heat = _sharedLayers.filter(l => l.kind === 'heat'), pts = _sharedLayers.filter(l => l.kind === 'pt');
+  const keep = new Set(heat.map(l => 'custom_s_' + l.id));
+  heatKeys = heatKeys.filter(k => !(DS[k] && DS[k].shared) || keep.has(k));
+  heat.forEach(l => {
+    const k = 'custom_s_' + l.id;
+    if (!DS[k]) DS[k] = { key: k, visible: isAdmin() };
+    const sv = structuredClone(l);
+    delete sv.visible;
+    applyHeatLayerLook(DS[k], sv);
+    applyHeatLayerRecords(DS[k], sv, false, index);
+    DS[k].shared = true;
+    if (!heatKeys.includes(k)) heatKeys.push(k);
+  });
+  const prev = new Map(customPtLayers.filter(l => l.shared).map(l => [l.id, l.visible]));
+  customPtLayers = customPtLayers.filter(l => !l.shared).concat(pts.map(l => {
+    const id = 'cpt_s_' + l.id;
+    return { ...cleanPointLayer({ ...structuredClone(l), id, visible: prev.has(id) ? prev.get(id) : isAdmin() }), shared: true };
+  }));
+}
+async function loadSharedLayers(force) {
+  if (!SERVER_URL || !currentMap || (!force && _sharedMap === currentMap)) return;
+  const mapId = currentMap;
+  _sharedMap = mapId;
+  try {
+    const res = await authFetch(SERVER_URL + '/shared/layers?map=' + encodeURIComponent(mapId), { signal: AbortSignal.timeout(30000) });
+    if (!res.ok) throw new Error(await serverErrorText(res));
+    const j = await res.json();
+    if (mapId !== currentMap) return;
+    _sharedLayers = Array.isArray(j.layers) ? j.layers : [];
+    attachSharedLayers();
+    reenrichAll();
+    buildHeatUI(); buildCustomPtUI(); buildAddrSrcSel(); buildRecBasisSel(); buildRtExclUI();
+    renderHeat(); renderCustomPoints(); renderRecs();
+  } catch (e) {
+    console.warn('Shared layers load failed:', e.message);
+  }
 }
 
 function applyBoundsState(st) {
@@ -2010,6 +2072,8 @@ const UI_ICONS = {
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
   camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
+  flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+  pin: '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
   sheet: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/>',
 };
 function uiIcon(name, size = 15) {
@@ -2229,7 +2293,7 @@ function buildHeatUI() {
         <div class="cbx sm${d.visible ? ' on' : ''}" role="switch" tabindex="0" aria-checked="${d.visible}" aria-label="Показывать слой «${esc(d.name)}» на карте"></div>
       </div>
       <div class="lc-sub">
-        <span class="lc-n">${n.toLocaleString('ru-RU')} ${plural(n, 'точка', 'точки', 'точек')}${fields.length ? ' · ' + fields.length + ' ' + plural(fields.length, 'поле', 'поля', 'полей') : ''}</span>
+        <span class="lc-n">${n.toLocaleString('ru-RU')} ${plural(n, 'точка', 'точки', 'точек')}${d.shared ? ' · общий' : d.own ? ' · только у вас' : ''}${fields.length ? ' · ' + fields.length + ' ' + plural(fields.length, 'поле', 'поля', 'полей') : ''}</span>
         <div class="lc-tools">
           <button type="button" class="lc-ic lc-xls" title="Выгрузить точки слоя в Excel — те же колонки, что в шаблоне, со всеми вашими полями" aria-label="Выгрузить в Excel">${uiIcon('sheet')}</button>
           ${canEditLayer(d) ? `<button type="button" class="lc-ic lc-tpl" title="Скачать шаблон Excel для этого слоя" aria-label="Скачать шаблон">${uiIcon('download')}</button>
@@ -4046,7 +4110,7 @@ function buildBoundsUI() {
         <button type="button" class="lc-link" data-bznew="cancel">Отмена</button>
       </div>
     </div>`;
-  } else {
+  } else if (can('bounds')) {
     html += `<button type="button" class="create-btn ghost bz-add" data-bzcreate>${uiIcon('plus', 14)} Новая граница</button>`;
   }
 
@@ -4352,7 +4416,7 @@ function manualPopupHtml(layer, r) {
     ${r.comment ? `<div class="rp-comment">${esc(r.comment)}</div>` : ''}
     <span class="pp-tag rp-tag" style="background:${pointColor(layer, r)}22;color:var(--ink);border:1px solid ${pointColor(layer, r)}">${esc(layer.name)}</span>
     ${yandexLinkHtml(r.lat, r.lon)}
-    ${isAdmin() && layer.manual ? `<button type="button" class="rp-edit" data-rpedit="1">${uiIcon('pencil', 13)} Редактировать</button>` : ''}`;
+    ${canEditLayer(layer) && layer.manual ? `<button type="button" class="rp-edit" data-rpedit="1">${uiIcon('pencil', 13)} Редактировать</button>` : ''}`;
 }
 
 // Миниатюры дорисовываются после открытия карточки: до клика по точке байты
@@ -4426,7 +4490,7 @@ function rpField(id) { return document.getElementById(id); }
 function buildRetailLayerSel(selectedId) {
   const sel = rpField('rp-layer');
   if (!sel) return;
-  const layers = manualLayers();
+  const layers = editableManualLayers();
   sel.innerHTML = layers.map(l =>
     `<option value="${esc(l.id)}"${l.id === selectedId ? ' selected' : ''}>${esc(l.name)}</option>`).join('')
     + '<option value="__new__">+ Новый слой…</option>';
@@ -4436,7 +4500,7 @@ function buildRetailLayerSel(selectedId) {
   if (newBox) newBox.style.display = isNew ? '' : 'none';
 }
 function openRetailForm(layerId, id) {
-  if (!isAdmin()) { toast('Точки вручную заводит только владелец', 'err'); return; }
+  if (!can('manual')) { toast('Нет права заводить точки вручную — его выдаёт админ', 'err'); return; }
   syncRetailKeyWarn();
   const layer = layerId ? customPtLayers.find(l => l.id === layerId) : null;
   const p = layer && id ? (layer.recs || []).find(x => x.id === id) : null;
@@ -4444,7 +4508,7 @@ function openRetailForm(layerId, id) {
   _rpLayerId = layer ? layer.id : null;
   _rpPhotos = p ? (p.photos || []).slice() : [];
   _rpColor = p && p.color ? p.color : '';
-  buildRetailLayerSel(layer ? layer.id : (manualLayers()[0] || {}).id);
+  buildRetailLayerSel(layer ? layer.id : (editableManualLayers()[0] || {}).id);
   renderRetailColors();
   rpField('rp-layer-new').value = '';
   rpField('rp-title').textContent = p ? 'Точка' : 'Новая точка';
@@ -4694,7 +4758,7 @@ function createManualLayer(name) {
     id: 'cpt_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
     name: capFirst(name), color, manual: true, visible: true, shape: 'star', size: 34, opacity: 1,
     radiusOn: false, radiusM: 1500, radiusColor: color, radiusOpacity: 0.15,
-    recs: [], _group: null,
+    recs: [], _group: null, ...ownMark(),
   };
   customPtLayers.push(layer);
   return layer;
@@ -4827,7 +4891,7 @@ function buildCustomPtUI() {
         <div class="cbx sm${l.visible ? ' on' : ''}" data-cptoggle="${id}" role="switch" tabindex="0" aria-checked="${l.visible}" aria-label="Показывать слой «${esc(l.name)}» на карте"></div>
       </div>
       <div class="lc-sub">
-        <span class="lc-n" data-cpmore="${id}">${n.toLocaleString('ru-RU')} ${plural(n, 'точка', 'точки', 'точек')}${l.manual ? ' · вручную' : ''}${fields.length ? ' · ' + fields.length + ' ' + plural(fields.length, 'поле', 'поля', 'полей') : ''}</span>
+        <span class="lc-n" data-cpmore="${id}">${n.toLocaleString('ru-RU')} ${plural(n, 'точка', 'точки', 'точек')}${l.manual ? ' · вручную' : ''}${l.shared ? ' · общий' : l.own ? ' · только у вас' : ''}${fields.length ? ' · ' + fields.length + ' ' + plural(fields.length, 'поле', 'поля', 'полей') : ''}</span>
         <div class="lc-tools">
           ${l.manual
             ? `<button type="button" class="lc-ic admin-only" data-cptaddpt="${id}" title="Добавить точку вручную" aria-label="Добавить точку">${uiIcon('plus')}</button>
@@ -4878,7 +4942,7 @@ function buildCustomPtUI() {
               <b>${esc(r.name || 'Без названия')}</b>
               <span>${esc(r.dms ? 'ДМС ' + r.dms : 'без ДМС-кода')}${r.sales != null && r.sales !== '' && isFinite(+r.sales) ? ' · ' + (+r.sales).toLocaleString('ru-RU') + ' продаж' : ''}</span>
             </div>
-            ${isAdmin() ? `<button type="button" class="rp-item-edit" data-rpedit="${id}|${esc(r.id || '')}" title="Редактировать" aria-label="Редактировать точку">${uiIcon('pencil', 13)}</button>` : ''}
+            ${canEditLayer(l) ? `<button type="button" class="rp-item-edit" data-rpedit="${id}|${esc(r.id || '')}" title="Редактировать" aria-label="Редактировать точку">${uiIcon('pencil', 13)}</button>` : ''}
           </div>`).join('')}</div>` : ''}
     </div>`;
   }).join('');
@@ -5488,7 +5552,7 @@ function pointLayerSnapshot(l) {
 
 function buildStateSnapshot() {
   const layers = {};
-  const mapKeys = heatKeys.filter(k => DS[k] && !DS[k].own);
+  const mapKeys = heatKeys.filter(k => DS[k] && !DS[k].own && !DS[k].shared);
   mapKeys.forEach(k => { layers[k] = heatLayerSnapshot(k, DS[k]); });
   return {
     _v: 1, _app: 'hm-br', _savedAt: new Date().toISOString(), _date: new Date().toISOString().slice(0, 10),
@@ -5505,7 +5569,7 @@ function buildStateSnapshot() {
     showPointsAll, heatStyle,
     cityScope,
     addrSrcKeys, addrRefKeys, rtExclKeys,
-    customPtLayers: customPtLayers.filter(l => !l.own).map(pointLayerSnapshot),
+    customPtLayers: customPtLayers.filter(l => !l.own && !l.shared).map(pointLayerSnapshot),
   };
 }
 
@@ -7179,6 +7243,7 @@ function wireEvents() {
 
   // Создать слой: название и поля → шаблон → загрузка
   wireCreateLayer();
+  wireSharedAdmin();
   $('add-layer-btn').addEventListener('click', () => openCreateLayer('heat'));
   // Re-upload data into an existing layer (per-layer "Обновить данные")
   const heatUpdInp = $('heat-update-file');
@@ -7835,6 +7900,90 @@ function genPassword() {
   const buf = new Uint32Array(12); crypto.getRandomValues(buf);
   return Array.from(buf, n => abc[n % abc.length]).join('');
 }
+const PERM_LABELS = [['layers', 'Свои слои из Excel'], ['manual', 'Точки вручную с фото'], ['bounds', 'Свои границы']];
+
+/* Общие слои на странице «Админ»: загрузка из Excel/CSV и выбор карт. */
+let _sharedAll = [];
+async function saveSharedAll() {
+  await mapsPost('/shared/layers', { layers: _sharedAll }, 120000);
+  loadSharedLayers(true);   // текущая карта сразу видит изменения
+}
+async function renderSharedAdmin() {
+  const box = document.getElementById('shared-admin-list');
+  if (!box || !isAdmin()) return;
+  try {
+    const res = await authFetch(SERVER_URL + '/shared/layers/all', { signal: AbortSignal.timeout(30000) });
+    if (!res.ok) throw new Error(await serverErrorText(res));
+    _sharedAll = (await res.json()).layers || [];
+  } catch (e) {
+    box.innerHTML = `<div class="maps-empty">Не удалось загрузить общие слои: ${esc(e.message)}</div>`;
+    return;
+  }
+  const maps = MAP_LIST.filter(m => m && m.id);
+  box.innerHTML = _sharedAll.map((l, i) => {
+    const all = l.maps.includes('*');
+    const n = l.recs.length;
+    return `<div class="sh-row">
+      <div class="user-top">
+        <span class="user-av" aria-hidden="true">${uiIcon(l.kind === 'heat' ? 'flame' : 'pin', 14)}</span>
+        <div class="user-main"><b>${esc(l.name)}</b><small>${l.kind === 'heat' ? 'Тепловой слой' : 'Слой точек'} · ${n.toLocaleString('ru-RU')} ${plural(n, 'точка', 'точки', 'точек')}</small></div>
+        <button type="button" class="lyr-act" data-shdel="${i}">Удалить</button>
+      </div>
+      <div class="sh-maps" role="group" aria-label="Карты для «${esc(l.name)}»">
+        <label class="sh-map"><input type="checkbox" data-shmap="${i}" value="*"${all ? ' checked' : ''}/> Все карты, включая новые</label>
+        ${maps.map(m => `<label class="sh-map${all ? ' dim' : ''}"><input type="checkbox" data-shmap="${i}" value="${esc(m.id)}"${all || l.maps.includes(m.id) ? ' checked' : ''}${all ? ' disabled' : ''}/> ${esc(m.name)}</label>`).join('')}
+      </div>
+    </div>`;
+  }).join('') || '<div class="maps-empty">Общих слоёв пока нет</div>';
+  const persist = async () => {
+    try { await saveSharedAll(); toast('Общие слои сохранены', 'ok', 2500); } catch (e) { toast(e.message, 'err', 5000); }
+    renderSharedAdmin();
+  };
+  box.querySelectorAll('[data-shmap]').forEach(cb => cb.addEventListener('change', () => {
+    const l = _sharedAll[+cb.dataset.shmap];
+    if (cb.value === '*') l.maps = cb.checked ? ['*'] : [];
+    else l.maps = cb.checked ? [...new Set([...l.maps.filter(m => m !== '*'), cb.value])] : l.maps.filter(m => m !== cb.value);
+    persist();
+  }));
+  box.querySelectorAll('[data-shdel]').forEach(b => b.addEventListener('click', () => {
+    const l = _sharedAll[+b.dataset.shdel];
+    if (!confirm(`Удалить общий слой «${l.name}» со всех карт?`)) return;
+    _sharedAll.splice(+b.dataset.shdel, 1);
+    persist();
+  }));
+}
+function wireSharedAdmin() {
+  const $ = id => document.getElementById(id);
+  if (!$('sh-upload') || $('sh-upload')._wired) return;
+  $('sh-upload')._wired = true;
+  $('shared-refresh').addEventListener('click', renderSharedAdmin);
+  $('sh-upload').addEventListener('click', () => $('sh-file').click());
+  $('sh-file').addEventListener('change', () => {
+    const f = $('sh-file').files[0]; if (!f) return;
+    $('sh-file').value = '';
+    const kind = $('sh-kind').value;
+    const name = capFirst($('sh-name').value) || capFirst(f.name.replace(/\.[^.]+$/, ''));
+    parseSheet(f, async rows => {
+      const recs = kind === 'heat' ? toRecs(rows) : toCustomPtRecs(rows);
+      if (!recs.length) { toast('В файле нет строк с широтой и долготой', 'err'); return; }
+      const color = LAYER_PALETTE[_sharedAll.length % LAYER_PALETTE.length];
+      _sharedAll.push({
+        id: 's' + Date.now().toString(36), kind, name: name.slice(0, 40), maps: ['*'], color, fields: recs._fields || [],
+        ...(kind === 'heat' ? { volUnit: recs._percent ? '%' : '', recs: slimRecs(recs) } : { recs }),
+      });
+      try {
+        await saveSharedAll();
+        $('sh-name').value = '';
+        toast(`Общий слой «${name}»: ${recs.length.toLocaleString('ru-RU')} ${plural(recs.length, 'точка', 'точки', 'точек')} — на всех картах`, 'ok', 4000);
+      } catch (e) {
+        _sharedAll.pop();
+        toast(e.message, 'err', 5000);
+      }
+      renderSharedAdmin();
+    });
+  });
+}
+
 async function renderUsersAdmin() {
   const box = document.getElementById('users-admin-list');
   if (!box || !isAdmin()) return;
@@ -7859,6 +8008,10 @@ async function renderUsersAdmin() {
         <div class="user-main"><b>${esc(u.username)}${me ? '<span class="map-row-tag">вы</span>' : ''}</b><small>${esc(ROLE_NAMES[u.role] || u.role)} · ${esc(when)}</small></div>
         <button type="button" class="lyr-act user-pw-btn" data-pwtoggle="${esc(u.username)}">${open ? 'Отмена' : 'Сменить пароль'}</button>
       </div>
+      ${u.role === 'admin' ? '' : `<div class="user-perms" role="group" aria-label="Права «${esc(u.username)}»">${PERM_LABELS.map(([p, label]) => {
+        const on = !!(u.perms && u.perms[p]);
+        return `<div class="lc-opt"><div class="cbx sm${on ? ' on' : ''}" role="switch" tabindex="0" aria-checked="${on}" data-permuser="${esc(u.username)}" data-perm="${p}" aria-label="${esc(label)} — ${esc(u.username)}"></div><span>${esc(label)}</span></div>`;
+      }).join('')}</div>`}
       ${open ? `<div class="user-pw-form">
         <div class="user-pw-row">
           <input type="password" class="mf-input" data-pw1 autocomplete="new-password" placeholder="Новый пароль, от ${min} символов" minlength="${min}" maxlength="128"/>
@@ -7872,6 +8025,21 @@ async function renderUsersAdmin() {
       </div>` : ''}
     </div>`;
   }).join('') || '<div class="maps-empty">Учётных записей нет</div>';
+  box.querySelectorAll('[data-permuser]').forEach(sw => {
+    const toggle = async () => {
+      const on = sw.getAttribute('aria-checked') !== 'true';
+      sw.classList.toggle('on', on); sw.setAttribute('aria-checked', String(on));
+      try {
+        await mapsPost('/auth/perms', { username: sw.dataset.permuser, perms: { [sw.dataset.perm]: on } }, 20000);
+        toast('Права «' + sw.dataset.permuser + '» сохранены', 'ok', 2500);
+      } catch (e) {
+        toast(e.message, 'err', 5000);
+        renderUsersAdmin();
+      }
+    };
+    sw.addEventListener('click', toggle);
+    sw.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(); } });
+  });
   box.querySelectorAll('[data-pwtoggle]').forEach(b => b.addEventListener('click', () => {
     _pwOpen = _pwOpen === b.dataset.pwtoggle ? null : b.dataset.pwtoggle;
     renderUsersAdmin().then(() => { const i = box.querySelector('[data-pw1]'); if (i) i.focus(); });
@@ -7919,12 +8087,16 @@ function wireMapsAdmin() {
   const ur = $('users-refresh'); if (ur) ur.addEventListener('click', renderUsersAdmin);
   $('mf-name').addEventListener('keydown', e => { if (e.key === 'Enter') submitMapForm(); });
   resetMapForm();
-  if (isAdmin()) { renderMapsAdmin(); renderUsersAdmin(); }
+  if (isAdmin()) { renderMapsAdmin(); renderUsersAdmin(); renderSharedAdmin(); }
 }
 
 // Viewers may freely tune the view (colours, layers, cities) but cannot
 // upload, create or delete data — those controls are hidden via `body.viewer`.
-function applyRoleUI() { document.body.classList.toggle('viewer', !isAdmin()); }
+function applyRoleUI() {
+  document.body.classList.toggle('viewer', !isAdmin());
+  document.body.classList.toggle('no-layers', !can('layers'));
+  document.body.classList.toggle('no-manual', !can('manual'));
+}
 
 /* ── ПУБЛИКАЦИЯ ОБНОВЛЕНИЙ (слежение + видимое применение) ───────────── */
 // Владелец сохраняет карту на сервер; остальные вкладки узнают об этом из
@@ -8077,6 +8249,7 @@ async function runUpdate() {
     setUpdateProgress(0.08, 'Обновляем карту', 'Применяем настройки слоёв…');
     applySnapshot(manifest);
     applyViewerDefaults();
+    attachSharedLayers(); loadSharedLayers(true);
     renderCurrentState();
 
     const keys = eagerStateLayers();
@@ -8212,6 +8385,7 @@ async function applyStartupSnapshot(snapshot) {
   _activeStateRevision = stateRevision(snapshot);
   applySnapshot(snapshot);
   applyViewerDefaults();
+  attachSharedLayers(); loadSharedLayers();
   renderCurrentState();
   // The map becomes useful as soon as the visible layer and recommendation
   // basis are ready; hidden records wait for a deliberate user action.
@@ -8248,6 +8422,10 @@ async function startApp() {
     initialRevision = stateRevision(initial);
     await applyStartupSnapshot(initial);
   } else {
+    // Пустая карта: чистый старт зрителя, его личные данные и общие слои
+    // нужны и здесь, иначе на карте без сохранённого состояния их не было бы.
+    applyViewerDefaults();
+    attachSharedLayers(); loadSharedLayers();
     renderCurrentState();
   }
   wireEvents();
@@ -8362,6 +8540,7 @@ async function startApp() {
       const me = await res.json();
       if (me.token) rememberSessionToken(me.token);
       applyWriteKey(me.writeKey);
+      myPerms = me.perms || {};
       currentUser = me.username;
       currentRole = me.role;
       currentMap = sessionStorage.getItem('hm_map') || null;
@@ -8410,6 +8589,7 @@ async function startApp() {
       const me = await res.json();
       if (me.token) rememberSessionToken(me.token);
       applyWriteKey(me.writeKey);
+      myPerms = me.perms || {};
       currentUser = me.username;
       currentRole = me.role;
       sessionStorage.setItem('hm_role', currentRole);

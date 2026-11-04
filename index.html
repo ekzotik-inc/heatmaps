@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.1/maplibre-gl.css"/>
-  <link rel="stylesheet" href="style.css?v=20261103a"/>
+  <link rel="stylesheet" href="style.css?v=20261104a"/>
 </head>
 <body>
 
@@ -329,11 +329,30 @@
 
         <div class="tab-section-divider"></div>
         <div class="maps-head">
+          <p class="tab-section-title">Общие слои</p>
+          <button type="button" class="maps-refresh" id="shared-refresh" title="Обновить список" aria-label="Обновить список общих слоёв">↻</button>
+        </div>
+        <div id="shared-admin-list"></div>
+        <div class="sh-upload">
+          <input type="text" class="mf-input" id="sh-name" maxlength="40" placeholder="Название слоя" autocomplete="off"/>
+          <div class="sh-upload-row">
+            <select id="sh-kind" class="mf-input" aria-label="Вид слоя">
+              <option value="heat">Тепловой слой</option>
+              <option value="pt">Слой точек</option>
+            </select>
+            <button type="button" class="btn" id="sh-upload">Загрузить Excel / CSV</button>
+          </div>
+          <input type="file" id="sh-file" accept=".csv,.xlsx,.xls" hidden/>
+        </div>
+        <p class="share-hint">Общий слой загружается один раз и появляется на выбранных картах у всех, кому они открыты. «Все карты» — и на тех, что будут созданы позже. На картах его нельзя изменить — только здесь.</p>
+
+        <div class="tab-section-divider"></div>
+        <div class="maps-head">
           <p class="tab-section-title">Учётные записи</p>
           <button type="button" class="maps-refresh" id="users-refresh" title="Обновить список" aria-label="Обновить список учётных записей">↻</button>
         </div>
         <div id="users-admin-list"></div>
-        <p class="share-hint">Смена пароля сразу завершает все открытые сессии этого логина — человеку нужно войти заново с новым паролем. Свою сессию вы не потеряете.</p>
+        <p class="share-hint">Права действуют сразу на сервере; кнопки у человека появятся или пропадут после повторного входа. Смена пароля сразу завершает все открытые сессии этого логина — человеку нужно войти заново с новым паролем. Свою сессию вы не потеряете.</p>
 
         <div class="tab-section-divider"></div>
         <p class="tab-section-title">Поделиться настройками</p>
@@ -749,7 +768,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20261103a'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20261104a'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();
