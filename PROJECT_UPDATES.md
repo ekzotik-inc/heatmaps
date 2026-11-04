@@ -1297,3 +1297,16 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   rights keeps the maps.
 - Tests: server + PostgreSQL, browser 15/15. Cache `20261106c`. Server
   changed — Render redeploys on push.
+
+## 2026-11-06 — Delete a single point from any layer
+
+- Owner: as admin, delete any chosen point from any layer; it leaves the
+  layer itself, for everyone.
+- «Удалить точку» at the bottom of the point card: heat-layer labels, points
+  layer markers, manual points. Shown only to whoever edits the layer
+  (`canEditLayer`): the admin for map and shared layers, the owner for own
+  layers. Confirmation, then the record is removed, layer stats and the
+  address-program lists are rebuilt and the layer is saved (map state,
+  shared layer or own layers).
+- Heat-layer points are clicked as dots, shown when «Точки» is on.
+- Tests: browser 16/16. Cache `20261106d`. Server unchanged.

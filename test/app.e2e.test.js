@@ -501,6 +501,50 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     await boss.close();
   });
 
+  // Владелец: админ удаляет любую точку из любого слоя — из самого слоя, у всех.
+  await t.test('admin deletes a single point from a heat layer and a points layer', async () => {
+    const boss = await open('boss', 'comdep');
+    boss.page.on('dialog', d => d.accept());
+    const saved = () => boss.page.waitForResponse(r => r.url().includes('/state?map=comdep') && r.request().method() === 'POST');
+    let done = saved();
+    await boss.page.evaluate(() => {
+      const recs = [{ name: 'Тепло 1', lat: 41.30, lon: 69.20, vol: 4 }, { name: 'Тепло 2', lat: 41.31, lon: 69.25, vol: 6 }];
+      recs.forEach(r => { r.fil = cityOf(r.lat, r.lon); });
+      DS.custom_del = { key: 'custom_del', name: 'Тепло', color: '#e31a1c', ramp: 'custom', opacity: 1, intensity: 1, visible: true, showTags: true,
+        recs, stats: statsOf(recs), _recordsLoaded: true, _userData: true };
+      heatKeys.push('custom_del');
+      customPtLayers.push({ id: 'cpt_del', name: 'Киоски', color: '#2ca25f', visible: true, shape: 'circle', size: 30, opacity: 1,
+        recs: [{ name: 'Киоск 1', lat: 41.30, lon: 69.20 }, { name: 'Киоск 2', lat: 41.32, lon: 69.28 }] });
+      showPointsAll = true;   // точки тепловых слоёв видны при включённых «Точках»
+      buildHeatUI(); buildCustomPtUI(); renderHeat(); renderTags(true); renderCustomPoints();
+      map.setView([41.31, 69.24], 13, { animate: false });
+      saveState();
+    });
+    assert.equal((await done).status(), 200);
+    // Слой точек: клик по метке → «Удалить точку».
+    await boss.page.evaluate(() => customPtLayers.find(l => l.id === 'cpt_del')._group.eachLayer(m => {
+      if (m.getTooltip && m.getTooltip() && /Киоск 2/.test(m.getTooltip().getContent())) m.openPopup();
+    }));
+    done = saved();
+    await boss.page.click('.leaflet-popup [data-ptdel]');
+    assert.equal((await done).status(), 200);
+    // Тепловой слой: ярлык точки → «Удалить точку».
+    await boss.page.evaluate(() => tagRoot.eachLayer(m => { if (m.getTooltip() && m.getTooltip().getContent() === 'Тепло 1') m.openPopup(); }));
+    done = saved();
+    await boss.page.click('.leaflet-popup [data-ptdel]');
+    assert.equal((await done).status(), 200);
+    assert.deepEqual(await boss.page.evaluate(() => [DS.custom_del.recs.map(r => r.name), DS.custom_del.stats.n,
+      customPtLayers.find(l => l.id === 'cpt_del').recs.map(r => r.name)]), [['Тепло 2'], 1, ['Киоск 1']]);
+    assert.deepEqual(boss.errors, []);
+    await boss.close();
+
+    const viewer = await open('viewer', 'comdep');
+    const seen = await viewer.page.evaluate(() => [DS.custom_del.stats.n, customPtLayers.find(l => l.id === 'cpt_del').recs.map(r => r.name),
+      delPointBtnHtml(DS.custom_del), delPointBtnHtml(customPtLayers.find(l => l.id === 'cpt_del'))]);
+    assert.deepEqual(seen, [1, ['Киоск 1'], '', ''], 'gone for everyone; a viewer has no delete button');
+    await viewer.close();
+  });
+
   await t.test('admin chooses which maps an account sees', async () => {
     const boss = await open('boss', 'other');
     await boss.page.click('.side-tab[data-tab="tab-data"]');

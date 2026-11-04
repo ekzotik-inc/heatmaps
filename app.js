@@ -1830,6 +1830,36 @@ function tagPopupHtml(d, r) {
     `<span class="pp-tag" style="background:var(--acc-l);color:var(--acc-d);border:1px solid rgba(18,173,193,.35)">${esc(d.name)}</span>` +
     yandexLinkHtml(r.lat, r.lon);
 }
+// Удаление одной точки из слоя (решение владельца 06.11.2026): кнопка в
+// карточке точки у тех, кто правит слой (`canEditLayer`). Точка уходит из
+// самого слоя — значит, у всех, кто его видит: слой карты — через состояние
+// карты, общий — через /shared/layers/one, свой — через /my/layers
+// (всё это делает saveState → doSave).
+function delPointBtnHtml(layer) {
+  return canEditLayer(layer) ? `<button type="button" class="pp-del" data-ptdel>${uiIcon('trash', 14)} Удалить точку</button>` : '';
+}
+function wireDelPoint(popup, kind, layer, r) {
+  const btn = popup.getElement() && popup.getElement().querySelector('[data-ptdel]');
+  if (btn) btn.addEventListener('click', () => { if (deleteLayerPoint(kind, layer, r)) map.closePopup(popup); });
+}
+function deleteLayerPoint(kind, layer, r) {
+  if (!canEditLayer(layer) || !layer.recs.includes(r)) return false;
+  if (!confirm(`Удалить точку «${r.name || 'без названия'}» из слоя «${layer.name}»? Она пропадёт из слоя у всех, кто его видит.`)) return false;
+  const rest = layer.recs.filter(x => x !== r);   // новый массив — кэши тепла пересчитаются
+  if (layer.recs._fields) rest._fields = layer.recs._fields;
+  layer.recs = rest;
+  if (kind === 'heat') {
+    layer.stats = statsOf(layer.recs);
+    layer._heatCache = null;
+    buildHeatUI(); renderHeat(); renderTags(true);
+  } else {
+    buildCustomPtUI(); renderCustomPoints();
+  }
+  clearAddrPreview(); buildAddrSrcSel(); buildRtExclUI(); renderCityInfo();
+  saveState();
+  toast(`Точка удалена из слоя «${layer.name}»`, 'ok', 3000);
+  return true;
+}
 // renderHeat() дёргается на каждое движение ползунка. Пересобирать до 1200
 // маркеров на каждый кадр незачем — сверяем сигнатуру входных данных.
 let _tagSig = '';
@@ -1872,7 +1902,8 @@ function renderTags(force) {
         fillColor: color, fillOpacity: .95,
       });
       // Содержимое собирается по клику — 1200 готовых строк HTML не нужны.
-      m.bindPopup(() => tagPopupHtml(d, r));
+      m.bindPopup(() => tagPopupHtml(d, r) + delPointBtnHtml(d));
+      m.on('popupopen', e => wireDelPoint(e.popup, 'heat', d, r));
       if (withTooltip && r.name) {
         m.bindTooltip(esc(r.name), { className: 'tt', direction: 'top', offset: [0, -6] });
       }
@@ -3456,8 +3487,8 @@ function renderCustomPoints() {
       const rich = l.manual || isManualRec(r);
       if (rich) {
         // Карточка с фото собирается при открытии — байты снимков до клика не нужны.
-        m.bindPopup(() => manualPopupHtml(l, r), { maxWidth: 300, className: 'retail-popup' });
-        m.on('popupopen', e => wireManualPopup(e.popup, l, r, m));
+        m.bindPopup(() => manualPopupHtml(l, r) + delPointBtnHtml(l), { maxWidth: 300, className: 'retail-popup' });
+        m.on('popupopen', e => { wireManualPopup(e.popup, l, r, m); wireDelPoint(e.popup, 'pt', l, r); });
       } else {
         const parts = [r.name ? `<div class="pp-title">${esc(r.name)}</div>` : ''];
         if (r.addr)  parts.push(`<div class="pp-row"><span>Адрес</span><b style="font-family:Inter;font-weight:500;text-align:right">${esc(r.addr)}</b></div>`);
@@ -3465,7 +3496,8 @@ function renderCustomPoints() {
         if (r.code)  parts.push(`<div class="pp-row"><span>Код</span><b>${esc(r.code)}</b></div>`);
         parts.push(extraRowsHtml(r));
         parts.push(yandexLinkHtml(r.lat, r.lon));
-        m.bindPopup(parts.filter(Boolean).join(''));
+        m.bindPopup(() => parts.filter(Boolean).join('') + delPointBtnHtml(l));
+        m.on('popupopen', e => wireDelPoint(e.popup, 'pt', l, r));
       }
       if (r.name) m.bindTooltip(`<b style="font-weight:700">${esc(r.name)}</b><br>${esc(l.name)}`, { className: 'tt', direction: 'top', offset: [0, -ic.anchor[1] + 4] });
       m.addTo(l._group);
@@ -7065,7 +7097,6 @@ function syncControls() {
   $('s-heat-radius').value = heatRadius; $('v-heat-radius').textContent = heatRadius + ' px';
   $('heat-blend').value    = heatBlend;
   syncHeatStyleBtns();
- 
   syncBoundsBadge();
   syncDistCtl('rt-radius', rtRadius);
   $('op-rt-radius').value = rtRadiusOp;
