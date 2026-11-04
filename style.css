@@ -145,6 +145,7 @@ html, body {
 .user-main b { font-size: 12.5px; color: var(--ink); display: flex; align-items: center; gap: 6px; }
 .user-main small { font-size: 10.5px; color: var(--mut); }
 .user-pw-btn { flex: 0 0 auto; padding: 6px 10px; }
+.user-del { flex: 0 0 auto; width: 30px; height: 30px; padding: 0; display: grid; place-items: center; }
 .user-pw-form { display: grid; gap: 7px; margin-top: 10px; }
 .user-pw-row { display: flex; gap: 6px; }
 .user-pw-row .lyr-act { flex: 0 0 auto; width: 38px; }

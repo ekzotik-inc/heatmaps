@@ -7394,6 +7394,7 @@ function wireEvents() {
   // Создать слой: название и поля → шаблон → загрузка
   wireCreateLayer();
   wireSharedAdmin();
+  wireAccountForm();
   $('add-layer-btn').addEventListener('click', () => openCreateLayer('heat'));
   // Re-upload data into an existing layer (per-layer "Обновить данные")
   const heatUpdInp = $('heat-update-file');
@@ -8110,6 +8111,32 @@ async function renderSharedAdmin() {
     persist();
   }));
 }
+function wireAccountForm() {
+  const $ = id => document.getElementById(id);
+  if (!$('acc-create') || $('acc-create')._wired) return;
+  $('acc-create')._wired = true;
+  $('acc-role').innerHTML = Object.entries(ROLE_NAMES)
+    .map(([r, name]) => `<option value="${esc(r)}"${r === 'other' ? ' selected' : ''}>${esc(name)}</option>`).join('');
+  $('acc-gen').addEventListener('click', () => { $('acc-pass').value = genPassword(); });
+  $('acc-create').addEventListener('click', async () => {
+    const username = $('acc-name').value.trim().toLowerCase(), password = $('acc-pass').value, role = $('acc-role').value;
+    if (!username) { toast('Укажите логин', 'warn'); $('acc-name').focus(); return; }
+    if (password.length < 8) { toast('Пароль — от 8 символов', 'warn'); $('acc-pass').focus(); return; }
+    if (role === 'admin' && !confirm(`Учётка «${username}» получит полные права владельца. Продолжить?`)) return;
+    $('acc-create').disabled = true;
+    try {
+      await mapsPost('/auth/users/create', { username, role, password }, 30000);
+      toast(`Учётка «${username}» создана — передайте логин и пароль`, 'ok', 5000);
+      $('acc-name').value = ''; $('acc-pass').value = '';
+      $('acc-form-group').open = false;
+      renderUsersAdmin();
+    } catch (e) {
+      toast(e.message, 'err', 5000);
+    } finally {
+      $('acc-create').disabled = false;
+    }
+  });
+}
 function wireSharedAdmin() {
   const $ = id => document.getElementById(id);
   if (!$('sh-upload') || $('sh-upload')._wired) return;
@@ -8163,8 +8190,9 @@ async function renderUsersAdmin() {
     return `<div class="user-row${open ? ' open' : ''}" data-user="${esc(u.username)}">
       <div class="user-top">
         <span class="user-av">${esc(u.username.slice(0, 1).toUpperCase())}</span>
-        <div class="user-main"><b>${esc(u.username)}${me ? '<span class="map-row-tag">вы</span>' : ''}</b><small>${esc(ROLE_NAMES[u.role] || u.role)} · ${esc(when)}</small></div>
+        <div class="user-main"><b>${esc(u.username)}${me ? '<span class="map-row-tag">вы</span>' : ''}${u.created ? '<span class="map-row-tag">создана здесь</span>' : ''}</b><small>${esc(ROLE_NAMES[u.role] || u.role)} · ${esc(when)}</small></div>
         <button type="button" class="lyr-act user-pw-btn" data-pwtoggle="${esc(u.username)}">${open ? 'Отмена' : 'Сменить пароль'}</button>
+        ${u.created && !me ? `<button type="button" class="lyr-act user-del" data-userdel="${esc(u.username)}" title="Удалить учётку" aria-label="Удалить учётку «${esc(u.username)}»">${uiIcon('trash', 14)}</button>` : ''}
       </div>
       ${u.role === 'admin' ? '' : `<div class="user-perms" role="group" aria-label="Права «${esc(u.username)}»">${PERM_LABELS.map(([p, label]) => {
         const on = !!(u.perms && u.perms[p]);
@@ -8183,6 +8211,15 @@ async function renderUsersAdmin() {
       </div>` : ''}
     </div>`;
   }).join('') || '<div class="maps-empty">Учётных записей нет</div>';
+  box.querySelectorAll('[data-userdel]').forEach(b => b.addEventListener('click', async () => {
+    const username = b.dataset.userdel;
+    if (!confirm(`Удалить учётку «${username}»? Человек сразу выйдет и больше не сможет войти. Его личные слои и границы останутся на сервере до удаления карт.`)) return;
+    try {
+      await mapsPost('/auth/users/delete', { username }, 20000);
+      toast(`Учётка «${username}» удалена`, 'ok', 3000);
+    } catch (e) { toast(e.message, 'err', 5000); }
+    renderUsersAdmin();
+  }));
   box.querySelectorAll('[data-permuser]').forEach(sw => {
     const toggle = async () => {
       const on = sw.getAttribute('aria-checked') !== 'true';

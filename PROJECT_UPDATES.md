@@ -1253,3 +1253,18 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   rule (`maps` + `except`).
 - Tests: server 79/79 (files and PostgreSQL), browser 14/14.
 - Cache version `20261105c`. Server changed — Render redeploys on push.
+
+## 2026-11-06 — Create and delete accounts on the Admin page
+
+- Owner: needs to create new accounts.
+- «＋ Новая учётка» under «Учётные записи»: login (latin, digits, . - _),
+  role (owner/admin, Com Dep, Другая, Кыргызстан — defines which maps open),
+  password (or generate). The account can sign in at once; rights switches
+  and password change work as for other accounts.
+- Accounts created here are marked «создана здесь» and have a delete button;
+  deleting ends their sessions at once and clears their rights. Accounts
+  from Render's `AUTH_USERS_JSON` cannot be deleted here.
+- Server: `auth_accounts` in app_state, `POST /auth/users/create`,
+  `POST /auth/users/delete`, loaded on start before password overrides.
+- Tests: server 85/85 (files and PostgreSQL), browser 15/15.
+- Cache version `20261106a`. Server changed — Render redeploys on push.

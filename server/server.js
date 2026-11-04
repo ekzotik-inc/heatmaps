@@ -1131,6 +1131,81 @@ function storePasswordOverride(username, override) {
   return run;
 }
 
+// ---------------------------------------------------------------------------
+// Учётки, созданные админом на странице «Админ» (решение владельца 06.11.2026).
+// Хранятся в app_state под ключом auth_accounts и добавляются к учёткам из
+// AUTH_USERS_JSON; при совпадении логина побеждает окружение. Удалить можно
+// только созданные здесь.
+// ---------------------------------------------------------------------------
+const ACCOUNTS_KEY = 'auth_accounts';
+let accountsChain = Promise.resolve();
+
+async function loadCreatedAccounts() {
+  const v = await readState(ACCOUNTS_KEY);
+  stateReadCache.delete(ACCOUNTS_KEY);
+  const users = (v && v.users) || {};
+  for (const [name, a] of Object.entries(users)) {
+    if (AUTH_USERS.has(name) || !a || !AUTH_ROLES.has(a.role) || !parsePasswordHash(a.passwordHash)) continue;
+    AUTH_USERS.set(name, { username: name, role: a.role, passwordHash: a.passwordHash, created: true });
+  }
+}
+// Изменить сохранённый список созданных учёток (по очереди, как реестр карт).
+function updateCreatedAccounts(fn) {
+  const run = accountsChain.then(async () => {
+    const cur = (await readState(ACCOUNTS_KEY)) || {};
+    const users = { ...(cur.users || {}) };
+    fn(users);
+    await writeState(ACCOUNTS_KEY, { users, _savedAt: new Date().toISOString() });
+    stateReadCache.delete(ACCOUNTS_KEY);
+  });
+  accountsChain = run.catch(() => {});
+  return run;
+}
+
+app.post('/auth/users/create', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const b = req.body || {};
+  const username = String(b.username || '').trim().toLowerCase();
+  const role = String(b.role || '');
+  const password = String(b.password == null ? '' : b.password);
+  if (!/^[a-z0-9._-]{3,32}$/.test(username)) return res.status(400).json({ error: 'Логин: 3–32 символа, латиница, цифры, точка, дефис, подчёркивание' });
+  if (!AUTH_ROLES.has(role)) return res.status(400).json({ error: 'Неизвестная роль' });
+  if (AUTH_USERS.has(username)) return res.status(409).json({ error: 'Такой логин уже есть' });
+  const problem = passwordProblem(password);
+  if (problem) return res.status(400).json({ error: problem });
+  try {
+    const passwordHash = hashPassword(password);
+    await updateCreatedAccounts(users => { users[username] = { role, passwordHash, createdAt: Date.now() }; });
+    AUTH_USERS.set(username, { username, role, passwordHash, created: true });
+    res.json({ ok: true, username, role });
+  } catch (e) {
+    console.error('Account create error:', e.message);
+    res.status(500).json({ error: 'Не удалось создать учётку' });
+  }
+});
+
+app.post('/auth/users/delete', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const username = String((req.body || {}).username || '').trim().toLowerCase();
+  const user = AUTH_USERS.get(username);
+  if (!user) return res.status(404).json({ error: 'Учётная запись не найдена' });
+  if (!user.created) return res.status(400).json({ error: 'Эту учётку задают настройки Render — удалить её можно только там' });
+  try {
+    await updateCreatedAccounts(users => { delete users[username]; });
+    AUTH_USERS.delete(username);   // её сессии сразу перестают проходить проверку
+    if (accountPerms[username]) {
+      // Права не переходят к новой учётке с тем же логином.
+      const { [username]: _gone, ...rest } = accountPerms;
+      await writeState(PERMS_KEY, { users: rest, _savedAt: new Date().toISOString() });
+      accountPerms = rest;
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Account delete error:', e.message);
+    res.status(500).json({ error: 'Не удалось удалить учётку' });
+  }
+});
+
 async function loadAuthOverrides() {
   const v = await readState(AUTH_OVERRIDES_KEY);
   stateReadCache.delete(AUTH_OVERRIDES_KEY);
@@ -1149,7 +1224,7 @@ async function loadAuthOverrides() {
 app.get('/auth/users', requireSession, requireAdmin, (req, res) => {
   noStore(res);
   const users = [...AUTH_USERS.values()]
-    .map(u => ({ username: u.username, role: u.role, changedAt: u.changedAt ? new Date(u.changedAt).toISOString() : '', perms: permsOf(u) }))
+    .map(u => ({ username: u.username, role: u.role, changedAt: u.changedAt ? new Date(u.changedAt).toISOString() : '', perms: permsOf(u), created: !!u.created }))
     .sort((a, b) => (a.role === 'admin' ? -1 : 0) - (b.role === 'admin' ? -1 : 0) || a.username.localeCompare(b.username));
   res.json({ users, min: PASSWORD_MIN });
 });
@@ -1583,6 +1658,7 @@ initDb()
     db = null;
   })
   .then(() => loadMapRegistry().catch(e => console.error('Map registry load error:', e.message)))
+  .then(() => loadCreatedAccounts().catch(e => console.error('Created accounts load error:', e.message)))
   .then(() => loadAuthOverrides().catch(e => console.error('Auth overrides load error:', e.message)))
   .then(() => loadAccountPerms().catch(e => console.error('Account perms load error:', e.message)))
   .then(() => {

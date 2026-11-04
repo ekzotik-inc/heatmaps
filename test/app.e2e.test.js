@@ -477,6 +477,30 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     await s.close();
   });
 
+  // Владелец 06.11.2026: создавать новые учётки на странице «Админ».
+  await t.test('admin creates and deletes an account on the admin page', async () => {
+    const boss = await open('boss', 'other');
+    boss.page.on('dialog', d => d.accept());
+    await boss.page.click('.side-tab[data-tab="tab-data"]');
+    await boss.page.click('#acc-form-group summary');
+    await boss.page.fill('#acc-name', 'Anna.K');
+    await boss.page.selectOption('#acc-role', 'comdep');
+    await boss.page.fill('#acc-pass', 'anna-pass-123');
+    const created = boss.page.waitForResponse(r => r.url().endsWith('/auth/users/create'));
+    await boss.page.click('#acc-create');
+    assert.equal((await created).status(), 200);
+    const canLogin = async () => (await api.request('/auth/login', json({ username: 'anna.k', password: 'anna-pass-123' }))).status;
+    assert.equal(await canLogin(), 200, 'the new account signs in');
+    await boss.page.waitForSelector('[data-userdel="anna.k"]');
+    const deleted = boss.page.waitForResponse(r => r.url().endsWith('/auth/users/delete'));
+    await boss.page.click('[data-userdel="anna.k"]');
+    assert.equal((await deleted).status(), 200);
+    assert.equal(await canLogin(), 401, 'deleted account cannot sign in');
+    assert.equal(await boss.page.isVisible('[data-userdel="viewer"]'), false, 'accounts from Render have no delete button');
+    assert.deepEqual(boss.errors, []);
+    await boss.close();
+  });
+
   await t.test('admin signs in and the map starts without page errors', async () => {
     const s = await open('boss');
     assert.deepEqual(s.errors, []);
