@@ -422,19 +422,31 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     await boss.page.click('.side-tab[data-tab="tab-points"]');
     const shared = boss.page.waitForResponse(r => r.url().endsWith('/shared/layers/one'));
     await boss.page.click('[data-cpshare="cpt_1"]');
+    // Окно выбора карт: «все карты», но без Кыргызстана.
+    await boss.page.uncheck('[data-dlg-map][value="kg"]');
+    await boss.page.click('#sh-dlg-ok');
     assert.equal((await shared).status(), 200);
     await boss.page.waitForFunction(() => customPtLayers.some(l => l.shared && l.name === 'Мои точки'));
     const after = await boss.page.evaluate(() => ({
       inMap: buildStateSnapshot().customPtLayers.map(l => l.name),
       shared: customPtLayers.filter(l => l.shared).map(l => [l.name, l.manual, l.recs.length, canEditLayer(l), canDeleteLayer(l)]),
     }));
-    assert.deepEqual(after, { inMap: [], shared: [['Мои точки', true, 1, true, false]] });
+    assert.deepEqual(after, { inMap: [], shared: [['Мои точки', true, 1, true, true]] });
+    const whereShared = async () => boss.page.evaluate(async () => (await (await authFetch(SERVER_URL + '/shared/layers/all')).json())
+      .layers.filter(l => l.name === 'Мои точки').map(l => [l.maps, l.except]));
+    assert.deepEqual(await whereShared(), [[['*'], ['kg']]]);
     const edit = boss.page.waitForResponse(r => r.url().endsWith('/shared/layers/one'));
     await boss.page.evaluate(() => {
       customPtLayers.find(l => l.shared).recs.push({ id: 'p2', name: 'Вторая', lat: 41.31, lon: 69.26 });
       saveState();
     });
     assert.equal((await edit).status(), 200);
+    // Удаление общего слоя на карте убирает его только с этой карты.
+    const hidden = boss.page.waitForResponse(r => r.url().endsWith('/shared/layers/hide'));
+    await boss.page.click('[data-cpdel^="cpt_s_"]');
+    assert.equal((await hidden).status(), 200);
+    assert.equal(await boss.page.evaluate(() => customPtLayers.some(l => l.shared && l.name === 'Мои точки')), false, 'gone from this map');
+    assert.deepEqual(await whereShared(), [[['*'], ['kg', 'other']]], 'still shared elsewhere');
     assert.deepEqual(boss.errors, []);
     await boss.close();
 

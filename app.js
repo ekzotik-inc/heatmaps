@@ -975,7 +975,8 @@ function canEditLayer(x) {
   return !!x.own && can(x.manual ? 'manual' : 'layers');
 }
 // Ручные слои, куда эта учётка может добавлять точки.
-function canDeleteLayer(x) { return canEditLayer(x) && !x.shared; }
+// Общий слой админ «удаляет» только с текущей карты (hideSharedLayer).
+function canDeleteLayer(x) { return canEditLayer(x); }
 function canShareLayer(x) { return isAdmin() && !x.own && !x.shared; }
 function editableManualLayers() { return customPtLayers.filter(l => l.manual && canEditLayer(l)); }
 function ownMark() { return isAdmin() ? {} : { own: true }; }
@@ -1088,10 +1089,11 @@ function sharedLayerPayload(kind, src, id) {
 async function makeLayerShared(kind, key) {
   const src = kind === 'heat' ? DS[key] : customPtLayers.find(l => l.id === key);
   if (!src || !canShareLayer(src)) return;
-  if (!confirm(`Сделать слой «${src.name}» общим? Он появится на всех картах (какие карты — можно выбрать на странице «Админ») и перестанет быть слоем только этой карты.`)) return;
+  const where = await pickSharedMaps(src.name);
+  if (!where) return;
   try {
     if (kind === 'heat') await ensureLayerRecords([key]);
-    await mapsPost('/shared/layers/one', { layer: { ...sharedLayerPayload(kind, src, 's' + Date.now().toString(36)), maps: ['*'] } }, 120000);
+    await mapsPost('/shared/layers/one', { layer: { ...sharedLayerPayload(kind, src, 's' + Date.now().toString(36)), ...where } }, 120000);
   } catch (e) {
     toast('Не удалось сделать слой общим: ' + e.message, 'err', 5000);
     return;
@@ -1105,7 +1107,76 @@ async function makeLayerShared(kind, key) {
   }
   saveState();
   await loadSharedLayers(true);
-  toast(`Слой «${src.name}» теперь общий — на всех картах`, 'ok', 4000);
+  toast(`Слой «${src.name}» теперь общий — ${sharedMapsText(where)}`, 'ok', 4000);
+  if (typeof renderSharedAdmin === 'function') renderSharedAdmin();
+}
+// Карты, где общий слой виден: '*' — все (кроме except), иначе перечисленные.
+function sharedOnMap(l, mapId) {
+  return (l.maps.includes('*') || l.maps.includes(mapId)) && !(l.except || []).includes(mapId);
+}
+function sharedMapsText(l) {
+  if (!l.maps.includes('*')) return `на ${l.maps.length} ${plural(l.maps.length, 'карте', 'картах', 'картах')}`;
+  return (l.except || []).length ? 'на всех картах, кроме ' + l.except.length : 'на всех картах, включая новые';
+}
+// Окно выбора карт для общего слоя. Возвращает { maps, except } или null.
+function pickSharedMaps(name) {
+  return new Promise(resolve => {
+    const maps = MAP_LIST.filter(m => m && m.id);
+    const ov = document.createElement('div');
+    ov.className = 'cl-overlay';
+    ov.innerHTML = `<div class="cl-card" role="dialog" aria-modal="true" aria-labelledby="sh-dlg-title">
+      <h3 id="sh-dlg-title">Сделать слой общим</h3>
+      <p class="cl-sub">«${esc(name)}» появится на отмеченных картах у всех, кому они открыты, и перестанет быть слоем только этой карты. Править его вы сможете на любой из них.</p>
+      <div class="sh-maps" role="group" aria-label="Карты">
+        <label class="sh-map"><input type="checkbox" data-dlg-all checked/> Все карты, включая новые</label>
+        ${maps.map(m => `<label class="sh-map"><input type="checkbox" data-dlg-map value="${esc(m.id)}" checked/> ${esc(m.name)}${m.id === currentMap ? ' (эта)' : ''}</label>`).join('')}
+      </div>
+      <div class="cl-actions">
+        <button type="button" class="modal-btn secondary" data-dlg-cancel>Отмена</button>
+        <button type="button" class="modal-btn primary" id="sh-dlg-ok">Сделать общим</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+    const all = ov.querySelector('[data-dlg-all]'), boxes = [...ov.querySelectorAll('[data-dlg-map]')];
+    const ok = ov.querySelector('#sh-dlg-ok');
+    const sync = () => { ok.disabled = !all.checked && !boxes.some(b => b.checked); };
+    all.addEventListener('change', () => { if (all.checked) boxes.forEach(b => { b.checked = true; }); sync(); });
+    boxes.forEach(b => b.addEventListener('change', sync));
+    const done = v => { ov.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
+    const onKey = e => { if (e.key === 'Escape') { e.stopImmediatePropagation(); done(null); } };
+    document.addEventListener('keydown', onKey, true);
+    ov.querySelector('[data-dlg-cancel]').addEventListener('click', () => done(null));
+    ok.addEventListener('click', () => done(all.checked
+      ? { maps: ['*'], except: boxes.filter(b => !b.checked).map(b => b.value) }
+      : { maps: boxes.filter(b => b.checked).map(b => b.value), except: [] }));
+    ok.focus();
+  });
+}
+// Убрать общий слой только с этой карты — на остальных он остаётся.
+async function hideSharedLayer(kind, key) {
+  const src = kind === 'heat' ? DS[key] : customPtLayers.find(l => l.id === key);
+  if (!src || !isAdmin()) return;
+  if (!confirm(`Убрать общий слой «${src.name}» с этой карты? На других картах он останется. Удалить его отовсюду можно на странице «Админ».`)) return;
+  const id = kind === 'heat' ? key.slice('custom_s_'.length) : key.slice('cpt_s_'.length);
+  try {
+    await mapsPost('/shared/layers/hide', { id, map: currentMap }, 30000);
+  } catch (e) {
+    toast('Не удалось убрать слой: ' + e.message, 'err', 5000);
+    return;
+  }
+  _sharedLayers = _sharedLayers.filter(l => l.id !== id);
+  if (kind === 'heat') {
+    if (src._leaf) { map.removeLayer(src._leaf); src._leaf = null; }
+    delete DS[key];
+    heatKeys = heatKeys.filter(x => x !== key);
+  } else {
+    customPtLayers = customPtLayers.filter(x => x.id !== key);
+  }
+  _sharedSaved.delete(id);
+  reenrichAll();
+  buildHeatUI(); buildCustomPtUI(); buildAddrSrcSel(); buildRecBasisSel(); buildRtExclUI(); rebuildUpTarget();
+  renderHeat(); renderCustomPoints(); renderRecs();
+  toast(`Слой «${src.name}» убран с этой карты, на других остался`, 'ok', 4000);
   if (typeof renderSharedAdmin === 'function') renderSharedAdmin();
 }
 // Правки админа в общих слоях на карте уходят в общий слой (по одному слою).
@@ -2446,6 +2517,7 @@ function buildHeatUI() {
     });
     card.querySelector('.lc-share')?.addEventListener('click', () => makeLayerShared('heat', k));
     card.querySelector('.lc-del')?.addEventListener('click', () => {
+      if (d.shared) { hideSharedLayer('heat', k); return; }
       if (!confirm(d.own ? `Удалить свой слой «${d.name}»?` : `Удалить слой «${d.name}»? Его точки будут удалены с карты у всех пользователей.`)) return;
       if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
       delete DS[k];
@@ -5232,6 +5304,7 @@ function buildCustomPtUI() {
     el.addEventListener('click', () => {
       const id = el.dataset.cpdel;
       const l  = customPtLayers.find(x => x.id === id); if (!l) return;
+      if (l.shared) { hideSharedLayer('pt', id); return; }
       if (!confirm(`Удалить слой «${l.name}»? Данные слоя будут потеряны.`)) return;
       if (_cptSoloId === id) {
         if (_cptPrevVisible) customPtLayers.forEach(x => { if (_cptPrevVisible[x.id] != null) x.visible = _cptPrevVisible[x.id]; });
@@ -8008,7 +8081,7 @@ async function renderSharedAdmin() {
       </div>
       <div class="sh-maps" role="group" aria-label="Карты для «${esc(l.name)}»">
         <label class="sh-map"><input type="checkbox" data-shmap="${i}" value="*"${all ? ' checked' : ''}/> Все карты, включая новые</label>
-        ${maps.map(m => `<label class="sh-map${all ? ' dim' : ''}"><input type="checkbox" data-shmap="${i}" value="${esc(m.id)}"${all || l.maps.includes(m.id) ? ' checked' : ''}${all ? ' disabled' : ''}/> ${esc(m.name)}</label>`).join('')}
+        ${maps.map(m => `<label class="sh-map"><input type="checkbox" data-shmap="${i}" value="${esc(m.id)}"${sharedOnMap(l, m.id) ? ' checked' : ''}/> ${esc(m.name)}</label>`).join('')}
       </div>
     </div>`;
   }).join('') || '<div class="maps-empty">Общих слоёв пока нет</div>';
@@ -8018,8 +8091,16 @@ async function renderSharedAdmin() {
   };
   box.querySelectorAll('[data-shmap]').forEach(cb => cb.addEventListener('change', () => {
     const l = _sharedAll[+cb.dataset.shmap];
-    if (cb.value === '*') l.maps = cb.checked ? ['*'] : [];
-    else l.maps = cb.checked ? [...new Set([...l.maps.filter(m => m !== '*'), cb.value])] : l.maps.filter(m => m !== cb.value);
+    const except = l.except || [];
+    if (cb.value === '*') {
+      // Снять «все» — оставить слой там, где он сейчас виден.
+      l.maps = cb.checked ? ['*'] : MAP_LIST.filter(m => sharedOnMap(l, m.id)).map(m => m.id);
+      l.except = [];
+    } else if (l.maps.includes('*')) {
+      l.except = cb.checked ? except.filter(m => m !== cb.value) : [...new Set([...except, cb.value])];
+    } else {
+      l.maps = cb.checked ? [...new Set([...l.maps, cb.value])] : l.maps.filter(m => m !== cb.value);
+    }
     persist();
   }));
   box.querySelectorAll('[data-shdel]').forEach(b => b.addEventListener('click', () => {

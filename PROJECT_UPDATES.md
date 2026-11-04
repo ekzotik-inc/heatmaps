@@ -1239,3 +1239,17 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   `countryFrame()`).
 - Browser test: a stray point at 10° N 10° E, «Все города» → the view
   contains all of Uzbekistan at country zoom. Cache version `20261105b`.
+
+## 2026-11-05 — Shared layers: choose maps when sharing, remove from one map only
+
+- Owner: when making a layer shared, choose which maps get it; deleting a
+  shared layer on one map must not delete it everywhere.
+- «Сделать общим» opens a map picker: «Все карты, включая новые» plus each
+  map (all ticked by default). Unticking a map under «all» puts it into the
+  layer's exceptions, so future maps still get the layer.
+- The trash button on a shared layer card now removes it from the current
+  map only (`POST /shared/layers/hide`); other maps keep it. Deleting it
+  everywhere stays on the Admin page, whose map ticks now follow the same
+  rule (`maps` + `except`).
+- Tests: server 79/79 (files and PostgreSQL), browser 14/14.
+- Cache version `20261105c`. Server changed — Render redeploys on push.

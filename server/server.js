@@ -997,9 +997,15 @@ const SHARED_KEY = 'shared_layers';
 const SHARED_MAX_LAYERS = 50;
 const SHARED_MAX_RECORDS = 500000;
 
+const strList = v => Array.isArray(v) && v.every(m => typeof m === 'string');
 function sharedLayerOk(l) {
   return isObj(l) && typeof l.id === 'string' && /^[\w-]{1,40}$/.test(l.id) && ['heat', 'pt'].includes(l.kind) &&
-    Array.isArray(l.maps) && l.maps.every(m => typeof m === 'string') && Array.isArray(l.recs);
+    strList(l.maps) && (l.except == null || strList(l.except)) && Array.isArray(l.recs);
+}
+// Слой на карте: перечислена она или «все» ('*'), и её нет в исключениях
+// (except — карты, откуда слой убрали при «всех»: новые карты его получают).
+function sharedOnMap(l, map) {
+  return (l.maps.includes('*') || l.maps.includes(map)) && !(l.except || []).includes(map);
 }
 // { layers } или { status, error }.
 function parseSharedLayers(body) {
@@ -1022,13 +1028,13 @@ async function writeSharedLayers(layers) {
 async function sharedPhotoAllowed(user, photoId) {
   const maps = allMaps().filter(m => canAccessMap(user, m)).map(m => m.id);
   return (await sharedLayers()).some(l =>
-    (l.maps.includes('*') || l.maps.some(m => maps.includes(m))) &&
+    maps.some(m => sharedOnMap(l, m)) &&
     l.recs.some(r => r && Array.isArray(r.photos) && r.photos.some(ph => ph && ph.id === photoId)));
 }
 
 app.get('/shared/layers', requireSession, requireMapAccess, async (req, res) => {
   noStore(res);
-  const layers = (await sharedLayers()).filter(l => l.maps.includes('*') || l.maps.includes(req.map));
+  const layers = (await sharedLayers()).filter(l => sharedOnMap(l, req.map));
   res.json({ layers });
 });
 
@@ -1040,6 +1046,7 @@ app.post('/shared/layers/one', requireSession, requireAdmin, async (req, res) =>
   const current = await sharedLayers();
   const prev = layer && current.find(l => l.id === layer.id);
   if (layer && !Array.isArray(layer.maps)) layer.maps = prev ? prev.maps : ['*'];
+  if (layer && layer.except == null && prev && prev.except) layer.except = prev.except;
   const next = prev ? current.map(l => (l.id === layer.id ? layer : l)) : current.concat(layer ? [layer] : []);
   const parsed = parseSharedLayers({ layers: layer ? next : null });
   if (parsed.error) return res.status(parsed.status).json({ error: parsed.error });
@@ -1049,6 +1056,25 @@ app.post('/shared/layers/one', requireSession, requireAdmin, async (req, res) =>
   } catch (e) {
     console.error('Shared layer write error:', e.message);
     res.status(500).json({ error: 'Не удалось сохранить общий слой' });
+  }
+});
+
+// Убрать общий слой с одной карты, не трогая остальные.
+app.post('/shared/layers/hide', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const id = String(req.body.id || ''), map = String(req.body.map || '');
+  const current = await sharedLayers();
+  const layer = current.find(l => l.id === id);
+  if (!layer || !findMap(map)) return res.status(404).json({ error: 'Слой или карта не найдены' });
+  const next = layer.maps.includes('*')
+    ? { ...layer, except: [...new Set([...(layer.except || []), map])] }
+    : { ...layer, maps: layer.maps.filter(m => m !== map) };
+  try {
+    await writeSharedLayers(current.map(l => (l.id === id ? next : l)));
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Shared layer hide error:', e.message);
+    res.status(500).json({ error: 'Не удалось убрать слой с карты' });
   }
 });
 

@@ -121,3 +121,32 @@ test('a map layer made shared: upsert one layer, its photos open to every map it
   assert.equal((await kgu.post('/shared/layers/one', { layer: manual })).status, 403);
   assert.equal(await one({ id: 'bad id', kind: 'pt', recs: [] }), 400);
 });
+
+test('shared layer: removed from one map only; «all maps» keeps future maps', async t => {
+  const srv = await startServer(USERS);
+  t.after(() => srv.stop());
+  const boss = await signIn(srv, 'boss', USERS.boss.password);
+  const com = await signIn(srv, 'com', USERS.com.password);
+  const kgu = await signIn(srv, 'kgu', USERS.kgu.password);
+  const names = async (who, map) => (await (await who.get('/shared/layers?map=' + map)).json()).layers.map(l => l.name);
+  const hide = async (id, map) => (await boss.post('/shared/layers/hide', { id, map })).status;
+  await boss.post('/shared/layers', { layers: [
+    { id: 'a', kind: 'pt', name: 'Везде', maps: ['*'], recs: [] },
+    { id: 'b', kind: 'pt', name: 'Две карты', maps: ['comdep', 'kg'], recs: [] },
+  ] });
+
+  assert.equal(await hide('a', 'comdep'), 200);
+  assert.deepEqual(await names(com, 'comdep'), ['Две карты'], 'gone from comdep only');
+  assert.deepEqual(await names(kgu, 'kg'), ['Везде', 'Две карты'], 'still on kg');
+  const fresh = (await (await boss.post('/maps', { name: 'Свежая', viewers: ['comdep'] })).json()).map.id;
+  assert.deepEqual(await names(com, fresh), ['Везде'], 'a new map still gets an «all maps» layer');
+
+  assert.equal(await hide('b', 'kg'), 200);
+  assert.deepEqual(await names(kgu, 'kg'), ['Везде']);
+  assert.deepEqual(await names(com, 'comdep'), ['Две карты']);
+  const all = (await (await boss.get('/shared/layers/all')).json()).layers;
+  assert.deepEqual(all.map(l => [l.id, l.maps, l.except || []]), [['a', ['*'], ['comdep']], ['b', ['comdep'], []]]);
+
+  assert.equal(await hide('nope', 'kg'), 404);
+  assert.equal((await com.post('/shared/layers/hide', { id: 'b', map: 'comdep' })).status, 403);
+});
