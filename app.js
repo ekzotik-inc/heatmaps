@@ -2590,6 +2590,10 @@ function focusCityView(pulse = true) {
   const pts = selectedFramePoints();
   const opts = { duration: .62, easeLinearity: .18, animate: true };
   window.requestAnimationFrame(() => {
+    if (!hasCityFilter() || allCitiesSelected()) {
+      map.flyToBounds(countryFrame(), { ...opts, ...FRAME_PAD });
+      return;
+    }
     if (pts.length) {
       map.flyToBounds(L.latLngBounds(pts).pad(.12), {
         ...opts,
@@ -3343,9 +3347,14 @@ const KG_STATS = {
 };
 
 const COUNTRIES = {
-  uz: { centers: UZ_CENTERS, stats: UZ_STATS, smokeM: 0.194, smokeF: 0.009, wageUnit: 'млн', wageCur: 'сум/мес (янв–июн 2026)' },
-  kg: { centers: KG_CENTERS, stats: KG_STATS, smokeM: 0.328, smokeF: 0.029, wageUnit: 'тыс', wageCur: 'сом/мес (янв–авг 2026)' },
+  // frame — рамка страны [[юг, запад], [север, восток]]: «Все города» показывает её.
+  uz: { centers: UZ_CENTERS, stats: UZ_STATS, smokeM: 0.194, smokeF: 0.009, wageUnit: 'млн', wageCur: 'сум/мес (янв–июн 2026)', frame: [[37.18, 55.99], [45.59, 73.15]] },
+  kg: { centers: KG_CENTERS, stats: KG_STATS, smokeM: 0.328, smokeF: 0.029, wageUnit: 'тыс', wageCur: 'сом/мес (янв–авг 2026)', frame: [[39.17, 69.27], [43.27, 80.30]] },
 };
+// Вся страна карты. По точкам рамку не строим: одна точка с ошибочными
+// координатами уводила камеру за тысячи километров.
+function countryFrame() { return L.latLngBounds(COUNTRIES[COUNTRY].frame); }
+const FRAME_PAD = { paddingTopLeft: [24, 92], paddingBottomRight: [24, 24] };
 let COUNTRY = 'uz';
 
 // Activate a map's country: set city list, centroids, stats, smoking rates,
@@ -8444,9 +8453,7 @@ function fitInitialBounds() {
     else map.flyToBounds(L.latLngBounds(pts), { ...opts, maxZoom: 13 });
     return;
   }
-  const framePts = visiblePts();
-  if (framePts.length) map.fitBounds(L.latLngBounds(framePts).pad(.05), { maxZoom: 16 });
-  else if (CITIES[0] && CC[CITIES[0]]) map.setView(CC[CITIES[0]], 11);
+  map.fitBounds(countryFrame(), FRAME_PAD);
 }
 async function applyStartupSnapshot(snapshot) {
   if (!snapshot) return false;

@@ -1227,3 +1227,15 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
 - Tests: server 78/78 (files and PostgreSQL), browser 13/13 (share the
   manual layer, add a point on the map, a viewer on another map sees both).
 - Cache version `20261105a`. Server changed — Render redeploys on push.
+
+## 2026-11-05 — «Все города» frames the whole country
+
+- Owner: choosing «Все города» sent the camera somewhere odd; it should zoom
+  out to the whole of Uzbekistan.
+- Cause: with no city filter the camera framed every visible point, so a
+  single point with wrong coordinates pulled it thousands of km away.
+- Now «Все города» (and opening a map with no city chosen) frames the
+  country of the map — Uzbekistan or Kyrgyzstan (`COUNTRIES[..].frame`,
+  `countryFrame()`).
+- Browser test: a stray point at 10° N 10° E, «Все города» → the view
+  contains all of Uzbekistan at country zoom. Cache version `20261105b`.

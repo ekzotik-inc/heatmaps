@@ -445,6 +445,26 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     await viewer.close();
   });
 
+  // Владелец: «Все города» — камера отдаляется на весь Узбекистан, а не
+  // улетает к случайной точке с ошибочными координатами.
+  await t.test('all cities frames the whole country, ignoring stray points', async () => {
+    const s = await open('boss');
+    const view = await s.page.evaluate(async () => {
+      DS.custom_far = { key: 'custom_far', name: 'Далёкая', color: '#e31a1c', visible: true, recs: [{ lat: 10, lon: 10, vol: 1 }], stats: statsOf([{ vol: 1 }]), _recordsLoaded: true };
+      heatKeys.push('custom_far');
+      selectedCities = [];
+      focusCityView(false);
+      await new Promise(r => setTimeout(r, 1500));
+      const c = map.getCenter(), b = map.getBounds();
+      delete DS.custom_far; heatKeys = heatKeys.filter(k => k !== 'custom_far');
+      return { lat: c.lat, lon: c.lng, containsUz: b.contains(L.latLngBounds([[37.18, 55.99], [45.59, 73.15]])), zoom: map.getZoom() };
+    });
+    assert.ok(view.lat > 37 && view.lat < 46 && view.lon > 55 && view.lon < 74, `centre inside Uzbekistan: ${view.lat}, ${view.lon}`);
+    assert.ok(view.zoom >= 4 && view.zoom <= 7, `country zoom, got ${view.zoom}`);
+    assert.equal(view.containsUz, true, 'the whole country is in view');
+    await s.close();
+  });
+
   await t.test('admin signs in and the map starts without page errors', async () => {
     const s = await open('boss');
     assert.deepEqual(s.errors, []);
