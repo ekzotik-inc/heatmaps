@@ -1310,3 +1310,29 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   shared layer or own layers).
 - Heat-layer points are clicked as dots, shown when «Точки» is on.
 - Tests: browser 16/16. Cache `20261106d`. Server unchanged.
+
+## 2026-11-06 — «Админ» is a separate page
+
+- Owner: the admin panel must be its own page, not a tab; manage all layers
+  and points, all accounts and maps; give roles and set rules; watch server
+  memory.
+- `admin.html` (+ `admin.js`, `admin.css`). The map's «Админ» button opens it
+  in its own tab. Sections:
+  - **Сервер и память** — process memory against Render's 512 MB, database
+    size, every stored record with its owner and size, photos and orphan
+    photos (delete), clear server cache, delete personal data of accounts.
+  - **Карты** — create, edit, delete, open, download / upload map settings.
+  - **Слои и точки** — layers of every map, shared and personal layers;
+    open a layer's points, search, tick and delete; rename / delete layers;
+    shared layer maps; upload a new shared layer.
+  - **Учётки** — role (ends that login's sessions), rights (own value or the
+    role rule), maps, password, create / delete.
+  - **Роли и правила** — default rights per role; what each role opens.
+- Server: `/auth/role`, `/auth/rules`, `/admin/storage`, `/admin/cache/clear`,
+  `/admin/photos/prune`, `/admin/storage/delete`, `/admin/layers`,
+  `/admin/points`, `/admin/points/delete`, `/admin/layers/update|delete`.
+- Shared helpers moved from `app.js` to `common.js` (used by both pages).
+- Removed from the map with the tab: template upload (the layer card has its
+  own upload), manual write key, «Сохранить базу на сервере».
+- Tests: 113/113 (server on files and PostgreSQL, browser). Cache
+  `20261106e`. Server changed — Render redeploys on push.

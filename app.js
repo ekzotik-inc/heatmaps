@@ -27,17 +27,6 @@ let DATA = window.DATA || {
 /* Escape user-supplied text before inserting into innerHTML / Leaflet popups
    and tooltips. Layer names and point fields come from uploaded files and free
    text, so they must never be rendered as raw HTML (XSS guard). */
-// Названия слоёв и зон всегда с заглавной буквы (решение владельца): так они
-// выглядят одинаково в карточках, легенде, списках и выгрузках.
-function capFirst(v) {
-  const t = String(v == null ? '' : v).trim();
-  return t ? t.charAt(0).toLocaleUpperCase('ru') + t.slice(1) : t;
-}
-function esc(s) {
-  return ('' + (s == null ? '' : s)).replace(/[&<>"']/g, c =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
 /* ── UTILS: COLOUR ───────────────────────────────────────────────────── */
 function h2r(h) {
   h = h.replace('#', '');
@@ -1106,11 +1095,6 @@ async function makeLayerShared(kind, key) {
   saveState();
   await loadSharedLayers(true);
   toast(`Слой «${src.name}» теперь общий — ${sharedMapsText(where)}`, 'ok', 4000);
-  if (typeof renderSharedAdmin === 'function') renderSharedAdmin();
-}
-// Карты, где общий слой виден: '*' — все (кроме except), иначе перечисленные.
-function sharedOnMap(l, mapId) {
-  return (l.maps.includes('*') || l.maps.includes(mapId)) && !(l.except || []).includes(mapId);
 }
 function sharedMapsText(l) {
   if (!l.maps.includes('*')) return `на ${l.maps.length} ${plural(l.maps.length, 'карте', 'картах', 'картах')}`;
@@ -1171,10 +1155,9 @@ async function hideSharedLayer(kind, key) {
     customPtLayers = customPtLayers.filter(x => x.id !== key);
   }
   _sharedSaved.delete(id);
-  buildHeatUI(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI(); rebuildUpTarget();
+  buildHeatUI(); buildCustomPtUI(); buildAddrSrcSel(); buildRtExclUI();
   renderHeat(); renderCustomPoints();
   toast(`Слой «${src.name}» убран с этой карты, на других остался`, 'ok', 4000);
-  if (typeof renderSharedAdmin === 'function') renderSharedAdmin();
 }
 // Правки админа в общих слоях на карте уходят в общий слой (по одному слою).
 let _sharedSaved = new Map();
@@ -2057,32 +2040,6 @@ function setRpListOpen(id, open) {
 }
 
 // Русское склонение по числу: plural(5, 'точка', 'точки', 'точек') → «точек».
-function plural(n, one, few, many) {
-  const a = Math.abs(n) % 100, b = a % 10;
-  if (a > 10 && a < 20) return many;
-  if (b > 1 && b < 5) return few;
-  if (b === 1) return one;
-  return many;
-}
-/* ── ИКОНКИ ИНТЕРФЕЙСА (Lucide, ISC) ─────────────────────────────────── */
-const UI_ICONS = {
-  pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
-  download: '<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>',
-  upload: '<path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>',
-  trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/>',
-  chevron: '<path d="m6 9 6 6 6-6"/>',
-  eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
-  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
-  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
-  camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
-  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>',
-  flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
-  pin: '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
-  sheet: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/>',
-};
-function uiIcon(name, size = 15) {
-  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${UI_ICONS[name] || ''}</svg>`;
-}
 // Плашка цвета слоя: квадрат с градиентом палитры (или сплошной цвет).
 function paintSwatchCss(p) {
   if (p.ramp && p.ramp !== 'custom') {
@@ -2373,7 +2330,7 @@ function buildHeatUI() {
       const commit = save => {
         if (done) return; done = true;
         if (save) { const v = capFirst(inp.value); if (v) d.name = v; }
-        buildHeatUI(); buildAddrSrcSel(); rebuildUpTarget(); updateLayerLegend(); if (save) saveState();
+        buildHeatUI(); buildAddrSrcSel(); updateLayerLegend(); if (save) saveState();
       };
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') commit(true); else if (e.key === 'Escape') commit(false); });
       inp.addEventListener('blur', () => commit(true));
@@ -2392,7 +2349,7 @@ function buildHeatUI() {
       if (d._leaf) { map.removeLayer(d._leaf); d._leaf = null; }
       delete DS[k];
       heatKeys = heatKeys.filter(x => x !== k);
-      buildHeatUI(); buildAddrSrcSel(); buildRtExclUI(); rebuildUpTarget(); renderHeat(); renderTags(true); saveState();
+      buildHeatUI(); buildAddrSrcSel(); buildRtExclUI(); renderHeat(); renderTags(true); saveState();
     });
     el.appendChild(card);
     card.querySelectorAll('input[type=range]').forEach(fillSlider);
@@ -5191,30 +5148,6 @@ function buildCustomPtUI() {
   a11ySwitches();
 }
 
-function toCustomPtRecs(rows) {
-  const out = [];
-  const fields = [];
-  for (const r of rows) {
-    const kLat = pickKey(r, COL_LAT), kLon = pickKey(r, COL_LON);
-    const la = parseFloat(('' + r[kLat]).replace(',', '.'));
-    const lo = parseFloat(('' + r[kLon]).replace(',', '.'));
-    if (!isFinite(la) || !isFinite(lo)) continue;
-    const used = [kLat, kLon];
-    const rec = { ...recTextFields(r, used), lat: la, lon: lo };
-    const x = recExtras(r, used, fields);
-    if (x) rec.x = x;
-    out.push(rec);
-  }
-  Object.defineProperty(out, '_fields', { value: fields, enumerable: false });
-  return out;
-}
-
-// Поля слоя: заданные при создании + найденные в загруженном файле.
-function mergeFields(cur, add) {
-  const out = Array.isArray(cur) ? cur.slice() : [];
-  (add || []).forEach(f => { if (f && !out.includes(f)) out.push(f); });
-  return out.slice(0, EXTRA_MAX_COLS);
-}
 // Строки «поле: значение» для карточки точки.
 function extraRowsHtml(r) {
   if (!r || !r.x) return '';
@@ -5222,33 +5155,7 @@ function extraRowsHtml(r) {
     `<div class="pp-row"><span>${esc(k)}</span><b style="font-family:Inter;font-weight:600;text-align:right">${esc(String(v))}</b></div>`).join('');
 }
 
-function rebuildUpTarget() {
-  const sel = document.getElementById('up-target');
-  const cur = sel.value;
-  // Через «Данные» обновляются только тепловые слои: наши точки грузятся во
-  // вкладке «Точки», своим слоем и своим шаблоном.
-  sel.innerHTML = heatKeys.length
-    ? heatKeys.map(k => `<option value="${esc(k)}">${esc(DS[k] ? DS[k].name : k)}</option>`).join('')
-    : '<option value="">Нет слоёв — создайте на вкладке «Карта»</option>';
-  if (cur && heatKeys.includes(cur)) sel.value = cur;
-}
-
-/* ── TOAST NOTIFICATIONS ─────────────────────────────────────────────── */
-function toast(msg, type = 'info', ms = 2800) {
-  const c = document.getElementById('toast-container');
-  const t = document.createElement('div');
-  t.className = `toast ${type}`;
-  t.textContent = msg;
-  c.appendChild(t);
-  setTimeout(() => {
-    t.classList.add('out');
-    t.addEventListener('animationend', () => t.remove(), { once: true });
-  }, ms);
-}
-
 /* ── CREATE LAYER MODAL ──────────────────────────────────────────────── */
-const LAYER_PALETTE = ['#E63946', '#457B9D', '#2DC653', '#FF9F1C', '#9B59B6', '#00B4D8', '#FF6B6B', '#06D6A0'];
-
 let pendingHeatRows = null;     // parsed rows awaiting name/colour confirmation
 let _heatUpdateTarget = null;   // layer key being re-uploaded with fresh data
 
@@ -5279,151 +5186,10 @@ function focusNewLayer(key) {
   if (hasCityFilter() && d.recs.length && !d.recs.some(recInCities)) { selectedCities = []; buildCityUI(); }
   // buildRtExclUI обязателен: без него новый слой не появлялся в списке
   // исключений адресной программы до перезагрузки страницы.
-  buildHeatUI(); rebuildUpTarget(); buildAddrSrcSel(); buildRtExclUI();
+  buildHeatUI(); buildAddrSrcSel(); buildRtExclUI();
   renderHeat(); saveState();
   const bpts = d.recs.filter(recInSelection).map(r => [r.lat, r.lon]);
   if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6, maxZoom: 16 });
-}
-
-// Lazily load the CSV/XLSX parsers — ~900 KB most sessions never need, so they
-// are fetched on first upload/export instead of blocking the initial load.
-let _sheetLibsP = null;
-function ensureSheetLibs() {
-  if (window.Papa && window.XLSX) return Promise.resolve();
-  if (_sheetLibsP) return _sheetLibsP;
-  const load = src => new Promise((res, rej) => {
-    const s = document.createElement('script');
-    s.src = src; s.onload = res; s.onerror = () => rej(new Error('load failed: ' + src));
-    document.head.appendChild(s);
-  });
-  _sheetLibsP = Promise.all([
-    window.Papa ? Promise.resolve() : load('https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js'),
-    window.XLSX ? Promise.resolve() : load('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'),
-  ]);
-  return _sheetLibsP;
-}
-
-// Parse a CSV/XLSX file into row objects → cb(rows). Loads parsers on demand,
-// shows a brief "processing" hint, and surfaces read/parse errors as toasts.
-function parseSheet(file, cb) {
-  const ext  = (file.name.split('.').pop() || '').toLowerCase();
-  const fail = msg => toast(msg || 'Не удалось прочитать файл', 'err', 4500);
-  ensureSheetLibs().then(() => {
-    toast('Обработка файла…', 'info', 1500);
-    if (ext === 'csv') {
-      Papa.parse(file, {
-        header: true, skipEmptyLines: true,
-        complete: r => { try { cb(r.data || []); } catch (e) { fail('Ошибка обработки: ' + e.message); } },
-        error: e => fail('Ошибка чтения CSV: ' + ((e && e.message) || e)),
-      });
-    } else {
-      const rd = new FileReader();
-      rd.onerror = () => fail('Не удалось прочитать файл');
-      // setTimeout lets the "processing" toast paint before the blocking parse
-      rd.onload = e => setTimeout(() => {
-        try {
-          const wb = XLSX.read(e.target.result, { type: 'array' });
-          cb(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) || []);
-        } catch (err) { fail('Ошибка чтения XLSX: ' + err.message); }
-      }, 20);
-      rd.readAsArrayBuffer(file);
-    }
-  }).catch(() => fail('Не удалось загрузить обработчик файлов (проверьте сеть)'));
-}
-
-/* ── DATA UPLOAD ─────────────────────────────────────────────────────── */
-// Колонка по ключевым словам: сначала точное совпадение заголовка, потом
-// вхождение (для слов от трёх букв), ключи — по приоритету. `skip` — колонки,
-// уже занятые другим полем: «Код точки» не должен стать названием из-за «точк».
-function pickKey(o, keys, skip) {
-  const cols = Object.keys(o).filter(k => !(skip && skip.includes(k)));
-  const low = cols.map(k => ('' + k).toLowerCase().trim());
-  for (const w of keys) { const i = low.indexOf(w); if (i >= 0) return cols[i]; }
-  for (const w of keys) {
-    if (w.length < 3) continue;
-    const i = low.findIndex(k => k.includes(w));
-    if (i >= 0) return cols[i];
-  }
-  return undefined;
-}
-const COL_CODE  = ['code', 'код', 'id', 'dms', 'дмс', 'sap'];
-const COL_NAME  = ['name', 'назв', 'наимен', 'точк', 'title'];
-const COL_ADDR  = ['addr', 'address', 'адрес'];
-const COL_HOURS = ['hours', 'часы', 'время', 'график'];
-const COL_LAT = ['lat', 'latitude', 'широт'];
-const COL_LON = ['lon', 'lng', 'longitude', 'долгот'];
-const COL_VAL = ['value', 'знач', 'объ', 'vol', 'amount', 'итог'];
-// Служебные колонки, которые не стоит показывать как поля точки.
-const COL_SKIP = /^(№|#|n|no|п\/п|fil|город|city|region|регион|область)$/i;
-const EXTRA_MAX_COLS = 15, EXTRA_MAX_LEN = 300;
-// Дополнительные поля точки — все колонки файла сверх стандартных (название,
-// координаты, значение, код, адрес, часы). Их задаёт сам пользователь при
-// создании слоя, они попадают в шаблон, карточку точки и выгрузку.
-function recExtras(r, used, fieldsOut) {
-  let x = null, n = 0;
-  for (const k of Object.keys(r)) {
-    if (used.includes(k)) continue;
-    const label = String(k).trim();
-    if (!label || COL_SKIP.test(label) || /^__empty/i.test(label)) continue;
-    if (++n > EXTRA_MAX_COLS) break;
-    if (fieldsOut && !fieldsOut.includes(label)) fieldsOut.push(label);
-    const v = r[k] == null ? '' : String(r[k]).trim();
-    if (!v) continue;
-    (x || (x = {}))[label] = v.slice(0, EXTRA_MAX_LEN);
-  }
-  return x;
-}
-// Текстовые поля точки из строки файла: код, название, адрес, часы.
-function recTextFields(r, usedOut) {
-  const used = usedOut || [];
-  const take = keys => {
-    const k = pickKey(r, keys, used);
-    if (k === undefined) return '';
-    used.push(k);
-    const v = r[k];
-    return v == null ? '' : String(v).trim();
-  };
-  const code = take(COL_CODE);
-  const addr = take(COL_ADDR);
-  const hours = take(COL_HOURS);
-  const name = take(COL_NAME);
-  return { name, addr, code, hours };
-}
-
-function toRecs(rows) {
-  const out = [];
-  const fields = [];
-  let percent = false;
-  for (const r of rows) {
-    const kLat = pickKey(r, COL_LAT), kLon = pickKey(r, COL_LON);
-    const kVal = pickKey(r, COL_VAL, [kLat, kLon]);
-    const la = parseFloat(('' + r[kLat]).replace(',', '.'));
-    const lo = parseFloat(('' + r[kLon]).replace(',', '.'));
-    const raw = kVal === undefined ? undefined : r[kVal];
-    // Значение можно писать процентом: «0,356%». Храним само число (0.356),
-    // а знак запоминаем на уровне слоя — так показываем его везде одинаково.
-    const text = '' + (raw == null ? 1 : raw);
-    // «%» в ячейке или в заголовке («Значение, %» — так её пишет наша выгрузка).
-    if (/%/.test(text) || (kVal !== undefined && /%/.test(kVal))) percent = true;
-    let v = parseFloat(text.replace('%', '').replace(/\s/g, '').replace(',', '.'));
-    if (!isFinite(v) || v <= 0) v = 1;
-    if (!isFinite(la) || !isFinite(lo)) continue;
-    // Код, адрес и часы раньше отбрасывались здесь — и пропадали из карточки
-    // точки и из выгрузок, хотя дальше по цепочке их всё поддерживает.
-    const used = [kLat, kLon, kVal].filter(k => k !== undefined);
-    const t = recTextFields(r, used);
-    const rec = { name: t.name, fil: cityOf(la, lo), lat: la, lon: lo, vol: v };
-    if (t.addr) rec.addr = t.addr;
-    if (t.code) rec.code = t.code;
-    if (t.hours) rec.hours = t.hours;
-    const x = recExtras(r, used, fields);
-    if (x) rec.x = x;
-    out.push(rec);
-  }
-  // Флаг читают места, где слой создаётся или перезаливается из файла.
-  Object.defineProperty(out, '_percent', { value: percent, enumerable: false });
-  Object.defineProperty(out, '_fields', { value: fields, enumerable: false });
-  return out;
 }
 
 /* Формат значения точки с учётом единицы слоя. */
@@ -5450,18 +5216,6 @@ function statsOf(recs) {
 // recomputed on load (cityOf + statsOf). Coords rounded to ~1 m. This
 // keeps the saved per-map state small enough to POST reliably (the full recs
 // grew past ~7 MB and saves started failing).
-function slimRecs(recs) {
-  return recs.map(r => {
-    const m = { lat: +(+r.lat).toFixed(5), lon: +(+r.lon).toFixed(5), vol: r.vol };
-    if (r.name)  m.name  = r.name;
-    if (r.addr)  m.addr  = r.addr;
-    if (r.code)  m.code  = r.code;
-    if (r.hours) m.hours = r.hours;
-    if (r.x) m.x = r.x;
-    return m;
-  });
-}
-
 // Простые настройки карты: ключ в состоянии, тип, чтение и запись. Одна
 // строка таблицы — и поле сохраняется, восстанавливается и попадает в
 // отпечаток (stateFingerprint берёт весь снимок).
@@ -5521,34 +5275,6 @@ function buildStateSnapshot() {
     addrSrcKeys, addrRefKeys, rtExclKeys,
     customPtLayers: customPtLayers.filter(l => !l.own && !l.shared).map(pointLayerSnapshot),
   };
-}
-
-function exportState() {
-  const snap = buildStateSnapshot();
-  const json = JSON.stringify(snap, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const a    = document.createElement('a');
-  a.href     = URL.createObjectURL(blob);
-  a.download = 'heatmap_settings_' + snap._date + '.json';
-  a.click();
-  URL.revokeObjectURL(a.href);
-  toast('Настройки сохранены в файл', 'ok');
-}
-
-function importState(file) {
-  const rd = new FileReader();
-  rd.onload = e => {
-    let st;
-    try { st = JSON.parse(e.target.result); } catch (_) { toast('Файл повреждён или неверный формат', 'err'); return; }
-    if (st._app !== 'hm-br') { toast('Это не файл настроек Heat Map', 'err'); return; }
-    // Apply — reuse loadState logic
-    applySnapshot(st);
-    buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
-    renderHeat(); renderCustomPoints(); renderDistricts(); renderIncome();
-    doSave(); // persist locally too
-    toast('Настройки загружены', 'ok');
-  };
-  rd.readAsText(file);
 }
 
 // Миграция: раньше точки ручного ввода лежали отдельным списком retailPts.
@@ -6476,6 +6202,13 @@ async function exportRetraffic() {
 /* ── ROLE / MAP ──────────────────────────────────────────────────────── */
 // currentMap: id карты из реестра (comdep, other, kg или созданная владельцем)
 // currentRole: 'admin' | 'comdep' | 'other' | 'kg'
+// index.html?map=<id> — так страница «Админ» открывает нужную карту.
+(function takeMapFromUrl() {
+  const q = new URLSearchParams(location.search).get('map');
+  if (!q) return;
+  sessionStorage.setItem('hm_map', q);
+  history.replaceState(null, '', location.pathname + location.hash);
+})();
 let currentMap  = sessionStorage.getItem('hm_map')  || null;
 let currentRole = null; // populated only from the server session
 let currentUser = null; // populated only from the server session
@@ -6941,36 +6674,6 @@ function setSyncBadge(state, label) {
   lbl.textContent = label;
 }
 
-// Build the full base dataset from the current in-memory layers and POST it
-// to the server. This becomes the new base for every user on next load.
-async function pushDataset(btn) {
-  if (!SERVER_URL) { toast('Сервер не настроен', 'err'); return; }
-  if (!isAdmin()) { toast('Недостаточно прав', 'err'); return; }
-  if (!SERVER_KEY) { toast('Введите ключ администратора в «Данные → Доступ к записи»', 'err', 4500); return; }
-  const dataset = {
-    _app: 'hm-data', _v: 1,
-    // own — легаси-поле: наши точки давно живут в слоях состояния, а не в базе.
-    // Пустой массив оставлен, чтобы старые вкладки (с закэшированным
-    // index.html и проверкой `!d.own`) продолжали грузиться.
-    own: [], cities: DATA.cities,
-    cig:      { recs: DS.cig.recs,      stats: DS.cig.stats },
-    sticks:   { recs: DS.sticks.recs,   stats: DS.sticks.stats },
-    // combined is derived (cig + sticks) on the client — not stored.
-    districts: DATA.districts, field: DATA.field,
-  };
-  const old = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = 'Сохранение…'; }
-  try {
-    const res = await postJson(SERVER_URL + '/data', dataset, 90000);
-    if (res.status === 415) { _gzipOk = false; throw new Error('gzip не поддержан сервером — повторите'); }
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    toast('База данных сохранена на сервере', 'ok');
-  } catch (e) {
-    toast('Не удалось сохранить базу: ' + (e.name === 'TimeoutError' ? 'таймаут' : e.message), 'err');
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = old; }
-  }
-}
 
 // Multi-MB uploads travel ~6× faster gzipped. If the server (or an old deploy)
 // rejects a compressed request, we fall back to plain JSON for the session.
@@ -7144,8 +6847,6 @@ function wireEvents() {
 
   // Создать слой: название и поля → шаблон → загрузка
   wireCreateLayer();
-  wireSharedAdmin();
-  wireAccountForm();
   $('add-layer-btn').addEventListener('click', () => openCreateLayer('heat'));
   // Re-upload data into an existing layer (per-layer "Обновить данные")
   const heatUpdInp = $('heat-update-file');
@@ -7203,85 +6904,7 @@ function wireEvents() {
       XLSX.writeFile(wb, t.file);
     }).catch(() => toast('Не удалось загрузить XLSX', 'err'));
   }
-  $('dl-tpl').addEventListener('click', () => downloadTemplate('heat'));
   const cptTpl = $('cpt-tpl'); if (cptTpl) cptTpl.addEventListener('click', () => downloadTemplate('cpt'));
-
-  // File upload (click + drag&drop)
-  const fileInp = $('file'), fileBox = $('filebox');
-  fileBox.addEventListener('click', () => fileInp.click());
-  ['dragenter', 'dragover'].forEach(ev =>
-    fileBox.addEventListener(ev, e => { e.preventDefault(); fileBox.classList.add('drag'); }));
-  ['dragleave', 'drop'].forEach(ev =>
-    fileBox.addEventListener(ev, e => { e.preventDefault(); fileBox.classList.remove('drag'); }));
-  fileBox.addEventListener('drop', e => {
-    const f = e.dataTransfer.files[0];
-    if (f) handleDataFile(f);
-  });
-  fileInp.addEventListener('change', () => {
-    const f = fileInp.files[0]; if (!f) return;
-    handleDataFile(f);
-  });
-  function handleDataFile(f) {
-    parseSheet(f, rows => {
-      // Keep raw rows; final parse happens at "Обновить карту" once the
-      // target heat layer is known.
-      const probe = toRecs(rows);
-      if (!probe.length) { toast('Не найдено строк с lat/lon', 'err'); return; }
-      pendingUpload = rows;
-      const fn = $('fname'); fn.style.display = 'block';
-      fn.textContent = '✓ ' + f.name + ' — ' + probe.length + ' точек';
-      $('btn-update').disabled = false;
-      toast(`Загружено ${probe.length} точек — нажмите «Обновить карту»`, 'ok');
-    });
-  }
-
-  $('btn-update').addEventListener('click', e => {
-    e.stopPropagation(); // prevent sidebar's saveState() from firing before recs are set
-    if (!pendingUpload) return;
-    const tk = $('up-target').value;
-    const reset = () => {
-      pendingUpload = null;
-      $('btn-update').disabled = true;
-      $('fname').style.display = 'none';
-      fileInp.value = '';
-    };
-
-    const d = DS[tk]; if (!d) { toast('Выберите слой для загрузки', 'err'); return; }
-    const parsedUpload = toRecs(pendingUpload);
-    d.recs = parsedUpload; d.stats = statsOf(d.recs); d.visible = true; d._userData = true;
-    d.volUnit = parsedUpload._percent ? '%' : '';
-    d.fields = mergeFields(d.fields, parsedUpload._fields);
-    reset();
-    // The selected-city filter would otherwise silently hide points that fall
-    // in other cities — reset to "Все" so the freshly uploaded layer is visible.
-    if (hasCityFilter() && !d.recs.some(recInCities)) { selectedCities = []; buildCityUI(); }
-    buildHeatUI(); renderHeat(); buildRtExclUI();
-    // Frame the map on the new data so it's obvious it loaded.
-    const bpts = d.recs.filter(recInSelection).map(r => [r.lat, r.lon]);
-    if (bpts.length) map.flyToBounds(L.latLngBounds(bpts).pad(.15), { duration: .6, maxZoom: 16 });
-    saveState();
-    toast(`Слой «${d.name}» обновлён (${d.stats.n} точек)`, 'ok');
-  });
-
-  // Admin write key — memory-only and never in the bundle or browser storage.
-  const keyInp = $('admin-key-input');
-  if (keyInp) {
-    keyInp.value = SERVER_KEY;
-    $('admin-key-save').addEventListener('click', () => {
-      SERVER_KEY = keyInp.value.trim();
-      toast(SERVER_KEY
-        ? 'Ключ принят — запись включена до обновления страницы'
-        : 'Ключ удалён — запись отключена', SERVER_KEY ? 'ok' : 'info');
-    });
-  }
-
-  // Save current layers back to the server as the new base dataset (admin)
-  const saveDsBtn = $('btn-save-dataset');
-  if (saveDsBtn) saveDsBtn.addEventListener('click', () => {
-    if (!isAdmin()) { toast('Только администратор может менять базу', 'err'); return; }
-    pushDataset(saveDsBtn);
-  });
-
 
   // Custom zoom controls
   const zc = $('zoom-ctl');
@@ -7311,17 +6934,6 @@ function wireEvents() {
   wireDistCtl('rt-excl', m => { rtExclRadius = m; syncExclHint(); saveState(); }, () => rtExclRadius);
   $('op-rt-excl').addEventListener('change', e => { rtExclOp = e.target.value; syncExclHint(); saveState(); });
 
-  // Share / import state
-  $('btn-export-state').addEventListener('click', exportState);
-  const stateFileInp = $('state-file');
-  $('btn-import-state').addEventListener('click', () => stateFileInp.click());
-  stateFileInp.addEventListener('change', () => {
-    const f = stateFileInp.files[0];
-    if (!f) return;
-    importState(f);
-    stateFileInp.value = '';
-  });
-
   // Mobile burger + backdrop
   const sideEl = $('side'), backdrop = $('side-backdrop');
   const isMobile = () => window.innerWidth <= 780;
@@ -7335,7 +6947,7 @@ function wireEvents() {
     if (tag === 'input' || tag === 'select' || tag === 'textarea' || e.metaKey || e.ctrlKey || e.altKey) return;
     // Порядок как в нижней навигации — иначе «Город» недостижим с клавиатуры,
     // а «4» открывает не то, что подписано.
-    const tabs = ['tab-map', 'tab-points', 'tab-bounds', 'tab-analysis', 'tab-data'];
+    const tabs = ['tab-map', 'tab-points', 'tab-bounds', 'tab-analysis'];
     if (e.key >= '1' && e.key <= String(tabs.length)) {
       const t = document.querySelector(`.side-tab[data-tab="${tabs[+e.key - 1]}"]`);
       if (t && t.offsetParent !== null) t.click(); // skip if hidden (e.g. data tab for viewers)
@@ -7358,6 +6970,7 @@ function wireEvents() {
   // Tab navigation
   document.querySelectorAll('.side-tab').forEach(tab => {
     tab.addEventListener('click', () => {
+      if (!tab.dataset.tab) { openAdminPage(); return; }   // «Админ» — отдельная страница
       document.querySelectorAll('.side-tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
       tab.classList.add('active');
@@ -7430,9 +7043,6 @@ function wireEvents() {
   document.getElementById('side').addEventListener('click',  saveState);
 }
 
-/* ── PENDING UPLOAD ──────────────────────────────────────────────────── */
-let pendingUpload = null;
-
 /* ── ROLE UI ─────────────────────────────────────────────────────────── */
 /* ── КАРТЫ: реестр, переключение, управление ─────────────────────────────
    Список карт отдаёт сервер (`GET /maps`) — уже отфильтрованный по правам.
@@ -7443,47 +7053,21 @@ const BUILTIN_MAPS = [
   { id: 'other', name: 'Другая', desc: 'Карта второго отдела', icon: '🗺', country: 'uz', viewers: ['other'], base: true },
   { id: 'kg', name: 'Кыргызстан', desc: 'Карта по городам Кыргызстана', icon: '🇰🇬', country: 'kg', viewers: ['kg'], base: true },
 ];
-const MAP_ROLES = ['comdep', 'other', 'kg'];
-const MAP_ICONS = ['🗺', '🗂', '🏙', '🏪', '📦', '🚚', '⭐', '🎯', '🇺🇿', '🇰🇬'];
-/* Значок карты хранится как раньше — строкой-эмодзи из MAP_ICONS (реестр на
-   сервере не меняется), а рисуется SVG-иконкой Lucide: эмодзи в интерфейсе
-   выглядят по-разному на каждой системе (чек-лист ui-ux-pro-max: «No emojis
-   as icons»). Флаги — подписью страны. */
-const MAP_ICON_SVG = {
-  '🗺': '<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/>',
-  '🗂': '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
-  '🏙': '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>',
-  '🏪': '<path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"/>',
-  '📦': '<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 8.7 5 8.7-5"/>',
-  '🚚': '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>',
-  '⭐': '<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/>',
-  '🎯': '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
-};
-const MAP_ICON_FLAG = { '🇺🇿': 'UZ', '🇰🇬': 'KG' };
-function mapIconHtml(ic, size = 18) {
-  if (MAP_ICON_FLAG[ic]) return `<span class="map-flag" aria-hidden="true">${MAP_ICON_FLAG[ic]}</span>`;
-  const d = MAP_ICON_SVG[ic] || MAP_ICON_SVG['🗺'];
-  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
-}
 let MAP_LIST = BUILTIN_MAPS.slice();
-let _mapsFromServer = false;
 
 function mapInfo(id) {
   return MAP_LIST.find(m => m.id === id) || BUILTIN_MAPS.find(m => m.id === id)
     || { id, name: id || '—', desc: '', icon: '🗺', country: 'uz', viewers: [], base: false };
 }
-// Чьи пользователи: роль называется по своей исходной карте.
-function roleLabel(role) { return (BUILTIN_MAPS.find(m => m.id === role) || { name: role }).name; }
 
 async function fetchMaps() {
   try {
     const res = await authFetch(SERVER_URL + '/maps', { signal: AbortSignal.timeout(20000) });
     if (res.ok) {
       const j = await res.json();
-      if (j && Array.isArray(j.maps)) { MAP_LIST = j.maps; _mapsFromServer = true; return MAP_LIST; }
+      if (j && Array.isArray(j.maps)) { MAP_LIST = j.maps; return MAP_LIST; }
     }
   } catch (e) { console.warn('Maps list unavailable:', e.message); }
-  _mapsFromServer = false;
   MAP_LIST = BUILTIN_MAPS.filter(m => isAdmin() || m.id === currentRole);
   return MAP_LIST;
 }
@@ -7558,7 +7142,7 @@ function openMapMenu(anchor, focusItem = true) {
     (isAdmin() ? `<button type="button" class="map-menu-new" data-mapnew="1">＋ Новая карта · управление</button>` : '');
   menu.querySelectorAll('[data-mapgo]').forEach(b => b.addEventListener('click', () => switchMap(b.dataset.mapgo)));
   const nb = menu.querySelector('[data-mapnew]');
-  if (nb) nb.addEventListener('click', () => { closeMapMenu(); openMapsAdmin(true); });
+  if (nb) nb.addEventListener('click', () => { closeMapMenu(); openAdminPage('maps'); });
   menu.hidden = false;
   const r = anchor.getBoundingClientRect();
   const w = Math.min(300, window.innerWidth - 24);
@@ -7604,131 +7188,11 @@ function wireMapSwitch() {
   }
 }
 
-/* Управление картами — вкладка «Данные» (только владелец). */
-let _mapEditId = null;
-function openMapsAdmin(focusForm) {
-  const tab = document.querySelector('.side-tab[data-tab="tab-data"]');
-  if (tab) tab.click();
-  const reopen = document.getElementById('side-reopen');
-  if (reopen && document.getElementById('app').classList.contains('side-hidden')) reopen.click();
-  renderMapsAdmin();
-  if (focusForm) {
-    resetMapForm();
-    const g = document.getElementById('map-form-group');
-    if (g) { g.open = true; g.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
-    setTimeout(() => { const n = document.getElementById('mf-name'); if (n) n.focus(); }, 250);
-  }
-}
-
-function fmtBytes(b) {
-  if (!b) return '0 КБ';
-  return b >= 1048576 ? (b / 1048576).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + ' МБ'
-    : Math.max(1, Math.round(b / 1024)) + ' КБ';
-}
-
-async function renderMapsAdmin() {
-  const box = document.getElementById('maps-admin-list');
-  if (!box || !isAdmin()) return;
-  box.innerHTML = '<div class="maps-empty">Загружаем список карт…</div>';
-  await fetchMaps();
-  showRoleBadge();
-  if (!_mapsFromServer) {
-    box.innerHTML = '<div class="maps-empty">Сервер ещё старой версии — создание карт заработает после передеплоя на Render.</div>';
-    syncMapForm();
-    return;
-  }
-  box.innerHTML = MAP_LIST.map(m => {
-    const st = m.stats || {};
-    const viewers = (m.viewers || []).filter(r => MAP_ROLES.includes(r)).map(roleLabel);
-    const upd = st.updatedAt ? new Date(st.updatedAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
-    const meta = [
-      m.country === 'kg' ? 'Кыргызстан' : 'Узбекистан',
-      'видят: ' + (viewers.length ? viewers.join(', ') : 'только владелец'),
-      st.bytes ? fmtBytes(st.bytes) + (upd ? ' · ' + upd : '') : 'пустая',
-      st.photos ? `фото: ${st.photos} (${fmtBytes(st.photoBytes)})` : '',
-    ].filter(Boolean).join(' · ');
-    const cur = m.id === currentMap;
-    return `<div class="map-row${cur ? ' cur' : ''}">
-      <span class="map-row-ic">${mapIconHtml(m.icon, 20)}</span>
-      <div class="map-row-main">
-        <b>${esc(m.name)}${cur ? '<span class="map-row-tag">открыта</span>' : ''}${m.base ? '<span class="map-row-tag base">исходная</span>' : ''}</b>
-        <small>${esc(meta)}</small>
-      </div>
-      <div class="map-row-acts">
-        ${cur ? '' : `<button type="button" class="lyr-act" data-mapopen="${esc(m.id)}" title="Открыть карту">Открыть</button>`}
-        <button type="button" class="lyr-act" data-mapedit="${esc(m.id)}" title="Название, значок, доступ" aria-label="Изменить карту">${uiIcon('pencil', 14)}</button>
-        ${m.base ? '' : `<button type="button" class="lyr-act lyr-del" data-mapdel="${esc(m.id)}" title="Удалить карту">&times;</button>`}
-      </div>
-    </div>`;
-  }).join('');
-  box.querySelectorAll('[data-mapopen]').forEach(b => b.addEventListener('click', () => switchMap(b.dataset.mapopen)));
-  box.querySelectorAll('[data-mapedit]').forEach(b => b.addEventListener('click', () => editMap(b.dataset.mapedit)));
-  box.querySelectorAll('[data-mapdel]').forEach(b => b.addEventListener('click', () => deleteMap(b.dataset.mapdel)));
-  syncMapForm();
-}
-
-// Форма одна на создание и правку: при правке поле «Начать с» скрыто, а у
-// исходных карт нельзя менять страну.
-function syncMapForm() {
-  const copy = document.getElementById('mf-copy');
-  if (copy) {
-    const keep = copy.value;
-    copy.innerHTML = '<option value="">Пустая карта</option>' + MAP_LIST.map(m =>
-      `<option value="${esc(m.id)}">Копия «${esc(m.name)}» — все слои и точки</option>`).join('');
-    copy.value = MAP_LIST.some(m => m.id === keep) ? keep : '';
-  }
-  const roles = document.getElementById('mf-roles');
-  if (roles && !roles.dataset.built) {
-    roles.dataset.built = '1';
-    roles.innerHTML = MAP_ROLES.map(r => `
-      <label class="mf-role"><input type="checkbox" value="${r}"/> <span>Пользователи ${esc(roleLabel(r))}</span></label>`).join('');
-  }
-  const icons = document.getElementById('mf-icons');
-  if (icons && !icons.dataset.built) {
-    icons.dataset.built = '1';
-    icons.innerHTML = MAP_ICONS.map(ic => `<button type="button" class="mf-icon" data-ic="${ic}" aria-label="Значок карты">${mapIconHtml(ic)}</button>`).join('');
-    icons.querySelectorAll('[data-ic]').forEach(b => b.addEventListener('click', () => setMapFormIcon(b.dataset.ic)));
-  }
-}
-function setMapFormIcon(ic) {
-  const box = document.getElementById('mf-icons');
-  if (!box) return;
-  box.dataset.value = ic;
-  box.querySelectorAll('[data-ic]').forEach(b => b.classList.toggle('on', b.dataset.ic === ic));
-}
-function resetMapForm() {
-  _mapEditId = null;
-  syncMapForm();
-  const $ = id => document.getElementById(id);
-  $('mf-name').value = ''; $('mf-desc').value = '';
-  $('mf-country').value = 'uz'; $('mf-country').disabled = false;
-  $('mf-copy').value = ''; $('mf-copy-row').style.display = '';
-  document.querySelectorAll('#mf-roles input').forEach(i => { i.checked = false; });
-  setMapFormIcon('🗺');
-  $('mf-title').textContent = '＋ Новая карта';
-  $('mf-submit').textContent = 'Создать карту';
-  $('mf-cancel').style.display = 'none';
-}
-function editMap(id) {
-  const m = mapInfo(id);
-  syncMapForm();
-  _mapEditId = id;
-  const $ = id2 => document.getElementById(id2);
-  $('mf-name').value = m.name; $('mf-desc').value = m.desc || '';
-  $('mf-country').value = m.country === 'kg' ? 'kg' : 'uz';
-  $('mf-country').disabled = !!m.base;
-  $('mf-copy-row').style.display = 'none';
-  document.querySelectorAll('#mf-roles input').forEach(i => {
-    i.checked = (m.viewers || []).includes(i.value);
-    // Роль исходной карты всегда видит свою карту.
-    i.disabled = m.base && i.value === m.id;
-  });
-  setMapFormIcon(m.icon || '🗺');
-  $('mf-title').textContent = 'Изменить: ' + m.name;
-  $('mf-submit').textContent = 'Сохранить изменения';
-  $('mf-cancel').style.display = '';
-  const g = $('map-form-group');
-  if (g) { g.open = true; g.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+/* Страница «Админ» (admin.html, 06.11.2026) — отдельная страница, а не вкладка:
+   карты, слои и точки всех карт, учётки, роли и правила, память сервера.
+   Карта открывает её в новой вкладке; раздел — в адресе после #. */
+function openAdminPage(section) {
+  window.open('admin.html' + (section ? '#' + section : ''), 'hm-admin');
 }
 
 async function mapsPost(path, body, timeoutMs = 60000) {
@@ -7737,328 +7201,6 @@ async function mapsPost(path, body, timeoutMs = 60000) {
   const j = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(j.error || ('Ошибка сервера: HTTP ' + res.status));
   return j;
-}
-
-async function submitMapForm() {
-  const $ = id => document.getElementById(id);
-  const name = $('mf-name').value.trim();
-  if (!name) { toast('Укажите название карты', 'warn'); $('mf-name').focus(); return; }
-  const body = {
-    name, desc: $('mf-desc').value.trim(),
-    icon: $('mf-icons').dataset.value || '🗺',
-    country: $('mf-country').value,
-    viewers: Array.from(document.querySelectorAll('#mf-roles input:checked')).map(i => i.value),
-  };
-  const btn = $('mf-submit'), old = btn.textContent;
-  btn.disabled = true;
-  try {
-    if (_mapEditId) {
-      btn.textContent = 'Сохраняем…';
-      await mapsPost('/maps/update', { id: _mapEditId, ...body });
-      toast(`Карта «${name}» обновлена`, 'ok');
-      resetMapForm();
-      await renderMapsAdmin();
-    } else {
-      body.copyFrom = $('mf-copy').value || '';
-      btn.textContent = body.copyFrom ? 'Копируем слои…' : 'Создаём…';
-      const j = await mapsPost('/maps', body, 120000);
-      resetMapForm();
-      $('map-form-group').open = false;
-      await renderMapsAdmin();
-      toast(`Карта «${j.map.name}» создана`, 'ok', 4000);
-      if (confirm(`Карта «${j.map.name}» создана. Открыть её сейчас?`)) switchMap(j.map.id);
-    }
-  } catch (e) {
-    toast(e.message, 'err', 5000);
-  } finally {
-    btn.disabled = false;
-    if (btn.textContent.endsWith('…')) btn.textContent = old;
-  }
-}
-
-async function deleteMap(id) {
-  const m = mapInfo(id);
-  if (id === currentMap) { toast('Эта карта сейчас открыта — сначала переключитесь на другую', 'warn', 4000); return; }
-  const typed = prompt(`Удалить карту «${m.name}» вместе со всеми слоями, точками и фото? Это необратимо.\n\nДля подтверждения введите название карты:`);
-  if (typed == null) return;
-  try {
-    await mapsPost('/maps/delete', { id, confirm: typed.trim() });
-    toast(`Карта «${m.name}» удалена`, 'ok');
-    if (_mapEditId === id) resetMapForm();
-    await renderMapsAdmin();
-  } catch (e) {
-    toast(e.message, 'err', 5000);
-  }
-}
-
-/* Учётные записи (админ-панель): список логинов и смена пароля любого из
-   них, включая свой. Хэши остаются на сервере. */
-const ROLE_NAMES = { admin: 'Владелец (админ)', comdep: 'Com Dep', other: 'Другая', kg: 'Кыргызстан' };
-let _pwOpen = null;
-function genPassword() {
-  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  const buf = new Uint32Array(12); crypto.getRandomValues(buf);
-  return Array.from(buf, n => abc[n % abc.length]).join('');
-}
-const PERM_LABELS = [['layers', 'Свои слои из Excel'], ['manual', 'Точки вручную с фото'], ['bounds', 'Свои границы']];
-
-/* Общие слои на странице «Админ»: загрузка из Excel/CSV и выбор карт. */
-let _sharedAll = [];
-async function saveSharedAll() {
-  await mapsPost('/shared/layers', { layers: _sharedAll }, 120000);
-  loadSharedLayers(true);   // текущая карта сразу видит изменения
-}
-async function renderSharedAdmin() {
-  const box = document.getElementById('shared-admin-list');
-  if (!box || !isAdmin()) return;
-  try {
-    const res = await authFetch(SERVER_URL + '/shared/layers/all', { signal: AbortSignal.timeout(30000) });
-    if (!res.ok) throw new Error(await serverErrorText(res));
-    _sharedAll = (await res.json()).layers || [];
-  } catch (e) {
-    box.innerHTML = `<div class="maps-empty">Не удалось загрузить общие слои: ${esc(e.message)}</div>`;
-    return;
-  }
-  const maps = MAP_LIST.filter(m => m && m.id);
-  box.innerHTML = _sharedAll.map((l, i) => {
-    const all = l.maps.includes('*');
-    const n = l.recs.length;
-    return `<div class="sh-row">
-      <div class="user-top">
-        <span class="user-av" aria-hidden="true">${uiIcon(l.kind === 'heat' ? 'flame' : 'pin', 14)}</span>
-        <div class="user-main"><b>${esc(l.name)}</b><small>${l.kind === 'heat' ? 'Тепловой слой' : 'Слой точек'} · ${n.toLocaleString('ru-RU')} ${plural(n, 'точка', 'точки', 'точек')}</small></div>
-        <button type="button" class="lyr-act" data-shdel="${i}">Удалить</button>
-      </div>
-      <div class="sh-maps" role="group" aria-label="Карты для «${esc(l.name)}»">
-        <label class="sh-map"><input type="checkbox" data-shmap="${i}" value="*"${all ? ' checked' : ''}/> Все карты, включая новые</label>
-        ${maps.map(m => `<label class="sh-map"><input type="checkbox" data-shmap="${i}" value="${esc(m.id)}"${sharedOnMap(l, m.id) ? ' checked' : ''}/> ${esc(m.name)}</label>`).join('')}
-      </div>
-    </div>`;
-  }).join('') || '<div class="maps-empty">Общих слоёв пока нет</div>';
-  const persist = async () => {
-    try { await saveSharedAll(); toast('Общие слои сохранены', 'ok', 2500); } catch (e) { toast(e.message, 'err', 5000); }
-    renderSharedAdmin();
-  };
-  box.querySelectorAll('[data-shmap]').forEach(cb => cb.addEventListener('change', () => {
-    const l = _sharedAll[+cb.dataset.shmap];
-    const except = l.except || [];
-    if (cb.value === '*') {
-      // Снять «все» — оставить слой там, где он сейчас виден.
-      l.maps = cb.checked ? ['*'] : MAP_LIST.filter(m => sharedOnMap(l, m.id)).map(m => m.id);
-      l.except = [];
-    } else if (l.maps.includes('*')) {
-      l.except = cb.checked ? except.filter(m => m !== cb.value) : [...new Set([...except, cb.value])];
-    } else {
-      l.maps = cb.checked ? [...new Set([...l.maps, cb.value])] : l.maps.filter(m => m !== cb.value);
-    }
-    persist();
-  }));
-  box.querySelectorAll('[data-shdel]').forEach(b => b.addEventListener('click', () => {
-    const l = _sharedAll[+b.dataset.shdel];
-    if (!confirm(`Удалить общий слой «${l.name}» со всех карт?`)) return;
-    _sharedAll.splice(+b.dataset.shdel, 1);
-    persist();
-  }));
-}
-function wireAccountForm() {
-  const $ = id => document.getElementById(id);
-  if (!$('acc-create') || $('acc-create')._wired) return;
-  $('acc-create')._wired = true;
-  $('acc-role').innerHTML = Object.entries(ROLE_NAMES)
-    .map(([r, name]) => `<option value="${esc(r)}"${r === 'other' ? ' selected' : ''}>${esc(name)}</option>`).join('');
-  $('acc-gen').addEventListener('click', () => { $('acc-pass').value = genPassword(); });
-  $('acc-create').addEventListener('click', async () => {
-    const username = $('acc-name').value.trim().toLowerCase(), password = $('acc-pass').value, role = $('acc-role').value;
-    if (!username) { toast('Укажите логин', 'warn'); $('acc-name').focus(); return; }
-    if (password.length < 8) { toast('Пароль — от 8 символов', 'warn'); $('acc-pass').focus(); return; }
-    if (role === 'admin' && !confirm(`Учётка «${username}» получит полные права владельца. Продолжить?`)) return;
-    $('acc-create').disabled = true;
-    try {
-      await mapsPost('/auth/users/create', { username, role, password }, 30000);
-      toast(`Учётка «${username}» создана — передайте логин и пароль`, 'ok', 5000);
-      $('acc-name').value = ''; $('acc-pass').value = '';
-      $('acc-form-group').open = false;
-      renderUsersAdmin();
-    } catch (e) {
-      toast(e.message, 'err', 5000);
-    } finally {
-      $('acc-create').disabled = false;
-    }
-  });
-}
-function wireSharedAdmin() {
-  const $ = id => document.getElementById(id);
-  if (!$('sh-upload') || $('sh-upload')._wired) return;
-  $('sh-upload')._wired = true;
-  $('shared-refresh').addEventListener('click', renderSharedAdmin);
-  $('sh-upload').addEventListener('click', () => $('sh-file').click());
-  $('sh-file').addEventListener('change', () => {
-    const f = $('sh-file').files[0]; if (!f) return;
-    $('sh-file').value = '';
-    const kind = $('sh-kind').value;
-    const name = capFirst($('sh-name').value) || capFirst(f.name.replace(/\.[^.]+$/, ''));
-    parseSheet(f, async rows => {
-      const recs = kind === 'heat' ? toRecs(rows) : toCustomPtRecs(rows);
-      if (!recs.length) { toast('В файле нет строк с широтой и долготой', 'err'); return; }
-      const color = LAYER_PALETTE[_sharedAll.length % LAYER_PALETTE.length];
-      _sharedAll.push({
-        id: 's' + Date.now().toString(36), kind, name: name.slice(0, 40), maps: ['*'], color, fields: recs._fields || [],
-        ...(kind === 'heat' ? { volUnit: recs._percent ? '%' : '', recs: slimRecs(recs) } : { recs }),
-      });
-      try {
-        await saveSharedAll();
-        $('sh-name').value = '';
-        toast(`Общий слой «${name}»: ${recs.length.toLocaleString('ru-RU')} ${plural(recs.length, 'точка', 'точки', 'точек')} — на всех картах`, 'ok', 4000);
-      } catch (e) {
-        _sharedAll.pop();
-        toast(e.message, 'err', 5000);
-      }
-      renderSharedAdmin();
-    });
-  });
-}
-
-// Карты учётки: галочки = что ей открыто сейчас. Пока админ не выбирал —
-// по роли (своя карта и те, где роль в «Кто видит»); выбранный список новыми
-// картами сам не пополняется, «По роли» возвращает правило роли.
-function userMapsOpen(u, m) {
-  return Array.isArray(u.maps) ? u.maps.includes(m.id) : (m.id === u.role || (m.viewers || []).includes(u.role));
-}
-function userMapsHtml(u) {
-  const custom = Array.isArray(u.maps);
-  return `<div class="sh-maps user-maps" role="group" aria-label="Карты «${esc(u.username)}»">
-    <div class="user-maps-head"><span>Карты: ${custom ? 'выбраны вручную' : 'по роли'}</span>${custom ? `<button type="button" class="lc-link" data-umreset="${esc(u.username)}">По роли</button>` : ''}</div>
-    ${MAP_LIST.map(m => `<label class="sh-map"><input type="checkbox" data-umuser="${esc(u.username)}" value="${esc(m.id)}"${userMapsOpen(u, m) ? ' checked' : ''}/> ${esc(m.name)}</label>`).join('')}
-  </div>`;
-}
-async function saveUserMaps(username, maps) {
-  try {
-    await mapsPost('/auth/maps', { username, maps }, 20000);
-    toast(`Карты «${username}» сохранены`, 'ok', 2500);
-  } catch (e) { toast(e.message, 'err', 5000); }
-  renderUsersAdmin();
-}
-
-async function renderUsersAdmin() {
-  const box = document.getElementById('users-admin-list');
-  if (!box || !isAdmin()) return;
-  box.innerHTML = '<div class="maps-empty">Загружаем учётные записи…</div>';
-  let users = [], min = 8;
-  try {
-    const res = await authFetch(SERVER_URL + '/auth/users', { signal: AbortSignal.timeout(20000) });
-    if (res.status === 404) { box.innerHTML = '<div class="maps-empty">Сервер ещё старой версии — смена паролей заработает после передеплоя на Render.</div>'; return; }
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const j = await res.json(); users = j.users || []; min = j.min || 8;
-  } catch (e) {
-    box.innerHTML = `<div class="maps-empty">Не удалось загрузить учётные записи: ${esc(e.message)}</div>`;
-    return;
-  }
-  box.innerHTML = users.map(u => {
-    const when = u.changedAt ? 'пароль изменён ' + new Date(u.changedAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'пароль из настроек сервера';
-    const me = u.username === currentUser;
-    const open = _pwOpen === u.username;
-    return `<div class="user-row${open ? ' open' : ''}" data-user="${esc(u.username)}">
-      <div class="user-top">
-        <span class="user-av">${esc(u.username.slice(0, 1).toUpperCase())}</span>
-        <div class="user-main"><b>${esc(u.username)}${me ? '<span class="map-row-tag">вы</span>' : ''}${u.created ? '<span class="map-row-tag">создана здесь</span>' : ''}</b><small>${esc(ROLE_NAMES[u.role] || u.role)} · ${esc(when)}</small></div>
-        <button type="button" class="lyr-act user-pw-btn" data-pwtoggle="${esc(u.username)}">${open ? 'Отмена' : 'Сменить пароль'}</button>
-        ${u.created && !me ? `<button type="button" class="lyr-act user-del" data-userdel="${esc(u.username)}" title="Удалить учётку" aria-label="Удалить учётку «${esc(u.username)}»">${uiIcon('trash', 14)}</button>` : ''}
-      </div>
-      ${u.role === 'admin' ? '' : `<div class="user-perms" role="group" aria-label="Права «${esc(u.username)}»">${PERM_LABELS.map(([p, label]) => {
-        const on = !!(u.perms && u.perms[p]);
-        return `<div class="lc-opt"><div class="cbx sm${on ? ' on' : ''}" role="switch" tabindex="0" aria-checked="${on}" data-permuser="${esc(u.username)}" data-perm="${p}" aria-label="${esc(label)} — ${esc(u.username)}"></div><span>${esc(label)}</span></div>`;
-      }).join('')}</div>${userMapsHtml(u)}`}
-      ${open ? `<div class="user-pw-form">
-        <div class="user-pw-row">
-          <input type="password" class="mf-input" data-pw1 autocomplete="new-password" placeholder="Новый пароль, от ${min} символов" minlength="${min}" maxlength="128"/>
-          <button type="button" class="lyr-act" data-pwshow title="Показать пароль" aria-label="Показать пароль">${uiIcon('eye', 14)}</button>
-        </div>
-        <input type="password" class="mf-input" data-pw2 autocomplete="new-password" placeholder="Повторите пароль" maxlength="128"/>
-        <div class="user-pw-acts">
-          <button type="button" class="lyr-act" data-pwgen>Сгенерировать</button>
-          <button type="button" class="btn user-pw-save" data-pwsave="${esc(u.username)}">Сохранить пароль</button>
-        </div>
-      </div>` : ''}
-    </div>`;
-  }).join('') || '<div class="maps-empty">Учётных записей нет</div>';
-  box.querySelectorAll('[data-userdel]').forEach(b => b.addEventListener('click', async () => {
-    const username = b.dataset.userdel;
-    if (!confirm(`Удалить учётку «${username}»? Человек сразу выйдет и больше не сможет войти. Его личные слои и границы останутся на сервере до удаления карт.`)) return;
-    try {
-      await mapsPost('/auth/users/delete', { username }, 20000);
-      toast(`Учётка «${username}» удалена`, 'ok', 3000);
-    } catch (e) { toast(e.message, 'err', 5000); }
-    renderUsersAdmin();
-  }));
-  box.querySelectorAll('[data-permuser]').forEach(sw => {
-    const toggle = async () => {
-      const on = sw.getAttribute('aria-checked') !== 'true';
-      sw.classList.toggle('on', on); sw.setAttribute('aria-checked', String(on));
-      try {
-        await mapsPost('/auth/perms', { username: sw.dataset.permuser, perms: { [sw.dataset.perm]: on } }, 20000);
-        toast('Права «' + sw.dataset.permuser + '» сохранены', 'ok', 2500);
-      } catch (e) {
-        toast(e.message, 'err', 5000);
-        renderUsersAdmin();
-      }
-    };
-    sw.addEventListener('click', toggle);
-    sw.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(); } });
-  });
-  box.querySelectorAll('[data-umuser]').forEach(cb => cb.addEventListener('change', () => {
-    const username = cb.dataset.umuser;
-    const maps = [...box.querySelectorAll('[data-umuser]')].filter(x => x.dataset.umuser === username && x.checked).map(x => x.value);
-    saveUserMaps(username, maps);
-  }));
-  box.querySelectorAll('[data-umreset]').forEach(b => b.addEventListener('click', () => saveUserMaps(b.dataset.umreset, null)));
-  box.querySelectorAll('[data-pwtoggle]').forEach(b => b.addEventListener('click', () => {
-    _pwOpen = _pwOpen === b.dataset.pwtoggle ? null : b.dataset.pwtoggle;
-    renderUsersAdmin().then(() => { const i = box.querySelector('[data-pw1]'); if (i) i.focus(); });
-  }));
-  const form = box.querySelector('.user-pw-form');
-  if (!form) return;
-  const p1 = form.querySelector('[data-pw1]'), p2 = form.querySelector('[data-pw2]');
-  form.querySelector('[data-pwshow]').addEventListener('click', () => {
-    const t = p1.type === 'password' ? 'text' : 'password'; p1.type = t; p2.type = t;
-  });
-  form.querySelector('[data-pwgen]').addEventListener('click', () => {
-    const v = genPassword(); p1.value = v; p2.value = v; p1.type = 'text'; p2.type = 'text';
-    toast('Пароль сгенерирован — скопируйте и передайте его владельцу логина', 'info', 4500);
-  });
-  const save = form.querySelector('[data-pwsave]');
-  const submit = async () => {
-    const username = save.dataset.pwsave;
-    if (p1.value.length < min) { toast(`Пароль должен быть не короче ${min} символов`, 'warn'); p1.focus(); return; }
-    if (p1.value !== p2.value) { toast('Пароли не совпадают', 'warn'); p2.focus(); return; }
-    const self = username === currentUser;
-    if (!confirm(self ? 'Сменить ваш пароль? Остальные ваши сессии (другие браузеры) будут завершены.'
-                      : `Сменить пароль «${username}»? Все открытые сессии этого логина будут завершены.`)) return;
-    save.disabled = true; save.textContent = 'Сохраняем…';
-    try {
-      const j = await mapsPost('/auth/password', { username, password: p1.value }, 30000);
-      if (j.self) { rememberSessionToken(j.token); applyWriteKey(j.writeKey); }
-      _pwOpen = null;
-      toast(`Пароль «${username}» изменён`, 'ok', 4000);
-      renderUsersAdmin();
-    } catch (e) {
-      toast(e.message, 'err', 5000);
-      save.disabled = false; save.textContent = 'Сохранить пароль';
-    }
-  };
-  save.addEventListener('click', submit);
-  p2.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
-}
-
-function wireMapsAdmin() {
-  const $ = id => document.getElementById(id);
-  if (!$('maps-admin-list')) return;
-  $('mf-submit').addEventListener('click', submitMapForm);
-  $('mf-cancel').addEventListener('click', resetMapForm);
-  $('maps-refresh').addEventListener('click', renderMapsAdmin);
-  const ur = $('users-refresh'); if (ur) ur.addEventListener('click', renderUsersAdmin);
-  $('mf-name').addEventListener('keydown', e => { if (e.key === 'Enter') submitMapForm(); });
-  resetMapForm();
-  if (isAdmin()) { renderMapsAdmin(); renderUsersAdmin(); renderSharedAdmin(); }
 }
 
 // Viewers may freely tune the view (colours, layers, cities) but cannot
@@ -8299,7 +7441,7 @@ function readLocalSnapshot() {
   } catch (_) { return null; }
 }
 function renderCurrentState() {
-  buildCityUI(); buildHeatUI(); buildCustomPtUI(); rebuildUpTarget(); syncControls();
+  buildCityUI(); buildHeatUI(); buildCustomPtUI(); syncControls();
   renderHeat(); renderCustomPoints(); renderDistricts(); renderIncome();
   buildBoundsUI(); syncBoundsBadge();
   fillAllSliders();   // syncControls ставит value без события input
@@ -8398,7 +7540,6 @@ async function startApp() {
     renderCurrentState();
   }
   wireEvents();
-  wireMapsAdmin();
   wireTips();
   stateReady = true;
   setTimeout(() => { if (map && map.invalidateSize) map.invalidateSize(); }, 60);
@@ -8484,6 +7625,8 @@ async function startApp() {
     const box = document.getElementById('map-cards');
     if (box) box.innerHTML = '<div class="mode-desc">Загружаем список карт…</div>';
     await fetchMaps();
+    const want = sessionStorage.getItem('hm_map');
+    if (want && MAP_LIST.some(m => m.id === want)) { enterMap(want); return; }
     // Единственная доступная карта — открываем сразу, выбирать нечего.
     if (!isAdmin() && MAP_LIST.length === 1) { enterMap(MAP_LIST[0].id); return; }
     renderMapCards();

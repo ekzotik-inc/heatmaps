@@ -175,6 +175,30 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     };
   }
 
+  // Страница «Админ» (admin.html) — своя вкладка браузера со входом.
+  async function openAdmin(hash = '') {
+    const ctx = await browser.newContext({ viewport: { width: 1300, height: 900 }, ignoreHTTPSErrors: true });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    page.on('dialog', d => (d.type() === 'prompt' ? d.accept(page._promptAnswer || '') : d.accept()));
+    await page.route(`${web.base}/admin.html`, async route => {
+      const res = await route.fetch();
+      route.fulfill({ response: res, body: (await res.text()).replace(PROD_SERVER, `window._HM_SERVER_URL = '${api.base}'`) });
+    });
+    await page.coverage.startJSCoverage({ resetOnNavigation: false });
+    await page.goto(`${web.base}/admin.html${hash}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#ad-login:not([hidden])');
+    await page.fill('#ad-user', 'boss');
+    await page.fill('#ad-pass', USERS.boss.password);
+    await page.click('#ad-login-btn');
+    await page.waitForSelector('#ad-app:not([hidden])');
+    return {
+      page, errors,
+      close: async () => { coverage.push(...await page.coverage.stopJSCoverage()); await ctx.close(); },
+    };
+  }
+
   await t.test('helpers give the expected results', async () => {
     const s = await open('boss');
     const cases = require('./app-helpers.cases');
@@ -377,24 +401,29 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
   // Решение владельца 04.11.2026: страница «Админ» — общие слои для выбранных
   // карт и права учёток.
   await t.test('admin uploads a shared layer and sets account rights on the admin page', async () => {
-    const boss = await open('boss', 'other');
-    await boss.page.click('.side-tab[data-tab="tab-data"]');
-    await boss.page.fill('#sh-name', 'общий рынок');
-    const [chooser] = await Promise.all([boss.page.waitForEvent('filechooser'), boss.page.click('#sh-upload')]);
-    const saved = boss.page.waitForResponse(r => r.url().endsWith('/shared/layers') && r.request().method() === 'POST');
+    const adm = await openAdmin('#layers');
+    await adm.page.waitForSelector('#ly-list .ad-group');
+    await adm.page.fill('#sh-name', 'общий рынок');
+    const [chooser] = await Promise.all([adm.page.waitForEvent('filechooser'), adm.page.click('#sh-upload')]);
+    const saved = adm.page.waitForResponse(r => r.url().endsWith('/shared/layers/one') && r.request().method() === 'POST');
     await chooser.setFiles({ name: 'm.csv', mimeType: 'text/csv', buffer: Buffer.from('Название,Широта,Долгота,Значение\nА,41.3,69.2,5\nБ,42.8,74.6,3\n') });
     assert.equal((await saved).status(), 200);
+    // Права: guest получает ручные точки и теряет свои слои.
+    await adm.page.click('.ad-nav a[data-sec="users"]');
+    await adm.page.waitForSelector('[data-permuser="guest"][data-perm="manual"]');
+    for (const perm of ['manual', 'layers']) {
+      const done = adm.page.waitForResponse(r => r.url().endsWith('/auth/perms'));
+      await adm.page.click(`[data-permuser="guest"][data-perm="${perm}"]`);
+      assert.equal((await done).status(), 200);
+      await adm.page.waitForResponse(r => r.url().endsWith('/auth/users'));
+    }
+    assert.deepEqual(adm.errors, []);
+    await adm.close();
+
+    const boss = await open('boss', 'other');
     await boss.page.waitForFunction(() => heatKeys.some(k => DS[k].shared));
     assert.deepEqual(await boss.page.evaluate(() => [heatKeys.filter(k => DS[k].shared).map(k => DS[k].name), buildStateSnapshot().heatKeys.some(k => DS[k].shared)]),
       [['Общий рынок'], false], 'shown on the map, not written into the map state');
-    // Права: guest получает ручные точки и теряет свои слои.
-    await boss.page.waitForSelector('[data-permuser="guest"][data-perm="manual"]');
-    for (const perm of ['manual', 'layers']) {
-      const done = boss.page.waitForResponse(r => r.url().endsWith('/auth/perms'));
-      await boss.page.click(`[data-permuser="guest"][data-perm="${perm}"]`);
-      assert.equal((await done).status(), 200);
-    }
-    assert.deepEqual(boss.errors, []);
     await boss.close();
 
     for (const [user, map] of [['guest', 'other'], ['viewer', 'comdep']]) {
@@ -479,9 +508,8 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
 
   // Владелец 06.11.2026: создавать новые учётки на странице «Админ».
   await t.test('admin creates and deletes an account on the admin page', async () => {
-    const boss = await open('boss', 'other');
-    boss.page.on('dialog', d => d.accept());
-    await boss.page.click('.side-tab[data-tab="tab-data"]');
+    const boss = await openAdmin('#users');
+    await boss.page.waitForSelector('[data-pwtoggle="viewer"]');
     await boss.page.click('#acc-form-group summary');
     await boss.page.fill('#acc-name', 'Anna.K');
     await boss.page.selectOption('#acc-role', 'comdep');
@@ -546,8 +574,7 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
   });
 
   await t.test('admin chooses which maps an account sees', async () => {
-    const boss = await open('boss', 'other');
-    await boss.page.click('.side-tab[data-tab="tab-data"]');
+    const boss = await openAdmin('#users');
     const box = id => `[data-umuser="viewer"][value="${id}"]`;
     await boss.page.waitForSelector(box('kg'));
     assert.deepEqual([await boss.page.isChecked(box('comdep')), await boss.page.isChecked(box('kg'))], [true, false], 'by role at first');
@@ -566,6 +593,46 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     assert.deepEqual(await viewerMaps(), ['comdep'], 'back to the role');
     assert.deepEqual(boss.errors, []);
     await boss.close();
+  });
+
+  // Владелец 06.11.2026: «Админ» — отдельная страница; на ней все слои и точки
+  // всех карт, роли и правила, память сервера.
+  await t.test('the admin page manages layers, points, rules and server memory', async () => {
+    const boss = await open('boss', 'comdep');
+    const [popup] = await Promise.all([boss.page.waitForEvent('popup'), boss.page.click('#admin-open')]);
+    assert.match(popup.url(), /\/admin\.html$/, 'the map opens the admin page in its own tab');
+    await boss.close();
+
+    const adm = await openAdmin('#layers');
+    const { page } = adm;
+    await page.selectOption('#ly-filter', 'map:comdep');
+    await page.click('[data-lyact="points"][data-key="cpt_del"]');
+    await page.waitForSelector('#pt-table [data-pti]');
+    assert.deepEqual(await page.$$eval('#pt-table tbody tr td:nth-child(2)', tds => tds.map(td => td.textContent)), ['Киоск 1']);
+    await page.check('#pt-table [data-pti="0"]');
+    let done = page.waitForResponse(r => r.url().endsWith('/admin/points/delete'));
+    await page.click('#pt-del');
+    assert.equal((await done).status(), 200);
+    page._promptAnswer = 'тепло новое';
+    done = page.waitForResponse(r => r.url().endsWith('/admin/layers/update'));
+    await page.click('[data-lyact="rename"][data-key="custom_del"]');
+    assert.equal((await done).status(), 200);
+    const st = await api.readStored('comdep');
+    assert.deepEqual([st.customPtLayers.find(l => l.id === 'cpt_del').recs.length, st.layers.custom_del.name], [0, 'Тепло новое']);
+
+    await page.click('.ad-nav a[data-sec="rules"]');
+    await page.waitForSelector('[data-rule="kg"][data-perm="manual"]');
+    done = page.waitForResponse(r => r.url().endsWith('/auth/rules') && r.request().method() === 'POST');
+    await page.click('[data-rule="kg"][data-perm="manual"]');
+    assert.equal((await done).status(), 200);
+    await page.waitForSelector('[data-rule="kg"][data-perm="manual"][aria-checked="true"]');
+
+    await page.click('.ad-nav a[data-sec="overview"]');
+    await page.waitForSelector('#ov-keys td');
+    assert.ok((await page.textContent('#ov-keys')).includes('Карта «Com Dep»'));
+    assert.ok((await page.textContent('#ov-cards')).includes('Память сервера'));
+    assert.deepEqual(adm.errors, []);
+    await adm.close();
   });
 
   await t.test('admin signs in and the map starts without page errors', async () => {

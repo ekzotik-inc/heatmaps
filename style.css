@@ -1552,9 +1552,7 @@ canvas.leaflet-heatmap-layer { pointer-events: none !important; }
 /* ── VIEWER ROLE — hide all upload / create / delete / data controls ───── */
 body.viewer .lyr-del,
 body.viewer .cpt-del,
-body.viewer #tab-data,
-body.viewer #btn-save-dataset,
-body.viewer .side-tab[data-tab="tab-data"] { display: none !important; }
+body.viewer #admin-open { display: none !important; }
 
 /* Права учётки (выдаёт админ): без права — нет кнопок создания. */
 body.no-layers #add-layer-btn,

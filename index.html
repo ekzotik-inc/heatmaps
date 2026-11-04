@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.1/maplibre-gl.css"/>
-  <link rel="stylesheet" href="style.css?v=20261106d"/>
+  <link rel="stylesheet" href="style.css?v=20261106e"/>
 </head>
 <body>
 
@@ -254,135 +254,6 @@
         </div>
       </div>
 
-      <!-- TAB: ДАННЫЕ -->
-      <div class="tab-panel" id="tab-data">
-        <div class="admin-head">
-          <div class="admin-head-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
-          <div><h2>Админ панель</h2><p>Видна только владельцу: карты, учётные записи, данные</p></div>
-        </div>
-        <div class="maps-head">
-          <p class="tab-section-title">Карты</p>
-          <button type="button" class="maps-refresh" id="maps-refresh" title="Обновить список" aria-label="Обновить список карт">↻</button>
-        </div>
-        <div id="maps-admin-list"></div>
-        <details class="adv-group map-form-group" id="map-form-group">
-          <summary><span id="mf-title">＋ Новая карта</span><span class="chev">›</span></summary>
-          <div class="adv-body map-form">
-            <label class="mf-label" for="mf-name">Название</label>
-            <input type="text" class="mf-input" id="mf-name" maxlength="60" placeholder="Например: Самарканд — HoReCa" autocomplete="off"/>
-            <label class="mf-label" for="mf-desc">Описание <span>— видно при выборе карты</span></label>
-            <input type="text" class="mf-input" id="mf-desc" maxlength="120" placeholder="Для кого эта карта" autocomplete="off"/>
-            <div class="mf-label">Значок</div>
-            <div class="mf-icons" id="mf-icons"></div>
-            <label class="mf-label" for="mf-country">Страна</label>
-            <select id="mf-country" class="mf-input">
-              <option value="uz">Узбекистан — города, районы, статистика УЗ</option>
-              <option value="kg">Кыргызстан — города и статистика КГ</option>
-            </select>
-            <div class="mf-label">Кто ещё видит <span>— владелец видит все карты</span></div>
-            <div class="mf-roles" id="mf-roles"></div>
-            <div id="mf-copy-row">
-              <label class="mf-label" for="mf-copy">Начать с</label>
-              <select id="mf-copy" class="mf-input"></select>
-            </div>
-            <button type="button" class="btn" id="mf-submit" style="margin-top:12px">Создать карту</button>
-            <a class="lnk" id="mf-cancel" role="button" tabindex="0" style="display:none;margin-top:8px">Отменить правку</a>
-            <div class="foot">Новая карта сразу появится в переключателе карт (под названием приложения и на значке в углу карты). Пользователи отмеченных отделов увидят её при следующем входе или в переключателе.</div>
-          </div>
-        </details>
-
-        <div class="tab-section-divider"></div>
-        <div class="maps-head">
-          <p class="tab-section-title">Общие слои</p>
-          <button type="button" class="maps-refresh" id="shared-refresh" title="Обновить список" aria-label="Обновить список общих слоёв">↻</button>
-        </div>
-        <div id="shared-admin-list"></div>
-        <div class="sh-upload">
-          <input type="text" class="mf-input" id="sh-name" maxlength="40" placeholder="Название слоя" autocomplete="off"/>
-          <div class="sh-upload-row">
-            <select id="sh-kind" class="mf-input" aria-label="Вид слоя">
-              <option value="heat">Тепловой слой</option>
-              <option value="pt">Слой точек</option>
-            </select>
-            <button type="button" class="btn" id="sh-upload">Загрузить Excel / CSV</button>
-          </div>
-          <input type="file" id="sh-file" accept=".csv,.xlsx,.xls" hidden/>
-        </div>
-        <p class="share-hint">Общий слой загружается один раз и появляется на выбранных картах у всех, кому они открыты. «Все карты» — и на тех, что будут созданы позже. На картах его нельзя изменить — только здесь.</p>
-
-        <div class="tab-section-divider"></div>
-        <div class="maps-head">
-          <p class="tab-section-title">Учётные записи</p>
-          <button type="button" class="maps-refresh" id="users-refresh" title="Обновить список" aria-label="Обновить список учётных записей">↻</button>
-        </div>
-        <div id="users-admin-list"></div>
-        <details class="adv-group map-form-group" id="acc-form-group">
-          <summary><span>＋ Новая учётка</span><span class="chev">›</span></summary>
-          <div class="adv-body map-form">
-            <label class="mf-label" for="acc-name">Логин <span>— латиница, цифры, точка, дефис</span></label>
-            <input type="text" class="mf-input" id="acc-name" maxlength="32" placeholder="Например: anna.k" autocomplete="off" autocapitalize="none" spellcheck="false"/>
-            <label class="mf-label" for="acc-role">Роль <span>— какие карты открыты</span></label>
-            <select id="acc-role" class="mf-input"></select>
-            <label class="mf-label" for="acc-pass">Пароль</label>
-            <div class="user-pw-row">
-              <input type="text" class="mf-input" id="acc-pass" autocomplete="new-password" placeholder="От 8 символов" maxlength="128"/>
-              <button type="button" class="lyr-act" id="acc-gen" title="Сгенерировать пароль" aria-label="Сгенерировать пароль">↻</button>
-            </div>
-            <button type="button" class="btn" id="acc-create" style="margin-top:12px">Создать учётку</button>
-            <div class="foot">Учётка сразу может входить. Права для неё — переключатели в списке выше. Передайте человеку логин и пароль.</div>
-          </div>
-        </details>
-        <p class="share-hint">Права действуют сразу на сервере; кнопки у человека появятся или пропадут после повторного входа. Смена пароля сразу завершает все открытые сессии этого логина — человеку нужно войти заново с новым паролем. Свою сессию вы не потеряете.</p>
-
-        <div class="tab-section-divider"></div>
-        <p class="tab-section-title">Поделиться настройками</p>
-        <div class="share-row">
-          <button class="share-btn export" id="btn-export-state">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            Экспорт настроек
-          </button>
-          <button class="share-btn import" id="btn-import-state">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Импорт настроек
-          </button>
-        </div>
-        <input type="file" id="state-file" accept=".json" style="display:none"/>
-        <p class="share-hint">Экспортируй настройки в файл и отправь коллегам — они загрузят и увидят всё то же самое</p>
-
-        <div class="tab-section-divider"></div>
-        <details class="adv-group">
-          <summary>Загрузка данных по шаблону<span class="chev">›</span></summary>
-          <div class="adv-body">
-            <a class="lnk" id="dl-tpl"><svg class="ic-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg> Скачать шаблон (Excel)</a>
-            <div class="up-row">Слой для загрузки:&nbsp;<select id="up-target"></select></div>
-            <div class="filebox" id="filebox">Выберите файл <b>CSV / XLSX</b></div>
-            <input type="file" id="file" accept=".csv,.xlsx,.xls" style="display:none"/>
-            <div class="fname" id="fname" style="display:none"></div>
-            <button class="btn" id="btn-update" disabled>Обновить карту</button>
-            <div class="foot">Здесь обновляются <b>тепловые слои</b> — колонки name / lat / lon / value, по желанию code / addr / hours — код и адрес попадут в карточку точки и в выгрузки. Наши точки загружаются во вкладке «Точки»: они рисуются на карте и служат отсчётом для адресной программы.</div>
-          </div>
-        </details>
-
-        <details class="adv-group">
-          <summary>Доступ к записи (только владелец)<span class="chev">›</span></summary>
-          <div class="adv-body">
-            <div class="up-row" style="display:block">Ключ администратора для записи на сервер</div>
-            <input type="password" id="admin-key-input" placeholder="Введите серверный ключ…" autocomplete="off"
-              style="width:100%;background:var(--card2);border:1px solid var(--line2);color:var(--ink);padding:9px 12px;border-radius:10px;font-size:13px;font-family:inherit;outline:none"/>
-            <button class="btn" id="admin-key-save" style="margin-top:9px">Сохранить ключ</button>
-            <div class="foot">Обычно это поле не нужно: при входе под владельцем сервер сам выдаёт ключ записи на текущую сессию. Вводите сюда статический <b>API_KEY</b> сервера, только если автоматическая выдача не сработала (например, сервер старой версии).</div>
-          </div>
-        </details>
-
-        <details class="adv-group">
-          <summary>База данных на сервере<span class="chev">›</span></summary>
-          <div class="adv-body">
-            <button class="btn btn-retraffic" id="btn-save-dataset" style="width:100%"><svg class="ic-inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg> Сохранить базу на сервере</button>
-            <div class="foot">Все базовые данные (точки, слои, районы) хранятся на сервере, а не в репозитории. Эта кнопка сохраняет текущие слои как новую базу для всех пользователей.</div>
-          </div>
-        </details>
-      </div>
-
     </div>
 
     <nav class="side-tabs" data-liquid="active">
@@ -413,7 +284,7 @@
         </div>
         <span class="tab-label">Адреска</span>
       </button>
-      <button class="side-tab" data-tab="tab-data">
+      <button type="button" class="side-tab side-tab-admin" id="admin-open" title="Админ — откроется отдельной страницей">
         <div class="tab-icon-wrap">
           <span class="tab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
         </div>
@@ -717,6 +588,8 @@
 <script src="city-bounds.js?v=20261023b"></script>
 <!-- Границы районов Ташкента (OSM) и их население (Нацкомстат, 01.01.2026) -->
 <script src="district-bounds.js?v=20261027a"></script>
+<!-- Общие помощники карты и страницы «Админ» (admin.html) -->
+<script src="common.js?v=20261106e"></script>
 <!-- PapaParse + XLSX (~900 KB) are loaded on demand (ensureSheetLibs) only when
      a file is uploaded or exported — not at initial page load. -->
 <script>
@@ -741,7 +614,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20261106d'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20261106e'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();

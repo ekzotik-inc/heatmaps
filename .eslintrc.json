@@ -1,18 +1,70 @@
 {
   "root": true,
-  "env": { "browser": true, "es2021": true },
-  "parserOptions": { "ecmaVersion": 2021, "sourceType": "script" },
+  "env": {
+    "browser": true,
+    "es2021": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2021,
+    "sourceType": "script"
+  },
   "globals": {
     "L": "readonly",
     "Papa": "readonly",
-    "XLSX": "readonly"
+    "XLSX": "readonly",
+    "capFirst": "readonly",
+    "esc": "readonly",
+    "plural": "readonly",
+    "uiIcon": "readonly",
+    "toCustomPtRecs": "readonly",
+    "mergeFields": "readonly",
+    "toast": "readonly",
+    "LAYER_PALETTE": "readonly",
+    "ensureSheetLibs": "readonly",
+    "parseSheet": "readonly",
+    "toRecs": "readonly",
+    "slimRecs": "readonly",
+    "MAP_ICONS": "readonly",
+    "mapIconHtml": "readonly",
+    "EXTRA_MAX_COLS": "readonly",
+    "sharedOnMap": "readonly",
+    "fmtBytes": "readonly"
   },
   "extends": "eslint:recommended",
-  "ignorePatterns": ["server/**", "fonts/**"],
+  "ignorePatterns": [
+    "server/**",
+    "fonts/**"
+  ],
   "rules": {
-    "no-unused-vars": ["warn", { "args": "none", "ignoreRestSiblings": true }],
-    "no-empty": ["warn", { "allowEmptyCatch": true }],
+    "no-unused-vars": [
+      "warn",
+      {
+        "args": "none",
+        "ignoreRestSiblings": true
+      }
+    ],
+    "no-empty": [
+      "warn",
+      {
+        "allowEmptyCatch": true
+      }
+    ],
     "no-console": "off",
-    "no-constant-condition": ["error", { "checkLoops": false }]
-  }
+    "no-constant-condition": [
+      "error",
+      {
+        "checkLoops": false
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "common.js"
+      ],
+      "rules": {
+        "no-redeclare": "off"
+      }
+    }
+  ]
 }
