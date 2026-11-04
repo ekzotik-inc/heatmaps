@@ -956,10 +956,23 @@ const DEFAULT_PERMS = { layers: true, manual: false, bounds: true };
 let accountPerms = {};
 let permsChain = Promise.resolve();
 
+// Правила ролей (страница «Админ», 06.11.2026): права учётки по умолчанию для
+// её роли. Право, заданное самой учётке, сильнее правила; правило — сильнее
+// DEFAULT_PERMS. Хранятся под ключом role_rules.
+const RULES_KEY = 'role_rules';
+let roleRules = {};
+function rulePerms(role) {
+  const rule = roleRules[role] || {};
+  return Object.fromEntries(PERM_NAMES.map(p => [p, typeof rule[p] === 'boolean' ? rule[p] : DEFAULT_PERMS[p]]));
+}
+// Права, заданные учётке поверх правила её роли.
+function ownPermsOf(username) {
+  const saved = accountPerms[username] || {};
+  return Object.fromEntries(PERM_NAMES.filter(p => typeof saved[p] === 'boolean').map(p => [p, saved[p]]));
+}
 function permsOf(user) {
   if (user.role === 'admin') return { layers: true, manual: true, bounds: true };
-  const saved = accountPerms[user.username] || {};
-  return Object.fromEntries(PERM_NAMES.map(p => [p, typeof saved[p] === 'boolean' ? saved[p] : DEFAULT_PERMS[p]]));
+  return { ...rulePerms(user.role), ...ownPermsOf(user.username) };
 }
 // null — карты по роли; массив — выбранные админом карты.
 function accountMapsOf(user) {
@@ -973,6 +986,25 @@ async function loadAccountPerms() {
   const v = await readState(PERMS_KEY);
   stateReadCache.delete(PERMS_KEY);
   accountPerms = (v && v.users && typeof v.users === 'object') ? v.users : {};
+  // Роль, выданная админом, перекрывает роль из Render и из создания учётки.
+  for (const [name, entry] of Object.entries(accountPerms)) {
+    const u = AUTH_USERS.get(name);
+    if (u && entry && AUTH_ROLES.has(entry.role)) u.role = entry.role;
+  }
+  const r = await readState(RULES_KEY);
+  stateReadCache.delete(RULES_KEY);
+  roleRules = (r && r.rules && typeof r.rules === 'object') ? r.rules : {};
+}
+// Изменить запись учётки в account_perms (по очереди).
+function updateAccountEntry(username, fn) {
+  const run = permsChain.then(async () => {
+    const entry = fn({ ...(accountPerms[username] || {}) });
+    const next = { ...accountPerms, [username]: entry };
+    await writeState(PERMS_KEY, { users: next, _savedAt: new Date().toISOString() });
+    accountPerms = next;
+  });
+  permsChain = run.catch(() => {});
+  return run;
 }
 
 app.post('/auth/perms', requireSession, requireAdmin, async (req, res) => {
@@ -982,17 +1014,17 @@ app.post('/auth/perms', requireSession, requireAdmin, async (req, res) => {
   const user = AUTH_USERS.get(username);
   if (!user) return res.status(404).json({ error: 'Учётная запись не найдена' });
   if (user.role === 'admin') return res.status(400).json({ error: 'У админа есть все права' });
-  const perms = { ...permsOf(user) };
-  PERM_NAMES.forEach(p => { if (typeof (b.perms || {})[p] === 'boolean') perms[p] = b.perms[p]; });
+  // true/false — право самой учётки, null — снова по правилу роли.
+  const given = isObj(b.perms) ? b.perms : {};
   try {
-    const run = permsChain.then(async () => {
-      const next = { ...accountPerms, [username]: { ...accountPerms[username], ...perms } };
-      await writeState(PERMS_KEY, { users: next, _savedAt: new Date().toISOString() });
-      accountPerms = next;
+    await updateAccountEntry(username, entry => {
+      PERM_NAMES.forEach(p => {
+        if (typeof given[p] === 'boolean') entry[p] = given[p];
+        else if (given[p] === null || b.reset === true) delete entry[p];
+      });
+      return entry;
     });
-    permsChain = run.catch(() => {});
-    await run;
-    res.json({ ok: true, username, perms });
+    res.json({ ok: true, username, perms: permsOf(user), own: ownPermsOf(username) });
   } catch (e) {
     console.error('Perms write error:', e.message);
     res.status(500).json({ error: 'Не удалось сохранить права' });
@@ -1264,7 +1296,7 @@ async function loadAuthOverrides() {
 app.get('/auth/users', requireSession, requireAdmin, (req, res) => {
   noStore(res);
   const users = [...AUTH_USERS.values()]
-    .map(u => ({ username: u.username, role: u.role, changedAt: u.changedAt ? new Date(u.changedAt).toISOString() : '', perms: permsOf(u), maps: u.role === 'admin' ? null : accountMapsOf(u), created: !!u.created }))
+    .map(u => ({ username: u.username, role: u.role, changedAt: u.changedAt ? new Date(u.changedAt).toISOString() : '', perms: permsOf(u), own: ownPermsOf(u.username), maps: u.role === 'admin' ? null : accountMapsOf(u), created: !!u.created }))
     .sort((a, b) => (a.role === 'admin' ? -1 : 0) - (b.role === 'admin' ? -1 : 0) || a.username.localeCompare(b.username));
   res.json({ users, min: PASSWORD_MIN });
 });
@@ -1688,6 +1720,350 @@ app.post('/state', requireSession, requireAdmin, requireMapAccess, async (req, r
   } catch (e) {
     console.error('Write error:', e.message);
     res.status(500).json({ error: 'Failed to write state' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Страница «Админ» (admin.html, 06.11.2026): роли и правила ролей, слои и точки
+// всех карт, память сервера. Всё — только роль admin.
+// ---------------------------------------------------------------------------
+
+// Роль учётки. Хранится в account_perms[логин].role и перекрывает роль из
+// Render; смена роли сразу завершает сессии этого логина (роль в токене).
+app.post('/auth/role', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const b = req.body || {};
+  const username = String(b.username || '').trim().toLowerCase();
+  const role = String(b.role || '');
+  const user = AUTH_USERS.get(username);
+  if (!user) return res.status(404).json({ error: 'Учётная запись не найдена' });
+  if (!AUTH_ROLES.has(role)) return res.status(400).json({ error: 'Неизвестная роль' });
+  if (username === req.user.username) return res.status(400).json({ error: 'Свою роль сменить нельзя' });
+  try {
+    await updateAccountEntry(username, entry => ({ ...entry, role }));
+    user.role = role;
+    res.json({ ok: true, username, role, perms: permsOf(user) });
+  } catch (e) {
+    console.error('Role write error:', e.message);
+    res.status(500).json({ error: 'Не удалось сохранить роль' });
+  }
+});
+
+app.get('/auth/rules', requireSession, requireAdmin, (req, res) => {
+  noStore(res);
+  const rules = Object.fromEntries([...AUTH_ROLES].filter(r => r !== 'admin').map(r => [r, rulePerms(r)]));
+  res.json({ rules, defaults: DEFAULT_PERMS });
+});
+
+app.post('/auth/rules', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const b = req.body || {};
+  const role = String(b.role || '');
+  if (!AUTH_ROLES.has(role) || role === 'admin') return res.status(400).json({ error: 'Неизвестная роль' });
+  const given = isObj(b.perms) ? b.perms : {};
+  const rule = { ...rulePerms(role) };
+  PERM_NAMES.forEach(p => { if (typeof given[p] === 'boolean') rule[p] = given[p]; });
+  try {
+    const run = permsChain.then(async () => {
+      const next = { ...roleRules, [role]: rule };
+      await writeState(RULES_KEY, { rules: next, _savedAt: new Date().toISOString() });
+      roleRules = next;
+    });
+    permsChain = run.catch(() => {});
+    await run;
+    res.json({ ok: true, role, perms: rule });
+  } catch (e) {
+    console.error('Rules write error:', e.message);
+    res.status(500).json({ error: 'Не удалось сохранить правило' });
+  }
+});
+
+// --- Память ------------------------------------------------------------------
+const SYSTEM_KEYS = new Set([MAP_REGISTRY_KEY, AUTH_OVERRIDES_KEY, ACCOUNTS_KEY, PERMS_KEY, RULES_KEY, SHARED_KEY, 'dataset']);
+
+// Все записи хранилища: { key, bytes, updatedAt }.
+async function storageRows() {
+  if (db) {
+    const r = await db.query('SELECT key, octet_length(json) AS bytes, updated_at FROM app_state');
+    return r.rows.map(x => ({ key: x.key, bytes: Number(x.bytes) || 0, updatedAt: x.updated_at || '' }));
+  }
+  const rows = [];
+  for (const f of fs.existsSync(DATA_DIR) ? fs.readdirSync(DATA_DIR) : []) {
+    const m = f.match(/^state\.(.+)\.json$/);
+    if (!m) continue;
+    const st = fs.statSync(path.join(DATA_DIR, f));
+    rows.push({ key: m[1], bytes: st.size, updatedAt: st.mtime.toISOString() });
+  }
+  if (fs.existsSync(STATE_FILE)) {
+    const st = fs.statSync(STATE_FILE);
+    rows.push({ key: 'main', bytes: st.size, updatedAt: st.mtime.toISOString() });
+  }
+  return rows;
+}
+// Все фото: { id, map, bytes }.
+async function photoRows() {
+  if (db) {
+    const r = await db.query('SELECT id, map, octet_length(bytes) AS bytes FROM photos');
+    return r.rows.map(x => ({ id: x.id, map: x.map, bytes: Number(x.bytes) || 0 }));
+  }
+  if (!fs.existsSync(PHOTO_DIR)) return [];
+  return fs.readdirSync(PHOTO_DIR).filter(f => f.endsWith('.json')).map(f => {
+    const fp = path.join(PHOTO_DIR, f);
+    let map = '';
+    try { map = JSON.parse(fs.readFileSync(fp, 'utf8')).map || ''; } catch (_) {}
+    return { id: f.slice(0, -5), map, bytes: Math.round(fs.statSync(fp).size * 0.75) };
+  });
+}
+// Чья это личная запись: логин по хэшу (ownKey) или ''.
+function ownerOfKey(key) {
+  const hash = key.split('.').pop();
+  for (const u of AUTH_USERS.values()) if (ownKey('x', 'x', u.username).endsWith('.' + hash)) return u.username;
+  return '';
+}
+// Что это за запись: карта, личные данные, служебная или ничья (карты уже нет).
+function classifyKey(key) {
+  if (findMap(key)) return { kind: 'map', map: key };
+  const m = key.match(/^(ubounds|ulayers)\.([^.]+)\.([0-9a-f]+)$/);
+  if (m) return { kind: 'own', what: m[1] === 'ubounds' ? 'bounds' : 'layers', map: m[2], owner: ownerOfKey(key), orphan: !findMap(m[2]) };
+  if (SYSTEM_KEYS.has(key)) return { kind: 'system' };
+  return { kind: 'other' };
+}
+// Идентификаторы фото, на которые ещё ссылаются точки (карты, общие и личные слои).
+async function referencedPhotoIds(rows) {
+  const ids = new Set();
+  const walk = recs => (Array.isArray(recs) ? recs : []).forEach(r => {
+    (r && Array.isArray(r.photos) ? r.photos : []).forEach(ph => { if (ph && ph.id) ids.add(ph.id); });
+  });
+  const scan = st => {
+    if (!st) return;
+    (Array.isArray(st.customPtLayers) ? st.customPtLayers : []).forEach(l => walk(l && l.recs));
+    (Array.isArray(st.points) ? st.points : []).forEach(l => walk(l && l.recs));
+    walk(st.retailPts);
+  };
+  for (const m of allMaps()) scan(await readState(m.id));
+  for (const r of rows) if (r.key.startsWith('ulayers.')) scan(await readState(r.key));
+  (await sharedLayers()).forEach(l => walk(l.recs));
+  return ids;
+}
+async function deleteStorageKey(key) {
+  if (db) await db.query('DELETE FROM app_state WHERE key = $1', [key]);
+  else fs.rmSync(stateFileFor(key), { force: true });
+  stateReadCache.delete(key);
+}
+async function deletePhotos(ids) {
+  if (!ids.length) return;
+  if (db) { await db.query('DELETE FROM photos WHERE id = ANY($1::text[])', [ids]); return; }
+  ids.forEach(id => fs.rmSync(path.join(PHOTO_DIR, `${id}.json`), { force: true }));
+}
+
+app.get('/admin/storage', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  try {
+    const rows = (await storageRows()).map(r => ({ ...r, ...classifyKey(r.key) }));
+    const photos = await photoRows();
+    const used = await referencedPhotoIds(rows);
+    const orphans = photos.filter(p => !used.has(p.id));
+    const photosByMap = {};
+    photos.forEach(p => { const x = photosByMap[p.map] || (photosByMap[p.map] = { count: 0, bytes: 0 }); x.count++; x.bytes += p.bytes; });
+    let dbBytes = null;
+    if (db) dbBytes = Number((await db.query('SELECT pg_database_size(current_database()) AS b')).rows[0].b) || 0;
+    const mem = process.memoryUsage();
+    res.json({
+      storage: db ? 'postgresql' : 'file', dbBytes,
+      process: { rss: mem.rss, heapUsed: mem.heapUsed, heapTotal: mem.heapTotal, uptime: Math.round(process.uptime()) },
+      caches: { states: stateReadCache.size, chunks: layerChunkCache.size },
+      keys: rows.sort((a, b) => b.bytes - a.bytes),
+      photos: { count: photos.length, bytes: photos.reduce((a, p) => a + p.bytes, 0), byMap: photosByMap,
+        orphans: { count: orphans.length, bytes: orphans.reduce((a, p) => a + p.bytes, 0) } },
+    });
+  } catch (e) {
+    console.error('Storage report error:', e.message);
+    res.status(500).json({ error: 'Не удалось собрать отчёт о памяти' });
+  }
+});
+
+app.post('/admin/cache/clear', requireSession, requireAdmin, (req, res) => {
+  noStore(res);
+  const freed = { states: stateReadCache.size, chunks: layerChunkCache.size };
+  stateReadCache.clear();
+  layerChunkCache.clear();
+  res.json({ ok: true, freed });
+});
+
+// Фото, на которые не ссылается ни одна точка (точку удалили, а снимок остался).
+app.post('/admin/photos/prune', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  try {
+    const used = await referencedPhotoIds(await storageRows());
+    const orphans = (await photoRows()).filter(p => !used.has(p.id));
+    await deletePhotos(orphans.map(p => p.id));
+    res.json({ ok: true, count: orphans.length, bytes: orphans.reduce((a, p) => a + p.bytes, 0) });
+  } catch (e) {
+    console.error('Photo prune error:', e.message);
+    res.status(500).json({ error: 'Не удалось удалить фото' });
+  }
+});
+
+// Удалить запись хранилища: только личные данные учёток и записи без карты.
+app.post('/admin/storage/delete', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const key = String((req.body || {}).key || '');
+  const rows = await storageRows();
+  if (!rows.some(r => r.key === key)) return res.status(404).json({ error: 'Запись не найдена' });
+  const c = classifyKey(key);
+  if (c.kind !== 'own' && c.kind !== 'other') return res.status(400).json({ error: 'Эту запись удалять нельзя' });
+  try {
+    await deleteStorageKey(key);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Storage delete error:', e.message);
+    res.status(500).json({ error: 'Не удалось удалить запись' });
+  }
+});
+
+// --- Слои и точки всех карт ----------------------------------------------------
+const adminRecCount = l => (l && Array.isArray(l.recs) ? l.recs.length : 0);
+function mapLayersOf(state) {
+  const st = state || {};
+  const heat = (Array.isArray(st.heatKeys) ? st.heatKeys : []).filter(k => st.layers && st.layers[k])
+    .map(k => ({ key: k, kind: 'heat', name: st.layers[k].name || k, n: adminRecCount(st.layers[k]) || ((st.layers[k].stats || {}).n || 0) }));
+  const pt = (Array.isArray(st.customPtLayers) ? st.customPtLayers : []).filter(isObj)
+    .map(l => ({ key: l.id, kind: 'pt', name: l.name || l.id, n: adminRecCount(l), manual: !!l.manual }));
+  return heat.concat(pt);
+}
+
+app.get('/admin/layers', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  try {
+    const maps = [];
+    for (const m of allMaps()) maps.push({ id: m.id, name: m.name, layers: mapLayersOf(await readState(m.id)) });
+    const shared = (await sharedLayers()).map(l => ({ key: l.id, kind: l.kind, name: l.name, n: adminRecCount(l), manual: !!l.manual, maps: l.maps, except: l.except || [] }));
+    const own = [];
+    for (const r of await storageRows()) {
+      const c = classifyKey(r.key);
+      if (c.kind !== 'own' || c.what !== 'layers') continue;
+      const st = (await readState(r.key)) || {};
+      const layers = Object.entries(st.layers || {}).map(([k, l]) => ({ key: k, kind: 'heat', name: (l && l.name) || k, n: adminRecCount(l) }))
+        .concat((Array.isArray(st.points) ? st.points : []).filter(isObj).map(l => ({ key: l.id, kind: 'pt', name: l.name || l.id, n: adminRecCount(l), manual: !!l.manual })));
+      own.push({ storageKey: r.key, map: c.map, owner: c.owner, bytes: r.bytes, layers });
+    }
+    res.json({ maps, shared, own });
+  } catch (e) {
+    console.error('Layers report error:', e.message);
+    res.status(500).json({ error: 'Не удалось собрать список слоёв' });
+  }
+});
+
+// Слой по адресу { scope: map|shared, map, kind, key }: читать и записывать.
+async function loadScopedLayer(b) {
+  const kind = b.kind === 'pt' ? 'pt' : 'heat';
+  const key = String(b.key || '');
+  if (b.scope === 'shared') {
+    const list = await sharedLayers();
+    const layer = list.find(l => l.id === key && l.kind === kind);
+    return layer && { layer, save: async next => writeSharedLayers(list.map(l => (l.id === key ? next : l))),
+      drop: async () => writeSharedLayers(list.filter(l => l.id !== key)) };
+  }
+  const map = String(b.map || '');
+  if (!findMap(map)) return null;
+  const state = await readState(map);
+  if (!state) return null;
+  const write = async next => { await writeState(map, { ...next, _savedAt: new Date().toISOString() }); clearLayerChunkCache(map); };
+  if (kind === 'heat') {
+    const layer = heatLayer(state, key);
+    return layer && {
+      layer,
+      save: next => write({ ...state, layers: { ...state.layers, [key]: next } }),
+      drop: () => {
+        const { [key]: _gone, ...layers } = state.layers;
+        return write({ ...state, layers, heatKeys: state.heatKeys.filter(k => k !== key) });
+      },
+    };
+  }
+  const list = Array.isArray(state.customPtLayers) ? state.customPtLayers : [];
+  const layer = list.find(l => isObj(l) && l.id === key);
+  return layer && {
+    layer,
+    save: next => write({ ...state, customPtLayers: list.map(l => (l === layer ? next : l)) }),
+    drop: () => write({ ...state, customPtLayers: list.filter(l => l !== layer) }),
+  };
+}
+const ADMIN_POINTS_LIMIT = 200;
+const pointText = r => [r.name, r.addr, r.code, r.hours, r.dms, r.comment].concat(r.x && typeof r.x === 'object' ? Object.values(r.x) : [])
+  .filter(v => v != null && v !== '').join(' ').toLowerCase();
+
+app.get('/admin/points', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const found = await loadScopedLayer(req.query);
+  if (!found) return res.status(404).json({ error: 'Слой не найден' });
+  const recs = Array.isArray(found.layer.recs) ? found.layer.recs : [];
+  const q = String(req.query.q || '').trim().toLowerCase().slice(0, 100);
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+  const hits = [];
+  recs.forEach((r, i) => { if (r && (!q || pointText(r).includes(q))) hits.push(i); });
+  const rows = hits.slice(offset, offset + ADMIN_POINTS_LIMIT).map(i => {
+    const r = recs[i];
+    return { i, name: r.name || '', addr: r.addr || '', code: r.code || r.dms || '', lat: r.lat, lon: r.lon, vol: r.vol, photos: Array.isArray(r.photos) ? r.photos.length : 0 };
+  });
+  res.json({ name: found.layer.name || '', total: recs.length, matched: hits.length, offset, limit: ADMIN_POINTS_LIMIT, rows });
+});
+
+// Удалить точки: { i, lat, lon } — координаты сверяются, чтобы не удалить
+// чужую точку, если слой успели изменить.
+app.post('/admin/points/delete', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const b = req.body || {};
+  const found = await loadScopedLayer(b);
+  if (!found) return res.status(404).json({ error: 'Слой не найден' });
+  const recs = Array.isArray(found.layer.recs) ? found.layer.recs : [];
+  const picks = Array.isArray(b.points) ? b.points : [];
+  if (!picks.length) return res.status(400).json({ error: 'Не выбраны точки' });
+  const drop = new Set();
+  for (const p of picks) {
+    const r = isObj(p) && recs[Number(p.i)];
+    if (!r || round5(r.lat) !== round5(p.lat) || round5(r.lon) !== round5(p.lon)) {
+      return res.status(409).json({ error: 'Слой изменился — обновите список и выберите точки снова' });
+    }
+    drop.add(Number(p.i));
+  }
+  const left = recs.filter((_, i) => !drop.has(i));
+  const next = { ...found.layer, recs: left };
+  if (b.kind !== 'pt') next.stats = layerStats(left);
+  try {
+    await found.save(next);
+    res.json({ ok: true, deleted: drop.size, left: left.length });
+  } catch (e) {
+    console.error('Point delete error:', e.message);
+    res.status(500).json({ error: 'Не удалось удалить точки' });
+  }
+});
+
+app.post('/admin/layers/update', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const b = req.body || {};
+  const name = cleanText(b.name, 40);
+  if (!name) return res.status(400).json({ error: 'Пустое название' });
+  const found = await loadScopedLayer(b);
+  if (!found) return res.status(404).json({ error: 'Слой не найден' });
+  try {
+    await found.save({ ...found.layer, name });
+    res.json({ ok: true, name });
+  } catch (e) {
+    console.error('Layer rename error:', e.message);
+    res.status(500).json({ error: 'Не удалось переименовать слой' });
+  }
+});
+
+app.post('/admin/layers/delete', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const found = await loadScopedLayer(req.body || {});
+  if (!found) return res.status(404).json({ error: 'Слой не найден' });
+  try {
+    await found.drop();
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Layer delete error:', e.message);
+    res.status(500).json({ error: 'Не удалось удалить слой' });
   }
 });
 
