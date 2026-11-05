@@ -723,6 +723,11 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     await page.click('.a-nav a[data-sec="log"]');
     await page.waitForSelector('#lg-list .a-log');
     assert.ok((await page.textContent('#lg-list')).includes('вернул карту «Com Dep»'), 'the rollback is in the journal');
+    // «Отменить» прямо в строке журнала.
+    await page.locator('#lg-list [data-undo]').first().click();
+    const undone = page.waitForResponse(r => r.url().endsWith('/admin/versions/restore'));
+    await page.click('#a-dlg-ok');
+    assert.equal((await undone).status(), 200);
     assert.deepEqual(adm.errors, []);
     await adm.close();
   });

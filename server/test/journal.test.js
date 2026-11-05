@@ -95,3 +95,21 @@ test('a deleted point is named in the journal and always gets its own restore po
   assert.equal((await boss.post('/admin/versions/restore', { id: v[0].id })).status, 200);
   assert.deepEqual((await (await com.get('/state?map=comdep')).json()).customPtLayers[0].recs.map(r => r.name), ['А', 'Б', 'В'], 'the deleted point is back');
 });
+
+test('a shared layer removed from one map: named in the journal and undone from its line', async t => {
+  const srv = await startServer(USERS);
+  t.after(() => srv.stop());
+  const boss = await signIn(srv, 'boss', USERS.boss.password);
+  const com = await signIn(srv, 'com', USERS.com.password);
+  await boss.post('/shared/layers', { layers: [{ id: 's1', kind: 'pt', name: 'Общие ТТ', maps: ['*'], recs: [] }] });
+  await boss.post('/shared/layers/hide', { id: 's1', map: 'comdep' });
+  await pause(300);
+  const rows = (await (await boss.get('/admin/log')).json()).rows;
+  const hide = rows.find(r => r.action === '/shared/layers/hide');
+  assert.equal(hide.detail.change, 'убрал слой «Общие ТТ» с карты «Com Dep»');
+  assert.equal(hide.detail.vkey, 'shared_layers');
+  assert.equal(rows[0].action, '/shared/layers/hide', 'the latest action is on top');
+  assert.deepEqual((await (await com.get('/shared/layers?map=comdep')).json()).layers, []);
+  assert.equal((await boss.post('/admin/versions/restore', { id: hide.detail.version })).status, 200);
+  assert.deepEqual((await (await com.get('/shared/layers?map=comdep')).json()).layers.map(l => l.name), ['Общие ТТ'], 'back on the map');
+});

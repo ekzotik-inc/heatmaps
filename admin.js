@@ -284,6 +284,7 @@ async function renderHome() {
       '</div>' +
       (D.log && D.log.rows.length ? `<div class="a-h2" style="margin-top:20px;display:flex;justify-content:space-between;align-items:center">Последние действия <a class="a-link" href="#log">Весь журнал</a></div><div class="a-panel">${logListHtml(D.log.rows)}</div>` : '') +
       (S && S.photos.orphans.count ? `<div class="a-panel a-pad" style="margin-top:16px"><b>Можно освободить место:</b> ${fmtN(S.photos.orphans.count)} ${plural(S.photos.orphans.count, 'фото', 'фото', 'фото')} (${fmtBytes(S.photos.orphans.bytes)}) больше не привязаны ни к одной точке. <button type="button" class="a-link" data-go="server">Перейти в «Сервер»</button></div>` : ''));
+    wireUndo(m, () => { loaders.log().then(() => { if (!stale('home')) draw(); }).catch(() => {}); });
     m.querySelectorAll('[data-quick]').forEach(b => b.addEventListener('click', () => {
       if (b.dataset.quick === 'user') openNewUser();
       else if (b.dataset.quick === 'map') openMap(null);
@@ -819,7 +820,7 @@ function describe(e) {
     '/auth/rules': 'изменил права по умолчанию',
     '/shared/layers': d.change ? `${esc(d.change)} — общие слои` : 'изменил общие слои',
     '/shared/layers/one': d.change ? `${esc(d.change)} — общий слой` : `изменил общий слой «${esc(d.name || '')}»`,
-    '/shared/layers/hide': `убрал общий слой с карты ${mapLabel(d.map)}`,
+    '/shared/layers/hide': d.change ? esc(d.change) : `убрал общий слой с карты ${mapLabel(d.map)}`,
     '/admin/points/delete': `удалил ${pts(d.points)} из слоя ${d.scope === 'shared' ? '(общий слой)' : 'на карте ' + mapLabel(d.map)}`,
     '/admin/layers/update': `переименовал слой в «${esc(d.name || '')}»`,
     '/admin/layers/delete': `удалил слой ${d.scope === 'shared' ? '(общий)' : 'с карты ' + mapLabel(d.map)}`,
@@ -843,12 +844,23 @@ function logRowHtml(e) {
     <span class="a-av sm" aria-hidden="true">${esc((e.username || '?').slice(0, 1).toUpperCase())}</span>
     <span class="a-log-text"><b>${esc(e.username || 'неизвестно')}</b> ${describe(e)}${e.count > 1 ? ` <span class="a-chip">×${fmtN(e.count)}</span>` : ''}</span>
     ${lvl ? `<span class="a-status ${lvl}">${lvl === 'bad' ? 'ошибка' : 'отказ'}</span>` : ''}
+    ${e.detail && e.detail.version && !lvl ? `<button type="button" class="a-btn ghost sm" data-undo="${e.detail.version}" data-vkey="${esc(e.detail.vkey || '')}" data-what="${esc(((e.username || '') + ' ' + describe(e)).replace(/<[^>]+>/g, ''))}" data-when="${esc(fmtDate(e.at))}">${uiIcon('undo', 14)} Отменить</button>` : ''}
   </div>`;
 }
 function dayTitle(iso) {
   const d = new Date(iso), today = new Date(); const y = new Date(Date.now() - 864e5);
   const same = (a, b) => a.toDateString() === b.toDateString();
   return same(d, today) ? 'Сегодня' : same(d, y) ? 'Вчера' : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+}
+// «Отменить» в строке журнала — вернуть данные к состоянию перед этим действием.
+function wireUndo(box, after) {
+  box.querySelectorAll('[data-undo]').forEach(b => b.addEventListener('click', async () => {
+    const what = b.dataset.vkey === 'shared_layers' ? 'общие слои' : 'карту «' + mapName(b.dataset.vkey) + '»';
+    const yes = await ask({ title: 'Отменить это действие?', ok: 'Отменить действие', danger: true,
+      text: `<p><b>${esc(b.dataset.what)}</b> (${esc(b.dataset.when)})</p><p>Вернём ${esc(what)} к состоянию перед ним — у всех. Если после этого были другие изменения там же, они тоже отменятся.</p><p>Текущее состояние сохранится — отмену можно отменить.</p>` });
+    if (!yes) return;
+    if (await act(() => post('/admin/versions/restore', { id: +b.dataset.undo }, 180000), 'Отменено. У кого карта открыта — придёт предложение обновить.')) after();
+  }));
 }
 function logListHtml(rows) {
   let day = '', html = '';
@@ -886,6 +898,7 @@ async function renderLog() {
     const shown = rows.filter(pass);
     $('lg-list').innerHTML = shown.length ? logListHtml(shown) : '<div class="a-empty" style="border:0">Записей нет</div>';
     $('lg-more').hidden = done;
+    wireUndo($('lg-list'), () => renderLog());
   };
   const more = async () => {
     const q = new URLSearchParams({ limit: 200 });
@@ -896,7 +909,7 @@ async function renderLog() {
       const j = await api('/admin/log?' + q.toString());
       if (stale('log')) return;
       rows = rows.concat(j.rows); done = j.rows.length < 200;
-      if (j.rows.length) last = j.rows[j.rows.length - 1].id;
+      if (j.rows.length) last = j.rows[j.rows.length - 1].at;
       $('lg-sum').innerHTML = j.errors24h || j.warn24h ? `<p class="a-hint" style="margin:0 0 10px">За сутки: ошибок — <b>${fmtN(j.errors24h)}</b>, отказов — <b>${fmtN(j.warn24h)}</b>. Отказ — сервер не дал что-то сделать (нет прав, неверные данные, неверный пароль).</p>` : '<p class="a-hint" style="margin:0 0 10px">За сутки ошибок не было.</p>';
       draw();
     } catch (e) { $('lg-list').innerHTML = `<div class="a-empty" style="border:0">Не удалось загрузить журнал: ${esc(e.message)}</div>`; }

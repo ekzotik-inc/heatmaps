@@ -260,3 +260,4 @@ button.a-row:hover { border-color: var(--acc-d); box-shadow: var(--shadow-card);
 .a-why { color: var(--ink); font-weight: 600; }
 .a-dim { color: var(--mut); }
 @media (max-width: 860px) { .a-log { flex-wrap: wrap; padding: 9px 12px; } .a-log-text { flex-basis: 100%; order: 3; } }
+.a-log .a-btn.sm { flex: 0 0 auto; }

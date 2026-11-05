@@ -1437,3 +1437,24 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
 - Deletions made before this update have no own restore point.
 - Tests: server 101/101 on files and PostgreSQL, browser 19/19.
   Cache `20261106j`. Server changed — Render redeploys on push.
+
+## 2026-11-06 — «Отменить» right in the journal line
+
+- Owner (screenshot): «убрал общий слой с карты «Hostess»» is in the journal
+  but cannot be undone.
+- Cause: hiding a shared layer changes only the list of its maps; the server
+  did not treat it as a change worth a restore point, and undo lived only on
+  the «Откат изменений» tab.
+- Every change of data (points, layers, zones, which maps a shared layer is
+  on) now gets its own restore point, and its journal line has «Отменить»:
+  the map or shared layers go back to how they were before that action (the
+  current state is kept, so an undo can be undone). Plain view saves still
+  merge into one restore point per 10 minutes. 20 restore points per map.
+- The journal line names the layer and the map: «убрал слой «X» с карты
+  «Hostess»».
+- Fixed alongside: merged lines (×N) stayed where they first appeared, so
+  13:33 could stand below 13:32; the journal is now ordered by the latest
+  repeat.
+- Actions made before this update have no «Отменить».
+- Tests: server 102/102 on files and PostgreSQL, browser 19/19.
+  Cache `20261106k`. Server changed — Render redeploys on push.

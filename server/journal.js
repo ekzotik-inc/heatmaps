@@ -8,8 +8,10 @@
 // иначе забило бы журнал сотнями строк. Хранится последние LOG_MAX записей.
 //
 // Версии — копия данных (состояние карты, общие слои) ПЕРЕД изменением,
-// сжатая gzip. Серия правок одного человека в пределах gapMs даёт одну
-// версию — состояние до начала серии. На ключ хранится versionsKeep версий.
+// сжатая gzip. Изменение данных (точки, слои, зоны, карты общего слоя) —
+// всегда своя версия, её можно отменить прямо из строки журнала; прочие
+// сохранения (вид карты) одного человека в пределах gapMs — одна версия.
+// На ключ хранится versionsKeep версий.
 //
 // PostgreSQL — таблицы audit_log и state_versions; без базы — файлы в
 // DATA_DIR (audit.json и каталог versions/).
@@ -21,7 +23,7 @@ const zlib = require('zlib');
 const LOG_MAX = 5000;
 const LOG_MERGE_MS = 5 * 60 * 1000;
 
-function createJournal({ getDb, dataDir, gapMs = 10 * 60 * 1000, versionsKeep = 10 }) {
+function createJournal({ getDb, dataDir, gapMs = 10 * 60 * 1000, versionsKeep = 20 }) {
   const auditFile = path.join(dataDir, 'audit.json');
   const versionsDir = path.join(dataDir, 'versions');
   const versionsIndex = path.join(versionsDir, 'index.json');
@@ -61,7 +63,7 @@ function createJournal({ getDb, dataDir, gapMs = 10 * 60 * 1000, versionsKeep = 
   // Записать событие. Ошибки журнала никогда не ломают сам запрос.
   function add({ username = '', action, map = '', level = 'info', status = 0, detail = {} }) {
     const at = new Date().toISOString();
-    const key = [username, action, map, level, status, detail.error || '', detail.key || '', detail.username || '', detail.change || ''].join('|');
+    const key = [username, action, map, level, status, detail.error || '', detail.key || '', detail.username || '', detail.change || '', detail.version || ''].join('|');
     return queue(async () => {
       const db = getDb();
       const last = lastByKey.get(key);
@@ -88,22 +90,23 @@ function createJournal({ getDb, dataDir, gapMs = 10 * 60 * 1000, versionsKeep = 
     }).catch(e => console.warn('Journal write failed:', e.message));
   }
 
-  // Последние записи: before — id, с которого листать дальше.
+  // Последние записи, свежие сверху по времени последнего повтора (склеенная
+  // строка поднимается наверх). before — время, с которого листать дальше.
   async function list({ before = 0, limit = 100, level = '', username = '' } = {}) {
     const db = getDb();
     const lim = Math.max(1, Math.min(Number(limit) || 100, 500));
     let rows;
     if (db) {
       const where = [], args = [];
-      if (before) { args.push(Number(before)); where.push(`id < $${args.length}`); }
+      if (before) { args.push(String(before)); where.push(`at < $${args.length}`); }
       if (level) { args.push(level); where.push(`level = $${args.length}`); }
       if (username) { args.push(username); where.push(`username = $${args.length}`); }
       args.push(lim);
       rows = (await db.query(`SELECT id, at, username, action, map, level, status, count, detail FROM audit_log
-        ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY id DESC LIMIT $${args.length}`, args)).rows;
+        ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY at DESC, id DESC LIMIT $${args.length}`, args)).rows;
     } else {
-      rows = fileLog.filter(e => (!before || e.id < before) && (!level || e.level === level) && (!username || e.username === username))
-        .slice(-lim).reverse();
+      rows = fileLog.filter(e => (!before || e.at < String(before)) && (!level || e.level === level) && (!username || e.username === username))
+        .sort((x, y) => (y.at < x.at ? -1 : y.at > x.at ? 1 : y.id - x.id)).slice(0, lim);
     }
     return rows.map(r => ({ ...r, id: Number(r.id), count: Number(r.count), status: Number(r.status), detail: safeParse(r.detail) }));
   }
@@ -138,11 +141,11 @@ function createJournal({ getDb, dataDir, gapMs = 10 * 60 * 1000, versionsKeep = 
       const at = new Date().toISOString(), savedAt = String(data._savedAt || '');
       const db = getDb();
       if (db) {
-        await db.query(`INSERT INTO state_versions (key, at, saved_at, username, reason, bytes, summary, data)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [key, at, savedAt, username, reason, gz.length, JSON.stringify(summary), gz]);
+        const id = (await db.query(`INSERT INTO state_versions (key, at, saved_at, username, reason, bytes, summary, data)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, [key, at, savedAt, username, reason, gz.length, JSON.stringify(summary), gz])).rows[0].id;
         await db.query(`DELETE FROM state_versions WHERE key = $1 AND id NOT IN
           (SELECT id FROM state_versions WHERE key = $1 ORDER BY id DESC LIMIT $2)`, [key, versionsKeep]);
-        return true;
+        return Number(id);
       }
       const list = readIndex();
       const id = list.reduce((a, v) => Math.max(a, v.id), 0) + 1;
@@ -153,7 +156,7 @@ function createJournal({ getDb, dataDir, gapMs = 10 * 60 * 1000, versionsKeep = 
       const drop = new Set(mine.slice(0, Math.max(0, mine.length - versionsKeep)).map(v => v.id));
       drop.forEach(d => fs.rmSync(path.join(versionsDir, `${d}.gz`), { force: true }));
       writeIndex(list.filter(v => !drop.has(v.id)));
-      return true;
+      return id;
     }).catch(e => { console.warn('Version save failed:', e.message); return false; });
   }
   async function listVersions(key) {

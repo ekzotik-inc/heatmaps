@@ -557,7 +557,10 @@ function layersIndex(key, d) {
   if (!d) return out;
   const n = l => (l && Array.isArray(l.recs) ? l.recs.length : ((l && l.stats && l.stats.n) || 0));
   if (key === SHARED_KEY) {
-    (Array.isArray(d.layers) ? d.layers : []).forEach(l => isObj(l) && out.set('s:' + l.id, { name: l.name || l.id, n: n(l) }));
+    (Array.isArray(d.layers) ? d.layers : []).forEach(l => isObj(l) && out.set('s:' + l.id, {
+      name: l.name || l.id, n: n(l),
+      on: strList(l.maps) ? allMaps().filter(m => sharedOnMap({ maps: l.maps, except: strList(l.except) ? l.except : [] }, m.id)).map(m => m.id) : [],
+    }));
     return out;
   }
   (Array.isArray(d.heatKeys) ? d.heatKeys : []).forEach(k => d.layers && isObj(d.layers[k]) && out.set('h:' + k, { name: d.layers[k].name || k, n: n(d.layers[k]) }));
@@ -577,7 +580,15 @@ function describeChange(key, prev, next) {
     if (was.zone) {
       if (now.geo !== was.geo) parts.push(`изменил форму зоны «${now.name}»`);
       if (now.color !== was.color) parts.push(`изменил цвет зоны «${now.name}»`);
-    } else if (now.n < was.n) { parts.push(`удалил ${ptsWord(was.n - now.n)} из слоя «${now.name}»`); destructive = true; } else if (now.n > was.n) parts.push(`добавил ${ptsWord(now.n - was.n)} в слой «${now.name}»`);
+    } else if (was.on && now.on) {
+      // Общий слой: на каких картах виден.
+      const off = was.on.filter(m => !now.on.includes(m)), on = now.on.filter(m => !was.on.includes(m));
+      const names = ids => ids.map(id => '«' + ((findMap(id) || {}).name || id) + '»').join(', ');
+      if (off.length) { parts.push(`убрал слой «${now.name}» с ${off.length > 1 ? 'карт' : 'карты'} ${names(off)}`); destructive = true; }
+      if (on.length) parts.push(`показал слой «${now.name}» на ${on.length > 1 ? 'картах' : 'карте'} ${names(on)}`);
+    }
+    if (was.zone || now.n === was.n) continue;
+    if (now.n < was.n) { parts.push(`удалил ${ptsWord(was.n - now.n)} из слоя «${now.name}»`); destructive = true; } else if (now.n > was.n) parts.push(`добавил ${ptsWord(now.n - was.n)} в слой «${now.name}»`);
   }
   for (const [id, now] of b) if (!a.has(id)) parts.push(now.zone ? `добавил зону «${now.name}»` : `добавил слой «${now.name}»`);
   const text = parts.length > 3 ? parts.slice(0, 3).join('; ') + ` и ещё ${parts.length - 3}` : parts.join('; ');
@@ -590,10 +601,13 @@ async function writeState(key, data) {
     const change = prev ? describeChange(key, prev, data) : { text: '', destructive: false };
     const res = st && st.req && st.req.res;
     if (res && change.text) res.locals.logDetail = { ...(res.locals.logDetail || {}), change: change.text };
-    await journal.save(key, prev, {
-      username: storeUser(), force: change.destructive, reason: change.destructive ? 'delete' : 'change',
+    // Изменение данных — всегда своя версия; её номер — в строке журнала,
+    // чтобы отменить именно это действие кнопкой «Отменить».
+    const id = await journal.save(key, prev, {
+      username: storeUser(), force: Boolean(change.text), reason: change.destructive ? 'delete' : 'change',
       summary: { ...versionSummary(key, prev), change: change.text },
     });
+    if (res && id && change.text) res.locals.logDetail = { ...(res.locals.logDetail || {}), version: id, vkey: key };
   }
   const json = JSON.stringify(data);
   if (db) {
