@@ -802,7 +802,8 @@ function describe(e) {
   const T = {
     '/auth/login': ok ? 'вошёл' : e.status === 429 ? 'слишком много неудачных попыток — вход временно закрыт' : 'не смог войти: неверный логин или пароль',
     '/auth/logout': 'вышел',
-    '/state': `сохранил карту ${mapLabel(e.map)}`,
+    // Сервер сравнивает карту до и после: «удалил 1 точку из слоя «Киоски»».
+    '/state': d.change ? `${esc(d.change)} — карта ${mapLabel(e.map)}` : `сохранил карту ${mapLabel(e.map)}`,
     '/my/bounds': `сохранил свои границы на карте ${mapLabel(e.map)}`,
     '/my/layers': `сохранил свои слои на карте ${mapLabel(e.map)}`,
     '/photo': `загрузил фото на карту ${mapLabel(e.map)}`,
@@ -816,8 +817,8 @@ function describe(e) {
     '/auth/perms': `изменил права ${who}`,
     '/auth/maps': `изменил карты ${who}`,
     '/auth/rules': 'изменил права по умолчанию',
-    '/shared/layers': 'изменил общие слои',
-    '/shared/layers/one': `изменил общий слой «${esc(d.name || '')}»`,
+    '/shared/layers': d.change ? `${esc(d.change)} — общие слои` : 'изменил общие слои',
+    '/shared/layers/one': d.change ? `${esc(d.change)} — общий слой` : `изменил общий слой «${esc(d.name || '')}»`,
     '/shared/layers/hide': `убрал общий слой с карты ${mapLabel(d.map)}`,
     '/admin/points/delete': `удалил ${pts(d.points)} из слоя ${d.scope === 'shared' ? '(общий слой)' : 'на карте ' + mapLabel(d.map)}`,
     '/admin/layers/update': `переименовал слой в «${esc(d.name || '')}»`,
@@ -912,7 +913,10 @@ const verSummary = v => {
   return [s.layers != null ? `${fmtN(s.layers)} ${plural(s.layers, 'слой', 'слоя', 'слоёв')}` : '', s.points != null ? pts(s.points) : '', s.zones ? `${fmtN(s.zones)} ${plural(s.zones, 'зона', 'зоны', 'зон')}` : ''].filter(Boolean).join(', ');
 };
 function versionRowHtml(v) {
-  const what = v.reason === 'before-restore' ? `Как было до отката ${esc(fmtDate(v.at))}` : `Как было до изменений <b>${esc(v.username || 'неизвестно')}</b> ${esc(fmtDate(v.at))}`;
+  const ch = (v.summary || {}).change;
+  const what = v.reason === 'before-restore' ? `Как было до отката ${esc(fmtDate(v.at))}`
+    : ch ? `До того, как <b>${esc(v.username || 'кто-то')}</b> ${esc(ch)} · ${esc(fmtDate(v.at))}`
+      : `Как было до изменений <b>${esc(v.username || 'неизвестно')}</b> ${esc(fmtDate(v.at))}`;
   return `<div class="a-row"><span class="a-av sq" aria-hidden="true">${uiIcon('history', 18)}</span>
     <span class="a-row-main"><b>${what}</b><small>${esc(verSummary(v) || 'пусто')}${v.savedAt ? ' · сохранено ' + esc(fmtDate(v.savedAt)) : ''}</small></span>
     <span class="a-row-acts"><button type="button" class="a-btn ghost sm" data-restore="${v.id}" data-key="${esc(v.key)}" data-when="${esc(fmtDate(v.savedAt || v.at))}">${uiIcon('undo', 14)} Вернуть</button></span></div>`;

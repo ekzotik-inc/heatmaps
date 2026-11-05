@@ -75,3 +75,23 @@ test('versions: a burst of saves by one person is one restore point', async t =>
   const v = (await (await boss.get('/admin/versions?key=comdep')).json()).versions;
   assert.equal(v.length, 1, 'the state before the burst');
 });
+
+test('a deleted point is named in the journal and always gets its own restore point', async t => {
+  const srv = await startServer(USERS);   // окно серии — 10 минут, как на Render
+  t.after(() => srv.stop());
+  const boss = await signIn(srv, 'boss', USERS.boss.password);
+  const com = await signIn(srv, 'com', USERS.com.password);
+  const map = recs => ({ _app: 'hm-br', heatKeys: [], layers: {}, customPtLayers: [{ id: 'cpt_1', name: 'Киоски', recs }] });
+  const A = { name: 'А', lat: 41, lon: 69 }, B = { name: 'Б', lat: 41.1, lon: 69.1 }, C = { name: 'В', lat: 41.2, lon: 69.2 };
+  await boss.post('/state?map=comdep', map([A, B]));
+  await boss.post('/state?map=comdep', map([A, B, C]));   // начало серии — точка возврата
+  await boss.post('/state?map=comdep', map([A, C]));      // удаление внутри серии — своя точка
+  await pause(300);
+  const log = (await (await boss.get('/admin/log')).json()).rows.filter(r => r.action === '/state');
+  assert.ok(log.some(r => r.detail.change === 'удалил 1 точку из слоя «Киоски»'), JSON.stringify(log.map(r => r.detail)));
+  assert.ok(log.some(r => r.detail.change === 'добавил 1 точку в слой «Киоски»'));
+  const v = (await (await boss.get('/admin/versions?key=comdep')).json()).versions;
+  assert.deepEqual([v[0].reason, v[0].summary.change, v[0].summary.points], ['delete', 'удалил 1 точку из слоя «Киоски»', 3]);
+  assert.equal((await boss.post('/admin/versions/restore', { id: v[0].id })).status, 200);
+  assert.deepEqual((await (await com.get('/state?map=comdep')).json()).customPtLayers[0].recs.map(r => r.name), ['А', 'Б', 'В'], 'the deleted point is back');
+});

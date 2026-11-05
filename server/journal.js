@@ -61,7 +61,7 @@ function createJournal({ getDb, dataDir, gapMs = 10 * 60 * 1000, versionsKeep = 
   // Записать событие. Ошибки журнала никогда не ломают сам запрос.
   function add({ username = '', action, map = '', level = 'info', status = 0, detail = {} }) {
     const at = new Date().toISOString();
-    const key = [username, action, map, level, status, detail.error || '', detail.key || '', detail.username || ''].join('|');
+    const key = [username, action, map, level, status, detail.error || '', detail.key || '', detail.username || '', detail.change || ''].join('|');
     return queue(async () => {
       const db = getDb();
       const last = lastByKey.get(key);

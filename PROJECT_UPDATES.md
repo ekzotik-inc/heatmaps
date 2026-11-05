@@ -1420,3 +1420,20 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   `/admin/versions`, `/admin/versions/restore`, `/client-error`.
 - Tests: server 100/100 on files and PostgreSQL, browser 19/19.
   Cache `20261106i`. Server changed — Render redeploys on push.
+
+## 2026-11-06 — Deleted points show up in the journal and can be undone
+
+- Owner: «я удалил точку, но в действиях этого нет и я не могу откатить
+  удаление».
+- Cause: a point deleted on the map is saved with the whole map, so the
+  journal only said «сохранил карту»; and one restore point per 10-minute
+  series meant the deletion had no restore point of its own.
+- Now the server compares the map before and after each save and writes what
+  changed: «удалил 1 точку из слоя «Киоски»», «добавил слой…», «удалил
+  зону…», «переименовал…», «изменил форму зоны…». Same for shared layers.
+- Any deletion (points, layers, zones) always gets its own restore point,
+  labelled «До того, как boss удалил 1 точку из слоя «Киоски»» — «Вернуть»
+  brings the point back.
+- Deletions made before this update have no own restore point.
+- Tests: server 101/101 on files and PostgreSQL, browser 19/19.
+  Cache `20261106j`. Server changed — Render redeploys on push.

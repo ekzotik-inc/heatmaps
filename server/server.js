@@ -546,11 +546,54 @@ function storeUser() {
   const st = reqStore.getStore();
   return (st && st.req && st.req.user && st.req.user.username) || '';
 }
+// Что изменилось между прежними и новыми данными — фразой для журнала.
+// destructive — что-то удалено: такая правка всегда получает свою точку
+// возврата, даже внутри 10-минутной серии (владелец удалил точку и не смог
+// откатить именно это удаление).
+const plural3 = (n, a, b, c) => { const m = n % 100, k = n % 10; return m > 10 && m < 20 ? c : k > 1 && k < 5 ? b : k === 1 ? a : c; };
+const ptsWord = n => `${n} ${plural3(n, 'точку', 'точки', 'точек')}`;
+function layersIndex(key, d) {
+  const out = new Map();
+  if (!d) return out;
+  const n = l => (l && Array.isArray(l.recs) ? l.recs.length : ((l && l.stats && l.stats.n) || 0));
+  if (key === SHARED_KEY) {
+    (Array.isArray(d.layers) ? d.layers : []).forEach(l => isObj(l) && out.set('s:' + l.id, { name: l.name || l.id, n: n(l) }));
+    return out;
+  }
+  (Array.isArray(d.heatKeys) ? d.heatKeys : []).forEach(k => d.layers && isObj(d.layers[k]) && out.set('h:' + k, { name: d.layers[k].name || k, n: n(d.layers[k]) }));
+  (Array.isArray(d.customPtLayers) ? d.customPtLayers : []).forEach(l => isObj(l) && out.set('p:' + l.id, { name: l.name || l.id, n: n(l) }));
+  (Array.isArray(d.boundLayers) ? d.boundLayers : []).forEach(l => isObj(l) && (l.zones || []).forEach(z => z &&
+    out.set('z:' + l.id + ':' + z.id, { name: z.name || 'Зона', zone: true, geo: JSON.stringify(z.mp || []).length, color: z.color || '' })));
+  return out;
+}
+function describeChange(key, prev, next) {
+  const a = layersIndex(key, prev), b = layersIndex(key, next);
+  const parts = [];
+  let destructive = false;
+  for (const [id, was] of a) {
+    const now = b.get(id);
+    if (!now) { parts.push(was.zone ? `удалил зону «${was.name}»` : `удалил слой «${was.name}»`); destructive = true; continue; }
+    if (now.name !== was.name) parts.push(`${was.zone ? 'переименовал зону' : 'переименовал слой'} «${was.name}» в «${now.name}»`);
+    if (was.zone) {
+      if (now.geo !== was.geo) parts.push(`изменил форму зоны «${now.name}»`);
+      if (now.color !== was.color) parts.push(`изменил цвет зоны «${now.name}»`);
+    } else if (now.n < was.n) { parts.push(`удалил ${ptsWord(was.n - now.n)} из слоя «${now.name}»`); destructive = true; } else if (now.n > was.n) parts.push(`добавил ${ptsWord(now.n - was.n)} в слой «${now.name}»`);
+  }
+  for (const [id, now] of b) if (!a.has(id)) parts.push(now.zone ? `добавил зону «${now.name}»` : `добавил слой «${now.name}»`);
+  const text = parts.length > 3 ? parts.slice(0, 3).join('; ') + ` и ещё ${parts.length - 3}` : parts.join('; ');
+  return { text: text.slice(0, 300), destructive };
+}
 async function writeState(key, data) {
   const st = reqStore.getStore();
   if (versionedKey(key) && !(st && st.noVersion)) {
     const prev = await readState(key);
-    await journal.save(key, prev, { username: storeUser(), summary: versionSummary(key, prev) });
+    const change = prev ? describeChange(key, prev, data) : { text: '', destructive: false };
+    const res = st && st.req && st.req.res;
+    if (res && change.text) res.locals.logDetail = { ...(res.locals.logDetail || {}), change: change.text };
+    await journal.save(key, prev, {
+      username: storeUser(), force: change.destructive, reason: change.destructive ? 'delete' : 'change',
+      summary: { ...versionSummary(key, prev), change: change.text },
+    });
   }
   const json = JSON.stringify(data);
   if (db) {
