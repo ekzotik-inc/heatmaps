@@ -850,7 +850,10 @@ function cleanZoneGeometry(mp) {
 function cleanOwnZone(z) {
   const id = boundId(z && z.id);
   const mp = cleanZoneGeometry(z && z.mp);
-  return id && mp.length ? { id, name: cleanText(z.name, 60) || 'Зона', mp } : null;
+  if (!id || !mp.length) return null;
+  const zone = { id, name: cleanText(z.name, 60) || 'Зона', mp };
+  if (/^#[0-9a-f]{6}$/i.test(z.color || '')) zone.color = z.color;   // свой цвет зоны
+  return zone;
 }
 function cleanOwnLayer(l) {
   const id = boundId(l && l.id);

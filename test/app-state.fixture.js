@@ -30,7 +30,7 @@ module.exports = {
   districtsOn: true, incomeHeatOn: true, coresOn: true,
   distOpacity: 0.3,
   boundLayers: [{ id: 'bl1', name: 'Мои зоны', color: '#7b3294', visible: true,
-    zones: [{ id: 'z1', name: 'Центр', mp: [[ring(69.2, 41.29, 0.05)]] }] }],
+    zones: [{ id: 'z1', name: 'Центр', color: '#d7191c', mp: [[ring(69.2, 41.29, 0.05)]] }] }],
   boundSel: ['bl1:z1'], boundFilter: { on: true, mode: 'out' },
   showHeatAll: false, showPointsAll: true, heatStyle: 'zones', cityScope: 'city',
   addrSrcKeys: ['custom_a'], addrRefKeys: ['__cpt__cpt_1'],

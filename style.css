@@ -2355,6 +2355,20 @@ button, input, select, textarea, optgroup, option, kbd, code, pre,
 .bz-zone.on .bz-zbtn { background: var(--acc-l); border-color: var(--acc); font-weight: 600; }
 .bz-zone.on .bz-zbtn i { transform: scale(1.15); box-shadow: 0 0 0 2px var(--card), 0 0 8px 2px var(--c); }
 .bz-none { font-size: 11.5px; color: var(--mut); padding: 4px 0; }
+/* Цвет зоны — квадрат перед названием, открывает выбор цвета */
+.bz-zcol { position: relative; flex: 0 0 auto; width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--line2); background: var(--card); cursor: pointer; display: grid; place-items: center; }
+.bz-zcol::before { content: ""; width: 14px; height: 14px; border-radius: 4px; background: var(--c); }
+.bz-zcol:hover { border-color: var(--acc); }
+.bz-zcol:focus-within { outline: 2px solid var(--acc-d); outline-offset: 1px; }
+.bz-zcol input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.bz-zone .lc-ic { flex: 0 0 auto; }
+.bz-zren { flex: 1; min-width: 0; }
+/* Вершины при правке формы: белый кружок с каймой; середина стороны — бледнее */
+.bz-vtx-wrap { display: grid; place-items: center; cursor: grab; }
+.bz-vtx { width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 2.5px solid var(--acc-d); box-shadow: 0 1px 4px rgba(28,36,52,.35); }
+.bz-vtx.mid { width: 9px; height: 9px; border-width: 2px; opacity: .65; }
+.bz-vtx-wrap:hover .bz-vtx { transform: scale(1.25); opacity: 1; }
+@media (pointer: coarse) { .bz-vtx { width: 16px; height: 16px; } .bz-vtx.mid { width: 12px; height: 12px; } }
 .bz-add { width: 100%; margin-top: 4px; }
 .bz-new { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px dashed var(--acc); border-radius: 12px; background: var(--side-bg2); }
 .bz-new input[type="text"] {

@@ -698,7 +698,8 @@ function boundZones() {
   }));
   boundLayers.forEach(l => {
     if (!l.visible) return;
-    l.zones.forEach(z => out.push({ key: l.id + ':' + z.id, name: z.name, sub: l.name, color: boundColor(l.color), mp: z.mp }));
+    // У зоны может быть свой цвет (06.11.2026); нет — цвет слоя.
+    l.zones.forEach(z => (typeof bedit !== 'undefined' && bedit.on && bedit.z === z) || out.push({ key: l.id + ':' + z.id, name: z.name, sub: l.name, color: boundColor(z.color || l.color), mp: z.mp }));
   });
   out.forEach(z => { z.boxes = mpBoxes(z.mp); });
   return (_bzZones = out);
@@ -889,7 +890,8 @@ function cleanBoundLayer(l) {
   return {
     id: bzId(l.id), name: String(l.name || 'Граница').slice(0, 40), color: boundColor(l.color), visible: l.visible !== false,
     zones: (Array.isArray(l.zones) ? l.zones : [])
-      .map(z => z && { id: bzId(z.id), name: String(z.name || 'Зона').slice(0, 60), mp: cleanMp(z.mp) })
+      .map(z => z && { id: bzId(z.id), name: String(z.name || 'Зона').slice(0, 60), mp: cleanMp(z.mp),
+        ...(/^#[0-9a-f]{6}$/i.test(z.color || '') ? { color: z.color } : {}) })
       .filter(z => z && z.id && z.mp),
   };
 }
@@ -3741,7 +3743,7 @@ let _bzHadPopup = false;
 map.on('preclick', () => { _bzHadPopup = !!(map._popup && map.hasLayer(map._popup)); });
 map.on('click', e => {
   if (_bzHadPopup) { _bzHadPopup = false; return; }
-  if (bdraw.on || rulerActive() || _rpPickingGeo) return;
+  if (bdraw.on || bedit.on || rulerActive() || _rpPickingGeo) return;
   const z = zoneAt(e.latlng.lat, e.latlng.lng);
   if (z) toggleBoundZone(z.key);
 });
@@ -3917,6 +3919,101 @@ document.addEventListener('keydown', e => {
   }));
 })();
 
+// Правка формы зоны (06.11.2026): вершины тянутся мышью или пальцем, клик по
+// вершине — убрать её, по кружку посередине стороны — добавить. Правим копию;
+// «Готово» записывает её в зону, «Отмена»/Esc — оставляет как было.
+const BEDIT_MAX_VERTICES = 800;   // больше — маркеры тормозят; такие зоны пришли из GeoJSON
+const bedit = { on: false, l: null, z: null, mp: null, group: L.layerGroup().addTo(map) };
+function beditStart(l, z) {
+  if (bdraw.on) bdrawEnd();
+  const n = z.mp.reduce((a, poly) => a + poly.reduce((b, r) => b + r.length, 0), 0);
+  if (n > BEDIT_MAX_VERTICES) {
+    toast(`У зоны ${n.toLocaleString('ru-RU')} вершин — столько точек не поправить руками. Нарисуйте зону заново или упростите файл.`, 'err', 6000);
+    return;
+  }
+  setBoundsPop(false);
+  if (ruler.sticky) { ruler.sticky = false; rulerSync(); }
+  l.visible = true;
+  bedit.on = true; bedit.l = l; bedit.z = z;
+  bedit.mp = z.mp.map(poly => poly.map(r => r.slice(0, -1).map(c => [c[0], c[1]])));   // без замыкающей вершины
+  map.doubleClickZoom.disable();
+  boundsChanged(false);
+  const ll = bedit.mp.flat(2).length ? L.latLngBounds(bedit.mp.flat(1).flat(1).map(c => [c[1], c[0]])) : null;
+  if (ll && ll.isValid()) map.fitBounds(ll.pad(.25), { maxZoom: 17 });
+  beditRender();
+}
+function beditEnd(save) {
+  if (!bedit.on) return;
+  if (save) {
+    bedit.z.mp = bedit.mp.map(poly => poly.map(r => {
+      const ring = r.map(c => [+(+c[0]).toFixed(5), +(+c[1]).toFixed(5)]);
+      return ring.concat([ring[0].slice()]);
+    }));
+  }
+  const name = bedit.z.name;
+  bedit.on = false; bedit.l = null; bedit.z = null; bedit.mp = null;
+  map.doubleClickZoom.enable();
+  beditRender();
+  boundsChanged(save);
+  if (save) toast(`Форма зоны «${name}» сохранена`, 'ok');
+  setBoundsPop(true);
+}
+function beditVertexIcon(cls) {
+  return L.divIcon({ className: 'bz-vtx-wrap', html: `<span class="bz-vtx ${cls}"></span>`, iconSize: [22, 22], iconAnchor: [11, 11] });
+}
+function beditRender() {
+  const bar = document.getElementById('bedit-bar');
+  if (bar) {
+    bar.hidden = !bedit.on;
+    const t = document.getElementById('bedit-name'); if (t) t.textContent = bedit.z ? bedit.z.name : '';
+  }
+  bedit.group.clearLayers();
+  if (!bedit.on) return;
+  const col = boundColor(bedit.z.color || bedit.l.color);
+  bedit.mp.forEach(poly => {
+    L.polygon(poly.map(r => r.map(c => [c[1], c[0]])), { color: col, weight: 2.5, dashArray: '6 6', fillColor: col, fillOpacity: .18, interactive: false }).addTo(bedit.group);
+    poly.forEach(ring => {
+      ring.forEach((c, vi) => {
+        const m = L.marker([c[1], c[0]], { icon: beditVertexIcon(''), draggable: true, keyboard: false, zIndexOffset: 3000, bubblingMouseEvents: false });
+        m.on('drag', e => { const p = e.target.getLatLng(); ring[vi] = [p.lng, p.lat]; beditRedrawShape(); });
+        m.on('dragend', beditRender);
+        m.on('click', () => {
+          if (ring.length <= 3) { toast('У зоны должно остаться минимум 3 точки', 'err'); return; }
+          ring.splice(vi, 1); beditRender();
+        });
+        m.addTo(bedit.group);
+        // Середина стороны: клик или перетаскивание добавляет новую вершину.
+        const n = ring[(vi + 1) % ring.length];
+        const mid = L.marker([(c[1] + n[1]) / 2, (c[0] + n[0]) / 2], { icon: beditVertexIcon('mid'), draggable: true, keyboard: false, zIndexOffset: 2000, bubblingMouseEvents: false });
+        let added = false;
+        const add = p => { if (!added) { ring.splice(vi + 1, 0, [p.lng, p.lat]); added = true; } else ring[vi + 1] = [p.lng, p.lat]; };
+        mid.on('drag', e => { add(e.target.getLatLng()); beditRedrawShape(); });
+        mid.on('dragend', beditRender);
+        mid.on('click', e => { add(e.target.getLatLng()); beditRender(); });
+        mid.addTo(bedit.group);
+      });
+    });
+  });
+}
+// Во время перетаскивания перерисовываем только контур — маркеры на месте.
+function beditRedrawShape() {
+  bedit.group.eachLayer(x => { if (x instanceof L.Polygon) bedit.group.removeLayer(x); });
+  const col = boundColor(bedit.z.color || bedit.l.color);
+  bedit.mp.forEach(poly => L.polygon(poly.map(r => r.map(c => [c[1], c[0]])), { color: col, weight: 2.5, dashArray: '6 6', fillColor: col, fillOpacity: .18, interactive: false }).addTo(bedit.group));
+}
+document.addEventListener('keydown', e => {
+  if (!bedit.on || rulerBlocked()) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); beditEnd(false); }
+  else if (e.key === 'Enter') { e.preventDefault(); beditEnd(true); }
+});
+(function wireBeditBar() {
+  const bar = document.getElementById('bedit-bar');
+  if (!bar) return;
+  L.DomEvent.disableClickPropagation(bar);
+  document.getElementById('bedit-done')?.addEventListener('click', () => beditEnd(true));
+  document.getElementById('bedit-cancel')?.addEventListener('click', () => beditEnd(false));
+})();
+
 // GeoJSON: Polygon / MultiPolygon, имя зоны — из properties.name.
 function geojsonZones(gj) {
   const feats = gj && gj.type === 'FeatureCollection' ? gj.features
@@ -3999,10 +4096,14 @@ function buildBoundsUI() {
   const sel = new Set(boundSel);
   const admin = isAdmin();
   const dists = cityDistricts();
-  const zoneRow = (key, name, color, delKey) => `
+  // editKey — у зон слоя, который можно править: цвет, имя, форма, удаление.
+  const zoneRow = (key, name, color, editKey) => `
     <div class="bz-zone${sel.has(key) ? ' on' : ''}">
-      <button type="button" class="bz-zbtn" data-bzsel="${esc(key)}" aria-pressed="${sel.has(key)}" title="${sel.has(key) ? 'Снять выбор' : 'Выбрать'}"><i style="--c:${color}"></i><span>${esc(name)}</span></button>
-      ${delKey ? `<button type="button" class="lc-ic" data-bzzdel="${esc(delKey)}" title="Удалить зону" aria-label="Удалить зону «${esc(name)}»">${uiIcon('x', 13)}</button>` : ''}
+      ${editKey ? `<label class="bz-zcol" style="--c:${color}" title="Цвет зоны"><input type="color" data-bzzcol="${esc(editKey)}" value="${color}" aria-label="Цвет зоны «${esc(name)}»"/></label>` : ''}
+      <button type="button" class="bz-zbtn" data-bzsel="${esc(key)}" aria-pressed="${sel.has(key)}" title="${sel.has(key) ? 'Снять выбор' : 'Выбрать'}">${editKey ? '' : `<i style="--c:${color}"></i>`}<span>${esc(name)}</span></button>
+      ${editKey ? `<button type="button" class="lc-ic" data-bzzren="${esc(editKey)}" title="Переименовать зону" aria-label="Переименовать зону «${esc(name)}»">${uiIcon('pencil', 13)}</button>
+      <button type="button" class="lc-ic" data-bzzedit="${esc(editKey)}" title="Изменить форму на карте" aria-label="Изменить форму зоны «${esc(name)}»">${uiIcon('shape', 14)}</button>
+      <button type="button" class="lc-ic" data-bzzdel="${esc(editKey)}" title="Удалить зону" aria-label="Удалить зону «${esc(name)}»">${uiIcon('x', 13)}</button>` : ''}
     </div>`;
   const allSel = keys => keys.length && keys.every(k => sel.has(k));
   const pickAll = (id, keys) => keys.length ? `<button type="button" class="lc-link" data-bzall="${esc(id)}">${allSel(keys) ? 'Снять выбор' : 'Выбрать все'}</button>` : '<span></span>';
@@ -4054,7 +4155,7 @@ function buildBoundsUI() {
         </div>
       </div>
       <div class="lc-body">
-        ${l.zones.length ? `<div class="bz-zones">${l.zones.map(z => zoneRow(l.id + ':' + z.id, z.name, col, edit ? l.id + ':' + z.id : '')).join('')}</div>`
+        ${l.zones.length ? `<div class="bz-zones">${l.zones.map(z => zoneRow(l.id + ':' + z.id, z.name, boundColor(z.color || col), edit ? l.id + ':' + z.id : '')).join('')}</div>`
           : `<div class="bz-none">Зон нет${edit ? ' — нажмите «+» и обведите участок на карте' : ''}.</div>`}
         <div class="lc-foot"><span></span>${pickAll(l.id, keys)}</div>
       </div>
@@ -4142,6 +4243,38 @@ function buildBoundsUI() {
     if (!confirm(`Удалить зону «${z.name}»?`)) return;
     l.zones = l.zones.filter(x => x !== z);
     boundsChanged();
+  }));
+  const zoneOf = key => {
+    const i = key.indexOf(':'), l = boundLayers.find(x => x.id === key.slice(0, i));
+    const z = l && l.zones.find(x => x.id === key.slice(i + 1));
+    return z && canEditBound(l) ? { l, z } : null;
+  };
+  box.querySelectorAll('[data-bzzcol]').forEach(el => {
+    el.addEventListener('input', () => { el.parentElement.style.setProperty('--c', el.value); });
+    el.addEventListener('change', () => {
+      const f = zoneOf(el.dataset.bzzcol); if (!f) return;
+      f.z.color = boundColor(el.value);
+      boundsChanged();
+    });
+  });
+  box.querySelectorAll('[data-bzzren]').forEach(el => el.addEventListener('click', () => {
+    const f = zoneOf(el.dataset.bzzren); if (!f) return;
+    const btn = el.parentElement.querySelector('.bz-zbtn'); if (!btn) return;
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.value = f.z.name; inp.maxLength = 60; inp.className = 'lc-rename bz-zren';
+    inp.setAttribute('aria-label', 'Название зоны');
+    btn.replaceWith(inp); inp.focus(); inp.select();
+    let done = false;
+    const commit = save => {
+      if (done) return; done = true;
+      const v = capFirst(inp.value);
+      if (save && v && v !== f.z.name) { f.z.name = v; boundsChanged(); } else buildBoundsUI();
+    };
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') commit(true); else if (e.key === 'Escape') { e.stopPropagation(); commit(false); } });
+    inp.addEventListener('blur', () => commit(true));
+  }));
+  box.querySelectorAll('[data-bzzedit]').forEach(el => el.addEventListener('click', () => {
+    const f = zoneOf(el.dataset.bzzedit); if (f) beditStart(f.l, f.z);
   }));
   box.querySelectorAll('[data-bzdel]').forEach(el => el.addEventListener('click', () => {
     const l = boundLayers.find(x => x.id === el.dataset.bzdel); if (!l) return;
@@ -6203,12 +6336,13 @@ async function exportRetraffic() {
 // currentMap: id карты из реестра (comdep, other, kg или созданная владельцем)
 // currentRole: 'admin' | 'comdep' | 'other' | 'kg'
 // index.html?map=<id> — так страница «Админ» открывает нужную карту.
-(function takeMapFromUrl() {
-  const q = new URLSearchParams(location.search).get('map');
-  if (!q) return;
-  sessionStorage.setItem('hm_map', q);
+// Запоминаем отдельно: проверка сессии при входе стирает hm_map, а карту из
+// ссылки нужно открыть и тогда, когда человек сначала вводит пароль.
+let _urlMap = new URLSearchParams(location.search).get('map') || '';
+if (_urlMap) {
+  sessionStorage.setItem('hm_map', _urlMap);
   history.replaceState(null, '', location.pathname + location.hash);
-})();
+}
 let currentMap  = sessionStorage.getItem('hm_map')  || null;
 let currentRole = null; // populated only from the server session
 let currentUser = null; // populated only from the server session
@@ -6651,6 +6785,13 @@ let _lastServerStateFingerprint = '';
 // зон целиком не сравниваем: зоны не правятся по вершинам, их только
 // добавляют и удаляют — хватает идентификатора, имени и размера контура.
 function fingerprintRecs(recs) { return Array.isArray(recs) ? recs.length : null; }
+// Короткий отпечаток строки (FNV-1a). Длины JSON мало: сдвиг вершины зоны
+// часто не меняет длину, и правка формы не уходила бы на сервер.
+function hashStr(t) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+}
 function stateFingerprint(snapshot) {
   if (!snapshot) return '';
   const { _v, _app, _savedAt, _date, _lazy, layers, customPtLayers, boundLayers, ...settings } = snapshot;
@@ -6659,7 +6800,7 @@ function stateFingerprint(snapshot) {
     layers: Object.entries(layers || {}).map(([key, l]) => [key, l && { ...l, recs: fingerprintRecs(l.recs) }]),
     custom: (customPtLayers || []).map(l => ({ ...l, recs: l.manual ? l.recs : fingerprintRecs(l.recs) })),
     boundLayers: (boundLayers || []).map(l => ({
-      ...l, zones: (l.zones || []).map(z => [z.id, z.name, JSON.stringify(z.mp || []).length]),
+      ...l, zones: (l.zones || []).map(z => [z.id, z.name, z.color || '', hashStr(JSON.stringify(z.mp || []))]),
     })),
   });
 }
@@ -7625,7 +7766,8 @@ async function startApp() {
     const box = document.getElementById('map-cards');
     if (box) box.innerHTML = '<div class="mode-desc">Загружаем список карт…</div>';
     await fetchMaps();
-    const want = sessionStorage.getItem('hm_map');
+    const want = _urlMap;
+    _urlMap = '';
     if (want && MAP_LIST.some(m => m.id === want)) { enterMap(want); return; }
     // Единственная доступная карта — открываем сразу, выбирать нечего.
     if (!isAdmin() && MAP_LIST.length === 1) { enterMap(MAP_LIST[0].id); return; }

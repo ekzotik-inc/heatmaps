@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.1/maplibre-gl.css"/>
-  <link rel="stylesheet" href="style.css?v=20261106g"/>
+  <link rel="stylesheet" href="style.css?v=20261106h"/>
 </head>
 <body>
 
@@ -357,6 +357,12 @@
     <button type="button" id="bdraw-done" class="bdraw-btn ok" disabled>Готово</button>
     <button type="button" id="bdraw-cancel" class="bdraw-btn" title="Esc">Отмена</button>
   </div>
+  <!-- Правка формы зоны -->
+  <div id="bedit-bar" class="bdraw-bar" role="toolbar" aria-label="Правка формы зоны" hidden>
+    <span class="bdraw-t">«<b id="bedit-name"></b>»: тяните точки; клик по точке — убрать, по кружку на стороне — добавить</span>
+    <button type="button" id="bedit-done" class="bdraw-btn ok" title="Enter">Готово</button>
+    <button type="button" id="bedit-cancel" class="bdraw-btn" title="Esc">Отмена</button>
+  </div>
   <!-- Свечение контура выбранной зоны: размытая копия линии под ней -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
     <defs>
@@ -589,7 +595,7 @@
 <!-- Границы районов Ташкента (OSM) и их население (Нацкомстат, 01.01.2026) -->
 <script src="district-bounds.js?v=20261027a"></script>
 <!-- Общие помощники карты и страницы «Админ» (admin.html) -->
-<script src="common.js?v=20261106g"></script>
+<script src="common.js?v=20261106h"></script>
 <!-- PapaParse + XLSX (~900 KB) are loaded on demand (ensureSheetLibs) only when
      a file is uploaded or exported — not at initial page load. -->
 <script>
@@ -614,7 +620,7 @@
 (function bootApp() {
   var msg = document.getElementById('boot-msg');
   var s = document.createElement('script');
-  s.src = 'app.js?v=20261106g'; // bump to bust cache when app.js changes
+  s.src = 'app.js?v=20261106h'; // bump to bust cache when app.js changes
   s.onload = function () {
     var b = document.getElementById('boot-overlay');
     if (b) b.remove();

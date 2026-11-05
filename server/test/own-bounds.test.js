@@ -32,6 +32,14 @@ test('own boundaries', async t => {
     assert.equal((await com.post('/data', { _app: 'hm-data' })).status, 403);
   });
 
+  await t.test('a zone keeps its own colour; a bad colour is dropped', async () => {
+    const zones = [{ ...LAYER.zones[0], color: '#d7191c' }, { id: 'z2', name: 'Б', color: 'red;x', mp: LAYER.zones[0].mp }];
+    assert.equal((await save(com, [{ ...LAYER, zones }], 'kg'))[0], 403, 'kg map is closed to com');
+    assert.equal((await save(com, [{ ...LAYER, zones }]))[0], 200);
+    assert.deepEqual((await mine(com))[1].layers[0].zones.map(z => z.color), ['#d7191c', undefined]);
+    assert.equal((await save(com, []))[0], 200);
+  });
+
   await t.test('nothing saved yet reads as an empty list', async () => {
     assert.deepEqual(await mine(com), [200, { layers: [] }]);
   });

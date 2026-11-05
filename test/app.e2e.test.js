@@ -663,6 +663,47 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     await adm.close();
   });
 
+  // Владелец 06.11.2026: зоны границ — переименовать, свой цвет, правка формы.
+  await t.test('a boundary zone is renamed, recoloured and reshaped', async () => {
+    const boss = await open('boss', 'comdep');
+    const { page } = boss;
+    await page.evaluate(() => {
+      const ring = [[69.2, 41.29], [69.25, 41.29], [69.25, 41.34], [69.2, 41.34], [69.2, 41.29]];
+      boundLayers.push({ id: 'bt', name: 'Тест', color: '#7b3294', visible: true, zones: [{ id: 'z1', name: 'Зона 1', mp: [[ring]] }] });
+      _bzOpen.add('bt');
+      boundsChanged();
+    });
+    await page.click('.side-tab[data-tab="tab-bounds"]');
+    await page.click('[data-bzzren="bt:z1"]');
+    await page.fill('.bz-zren', 'склад');
+    await page.press('.bz-zren', 'Enter');
+    await page.$eval('[data-bzzcol="bt:z1"]', el => { el.value = '#d7191c'; el.dispatchEvent(new Event('change')); });
+    await page.click('[data-bzzedit="bt:z1"]');
+    await page.waitForSelector('#bedit-bar:not([hidden])');
+    assert.equal(await page.locator('.bz-vtx:not(.mid)').count(), 4);
+    await page.locator('.bz-vtx.mid').first().click();
+    assert.equal(await page.locator('.bz-vtx:not(.mid)').count(), 5, 'a click on a side adds a point');
+    const box = await page.locator('.bz-vtx:not(.mid)').first().boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x - 40, box.y - 30, { steps: 6 });
+    await page.mouse.up();
+    await page.click('#bedit-done');
+    let zone = null;
+    for (let i = 0; i < 40 && !(zone && zone.mp[0][0].length === 6); i++) {
+      await new Promise(r => setTimeout(r, 250));
+      const st = await api.readStored('comdep');
+      const l = st && (st.boundLayers || []).find(x => x.id === 'bt');
+      zone = l && l.zones[0];
+    }
+    assert.ok(zone, 'saved to the map state');
+    assert.deepEqual([zone.name, zone.color, zone.mp[0][0].length], ['Склад', '#d7191c', 6]);
+    assert.notDeepEqual(zone.mp[0][0][0], [69.2, 41.29], 'the dragged point moved');
+    assert.deepEqual(zone.mp[0][0][0], zone.mp[0][0][5], 'the ring stays closed');
+    assert.deepEqual(boss.errors, []);
+    await boss.close();
+  });
+
   await t.test('admin signs in and the map starts without page errors', async () => {
     const s = await open('boss');
     assert.deepEqual(s.errors, []);

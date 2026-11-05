@@ -1376,3 +1376,23 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
 - Server: role `user`; `/auth/users/create` takes `maps` and `perms`.
 - Tests: server + PostgreSQL, browser 17/17. Cache `20261106g`. Server
   changed — Render redeploys on push.
+
+## 2026-11-06 — Boundary zones: rename, own colour, reshape
+
+- Owner: edit boundary zones, rename them and change the colour of each zone.
+- In «Границы» every zone of an editable layer has: a colour square (own
+  colour; without it the zone takes the layer colour), «Переименовать»
+  (inline, Enter/Esc), «Изменить форму», delete.
+- «Изменить форму» opens the zone on the map with its points: drag a point,
+  click a point to remove it, click the small circle on a side to add one;
+  «Готово» (Enter) saves, «Отмена» (Esc) keeps the old shape. Zones with
+  more than 800 points (from big GeoJSON files) are not edited by hand.
+- Works for map boundaries (admin) and personal boundaries (server keeps the
+  zone colour, a bad value is dropped).
+- Fixed alongside: a zone's change fingerprint counted only the JSON length
+  of its geometry — moving a point often kept the length and the edit would
+  not reach the server. Now it is a hash of the geometry.
+- Fixed alongside: `index.html?map=` («Открыть» on the admin page) lost the
+  map when the person had to sign in first.
+- Tests: server + PostgreSQL, browser 18/18. Cache `20261106h`. Server
+  changed — Render redeploys on push.
