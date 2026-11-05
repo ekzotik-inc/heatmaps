@@ -27,7 +27,10 @@ const DATABASE_URL = process.env.DATABASE_URL || '';
 const ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',').map(s => s.trim()).filter(Boolean);
 const SESSION_TTL_SEC = 8 * 60 * 60;
-const AUTH_ROLES = new Set(['admin', 'comdep', 'other', 'kg']);
+// user — учётка без отдела (06.11.2026): карты и права задаются ей самой на
+// странице «Админ». comdep/other/kg остаются для учёток из Render и старых
+// записей: пока учётке не выбрали карты, они открывают карты по роли.
+const AUTH_ROLES = new Set(['admin', 'user', 'comdep', 'other', 'kg']);
 const SCRYPT_MAXMEM = 64 * 1024 * 1024;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 5;
@@ -1249,6 +1252,16 @@ app.post('/auth/users/create', requireSession, requireAdmin, async (req, res) =>
     const passwordHash = hashPassword(password);
     await updateCreatedAccounts(users => { users[username] = { role, passwordHash, createdAt: Date.now() }; });
     AUTH_USERS.set(username, { username, role, passwordHash, created: true });
+    // Карты и права можно задать сразу; у учётки без отдела карты всегда свои.
+    const maps = Array.isArray(b.maps) ? [...new Set(b.maps.filter(id => typeof id === 'string' && findMap(id)))] : null;
+    const given = isObj(b.perms) ? b.perms : {};
+    if (role !== 'admin' && (maps || role === 'user' || PERM_NAMES.some(p => typeof given[p] === 'boolean'))) {
+      await updateAccountEntry(username, entry => {
+        if (maps || role === 'user') entry.maps = maps || [];
+        PERM_NAMES.forEach(p => { if (typeof given[p] === 'boolean') entry[p] = given[p]; });
+        return entry;
+      });
+    }
     res.json({ ok: true, username, role });
   } catch (e) {
     console.error('Account create error:', e.message);

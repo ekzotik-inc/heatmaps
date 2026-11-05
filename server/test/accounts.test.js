@@ -65,3 +65,21 @@ test('accounts created on the admin page', async t => {
     assert.deepEqual((await signIn(srv, 'temp', 'temp-pass-123')).perms, { layers: true, manual: false, bounds: true });
   });
 });
+
+test('an account without a department: its own maps and rights from creation', async t => {
+  const srv = await startServer({ boss: { role: 'admin', password: 'boss-pass-123' } });
+  t.after(() => srv.stop());
+  const boss = await signIn(srv, 'boss', 'boss-pass-123');
+  const create = body => boss.post('/auth/users/create', { password: 'anna-pass-123', ...body });
+  assert.equal((await create({ username: 'anna', role: 'user', maps: ['kg', 'nope'], perms: { manual: true, layers: false } })).status, 200);
+  const anna = await signIn(srv, 'anna', 'anna-pass-123');
+  assert.deepEqual((await (await anna.get('/maps')).json()).maps.map(m => m.id), ['kg'], 'exactly the chosen maps');
+  assert.deepEqual(anna.perms, { layers: false, manual: true, bounds: true });
+  assert.equal((await create({ username: 'bob', role: 'user' })).status, 200);
+  const bob = await signIn(srv, 'bob', 'anna-pass-123');
+  assert.deepEqual((await (await bob.get('/maps')).json()).maps, [], 'no maps until the admin picks them');
+  assert.equal((await boss.post('/auth/role', { username: 'anna', role: 'admin' })).status, 200);
+  assert.equal((await boss.post('/auth/role', { username: 'anna', role: 'user' })).status, 200);
+  const again = await signIn(srv, 'anna', 'anna-pass-123');
+  assert.deepEqual((await (await again.get('/maps')).json()).maps.map(m => m.id), ['kg'], 'back from admin keeps the chosen maps');
+});

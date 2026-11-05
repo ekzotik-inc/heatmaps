@@ -517,7 +517,7 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     await page.click('#u-new');
     await page.fill('#n-name', 'Anna.K');
     await page.fill('#n-pass', 'anna-pass-123');
-    await page.check('input[name="n-role"][value="comdep"]');
+    await page.check('[data-nmap][value="comdep"]');
     const created = page.waitForResponse(r => r.url().endsWith('/auth/users/create'));
     await page.click('#n-create');
     assert.equal((await created).status(), 200);
@@ -596,21 +596,18 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
       assert.equal((await done).status(), 200);
       await fresh;
     };
-    assert.equal(await page.isChecked('input[name="u-mapmode"][value="role"]'), true, 'by role at first');
-    await saved(() => page.check('input[name="u-mapmode"][value="custom"]'));
-    await page.waitForSelector('[data-umap][value="kg"]');
-    assert.deepEqual([await page.isChecked('[data-umap][value="comdep"]'), await page.isChecked('[data-umap][value="kg"]')], [true, false], 'starts from the role maps');
+    assert.deepEqual([await page.isChecked('[data-umap][value="comdep"]'), await page.isChecked('[data-umap][value="kg"]')], [true, false], 'what it sees now');
     await saved(() => page.check('[data-umap][value="kg"]'));
     assert.deepEqual(await viewerMaps(), ['comdep', 'kg']);
-    await saved(() => page.check('input[name="u-mapmode"][value="role"]'));
-    assert.deepEqual(await viewerMaps(), ['comdep'], 'back to the role');
+    await saved(() => page.uncheck('[data-umap][value="kg"]'));
+    assert.deepEqual(await viewerMaps(), ['comdep']);
     assert.deepEqual(boss.errors, []);
     await boss.close();
   });
 
   // Владелец 06.11.2026: «Админ» — отдельная страница; на ней все слои и точки
   // всех карт, роли и правила, память сервера.
-  await t.test('the admin page manages layers, points, rules and server memory', async () => {
+  await t.test('the admin page manages layers, points, who sees a map and server memory', async () => {
     const boss = await open('boss', 'comdep');
     const [popup] = await Promise.all([boss.page.waitForEvent('popup'), boss.page.click('#admin-open')]);
     assert.match(popup.url(), /\/admin\.html$/, 'the map opens the admin page in its own tab');
@@ -636,12 +633,25 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     const st = await api.readStored('comdep');
     assert.deepEqual([st.customPtLayers.find(l => l.id === 'cpt_del').recs.length, st.layers.custom_del.name], [0, 'Тепло новое']);
 
-    await page.click('.a-nav a[data-sec="roles"]');
-    await page.waitForSelector('[data-rule="kg"][data-perm="manual"]');
-    done = page.waitForResponse(r => r.url().endsWith('/auth/rules') && r.request().method() === 'POST');
-    await page.click('[data-rule="kg"][data-perm="manual"]');
+    // «Кто видит карту» — галочки учёток в настройках карты.
+    await page.click('.a-nav a[data-sec="maps"]');
+    await page.click('[data-medit="kg"]');
+    await page.check('[data-mwho][value="guest"]');
+    done = page.waitForResponse(r => r.url().endsWith('/auth/maps'));
+    await page.click('#mf-submit');
     assert.equal((await done).status(), 200);
-    await page.waitForSelector('[data-rule="kg"][data-perm="manual"][aria-checked="true"]');
+    const guestMaps = async () => {
+      const { token } = await (await api.request('/auth/login', json({ username: 'guest', password: USERS.guest.password }))).json();
+      return (await (await api.request('/maps', { headers: bearer(token) })).json()).maps.map(m => m.id);
+    };
+    assert.deepEqual(await guestMaps(), ['other', 'kg']);
+    await page.waitForSelector('#a-drawer', { state: 'hidden' });
+    await page.click('[data-medit="kg"]');
+    await page.uncheck('[data-mwho][value="guest"]');
+    done = page.waitForResponse(r => r.url().endsWith('/auth/maps'));
+    await page.click('#mf-submit');
+    assert.equal((await done).status(), 200);
+    assert.deepEqual(await guestMaps(), ['other']);
 
     await page.click('.a-nav a[data-sec="server"]');
     await page.waitForSelector('#s-body .a-row');

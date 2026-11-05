@@ -1361,3 +1361,18 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   (maps, personal data, service records folded away).
 - Own confirmation window instead of browser confirm/prompt.
 - Tests: browser 17/17. Cache `20261106f`. Server unchanged.
+
+## 2026-11-06 — No more roles in the admin page
+
+- Owner: «а зачем нам роли и учётки? Почему это 2 разных раздела? Не вижу
+  логики». Chosen: only accounts.
+- «Роли и права» section removed. An account is: «Админ» switch, ticked
+  maps, three rights, password. New accounts get maps and rights right in
+  the creation form (server role `user`: no department, own maps only).
+- A map's «Кто видит» lists accounts with ticks instead of roles; saving
+  updates those accounts' map lists. The maps list shows who sees each map.
+- Everyone keeps the access they had: accounts from Render still open their
+  department's maps until the admin ticks maps for them.
+- Server: role `user`; `/auth/users/create` takes `maps` and `perms`.
+- Tests: server + PostgreSQL, browser 17/17. Cache `20261106g`. Server
+  changed — Render redeploys on push.

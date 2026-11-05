@@ -8,16 +8,13 @@
 'use strict';
 
 const SERVER_URL = window._HM_SERVER_URL || '';
-const ROLE_NAMES = { admin: 'Админ', comdep: 'Com Dep', other: 'Другая', kg: 'Кыргызстан' };
-const ROLE_ORDER = ['comdep', 'other', 'kg', 'admin'];
-const MAP_ROLES = ['comdep', 'other', 'kg'];
 const PERMS = [
   ['layers', 'Свои слои из Excel', 'Загружать свои тепловые слои и слои точек — их видит только он'],
   ['manual', 'Точки вручную с фото', 'Ставить точки на карте вручную, с карточкой и фото'],
   ['bounds', 'Свои границы', 'Рисовать свои зоны на вкладке «Границы»'],
 ];
 const KEY_LABELS = { maps: 'Список карт', auth_overrides: 'Пароли, заданные здесь', auth_accounts: 'Учётки, созданные здесь',
-  account_perms: 'Права, роли и карты учёток', role_rules: 'Правила ролей', shared_layers: 'Общие слои', dataset: 'Базовые данные (районы)' };
+  account_perms: 'Права и карты учёток', role_rules: 'Права по умолчанию (старые)', shared_layers: 'Общие слои', dataset: 'Базовые данные (районы)' };
 const RENDER_RAM = 512 * 1048576;   // память сервера на тарифе Render
 
 Object.assign(UI_ICONS, {
@@ -47,7 +44,6 @@ const fmtN = n => (Number(n) || 0).toLocaleString('ru-RU');
 const pts = n => fmtN(n) + ' ' + plural(Number(n) || 0, 'точка', 'точки', 'точек');
 const fmtDate = v => (v ? new Date(v).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
 const mapName = id => (D.maps.find(m => m.id === id) || { name: id }).name;
-const roleName = r => ROLE_NAMES[r] || r;
 function genPassword() {
   const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
   const buf = new Uint32Array(12); crypto.getRandomValues(buf);
@@ -216,7 +212,6 @@ const SECTIONS = [
   ['users', 'Учётки', 'users', renderUsers],
   ['maps', 'Карты', 'map', renderMaps],
   ['layers', 'Слои и точки', 'layers', renderLayers],
-  ['roles', 'Роли и права', 'shield', renderRoles],
   ['server', 'Сервер', 'server', renderServer],
 ];
 $('a-nav').innerHTML = SECTIONS.map(([id, label, ic]) =>
@@ -272,7 +267,8 @@ async function renderHome() {
     const share = S ? Math.min(100, Math.round(S.process.rss / RENDER_RAM * 100)) : 0;
     const tile = (sec, ic, title, value, note, extra = '') =>
       `<a class="a-stat" href="#${sec}"><span class="a-stat-top"><span class="a-stat-ic">${uiIcon(ic, 16)}</span>${title}</span><b>${value}</b><small>${note}</small>${extra}</a>`;
-    const byRole = ROLE_ORDER.map(r => [r, users.filter(u => u.role === r).length]).filter(x => x[1]).map(([r, n]) => `${roleName(r)}: ${n}`).join(' · ');
+    const admins = users.filter(u => u.role === 'admin').length;
+    const byRole = `админов: ${admins} · остальных: ${users.length - admins}`;
     const m = main(page(`${hello}, ${ME.username}`, 'Здесь управляются учётки, карты, слои и сервер. Изменения действуют сразу.', '') + quick +
       '<div style="height:16px"></div><div class="a-grid">' +
       tile('users', 'users', 'Учётки', D.users ? fmtN(users.length) : '…', D.users ? esc(byRole || 'нет учёток') : 'загружаем') +
@@ -295,107 +291,99 @@ async function renderHome() {
 }
 
 /* ── Учётки ─────────────────────────────────────────────────────────── */
-let _uq = '', _ur = '';
+let _uq = '', _uf = '';
+const isAdminU = u => u.role === 'admin';
+// Карты, открытые учётке сейчас: выбранные админом или (у старых учёток
+// отделов из Render, пока им не выбирали) — карты их отдела.
 function mapsOfUser(u) {
-  if (u.role === 'admin') return D.maps;
+  if (isAdminU(u)) return D.maps;
   return D.maps.filter(m => (Array.isArray(u.maps) ? u.maps.includes(m.id) : (m.id === u.role || (m.viewers || []).includes(u.role))));
 }
+const canText = u => (isAdminU(u) ? 'всё' : (PERMS.filter(([p]) => u.perms[p]).map(([, l]) => l.toLowerCase()).join(', ') || 'только смотреть'));
 function userRowHtml(u) {
   const me = u.username === ME.username;
   const maps = mapsOfUser(u);
-  const perms = u.role === 'admin' ? ['всё'] : PERMS.filter(([p]) => u.perms[p]).map(([, l]) => l);
   return `<button type="button" class="a-row" data-user="${esc(u.username)}">
     <span class="a-av" aria-hidden="true">${esc(u.username.slice(0, 1).toUpperCase())}</span>
-    <span class="a-row-main"><b>${esc(u.username)} <span class="a-chip ${u.role === 'admin' ? 'dark' : 'acc'}">${esc(roleName(u.role))}</span>${me ? '<span class="a-chip">это вы</span>' : ''}${u.created ? '' : '<span class="a-chip off">из Render</span>'}</b>
-      <small>Карты: ${maps.length ? esc(maps.map(m => m.name).join(', ')) : 'нет'}${Array.isArray(u.maps) ? ' (выбраны вручную)' : ''} · Может: ${perms.length ? esc(perms.join(', ').toLowerCase()) : 'только смотреть'}</small></span>
+    <span class="a-row-main"><b>${esc(u.username)}${isAdminU(u) ? ' <span class="a-chip dark">Админ</span>' : ''}${me ? ' <span class="a-chip">это вы</span>' : ''}</b>
+      <small>${isAdminU(u) ? 'Все карты и эта страница' : `Карты: ${maps.length ? esc(maps.map(m => m.name).join(', ')) : '<b>нет ни одной</b>'} · Может: ${esc(canText(u))}`}</small></span>
     ${uiIcon('right', 18).replace('<svg', '<svg class="chev"')}
   </button>`;
 }
 async function renderUsers() {
-  const head = page('Учётки', 'Нажмите на учётку, чтобы сменить роль, карты, права или пароль.',
+  const head = page('Учётки', 'Учётка — это человек: логин и пароль, какие карты он видит и что может делать. Нажмите на учётку, чтобы изменить.',
     `<button type="button" class="a-btn" id="u-new">${uiIcon('userplus', 16)} Новая учётка</button>`);
   const toolbar = `<div class="a-toolbar"><label class="a-search">${uiIcon('search', 16)}<input type="search" class="mf-input" id="u-q" placeholder="Найти по логину" aria-label="Найти учётку" value="${esc(_uq)}"/></label>
-    <select class="mf-input" id="u-role" aria-label="Роль"><option value="">Все роли</option>${ROLE_ORDER.map(r => `<option value="${r}"${_ur === r ? ' selected' : ''}>${esc(roleName(r))}</option>`).join('')}</select></div>`;
+    <select class="mf-input" id="u-f" aria-label="Показать"><option value="">Все</option><option value="admin"${_uf === 'admin' ? ' selected' : ''}>Админы</option><option value="user"${_uf === 'user' ? ' selected' : ''}>Остальные</option>
+    ${D.maps.map(m => `<option value="map:${esc(m.id)}"${_uf === 'map:' + m.id ? ' selected' : ''}>Видят «${esc(m.name)}»</option>`).join('')}</select></div>`;
   main(head + toolbar + `<div class="a-list" id="u-list">${skeleton()}</div>`);
   $('u-new').addEventListener('click', openNewUser);
-  try { await load('users'); } catch (e) { $('u-list').innerHTML = `<div class="a-empty">Не удалось загрузить учётки: ${esc(e.message)}</div>`; return; }
+  try { await load('users', 'maps'); } catch (e) { $('u-list').innerHTML = `<div class="a-empty">Не удалось загрузить учётки: ${esc(e.message)}</div>`; return; }
   if (stale('users')) return;
   const draw = () => {
     const q = _uq.trim().toLowerCase();
-    const list = D.users.filter(u => (!q || u.username.includes(q)) && (!_ur || u.role === _ur));
+    const fit = u => !_uf || (_uf === 'admin' ? isAdminU(u) : _uf === 'user' ? !isAdminU(u) : mapsOfUser(u).some(m => 'map:' + m.id === _uf));
+    const list = D.users.filter(u => (!q || u.username.includes(q)) && fit(u))
+      .sort((a, b) => (isAdminU(b) - isAdminU(a)) || a.username.localeCompare(b.username));
     $('u-list').innerHTML = list.map(userRowHtml).join('') || '<div class="a-empty">Никого не нашлось</div>';
     $('u-list').querySelectorAll('[data-user]').forEach(b => b.addEventListener('click', () => openUser(b.dataset.user)));
   };
   draw();
   $('u-q').addEventListener('input', e => { _uq = e.target.value; draw(); });
-  $('u-role').addEventListener('change', e => { _ur = e.target.value; draw(); });
+  $('u-f').addEventListener('change', e => { _uf = e.target.value; draw(); });
 }
 async function refreshUsers() {
   try { await load('users'); } catch (_) {}
   if (_section === 'users') renderUsers();
+  if (_section === 'maps') renderMaps();
   redrawDrawer();
 }
+const mapChecks = (picked, attr) => `<div class="a-checks">${D.maps.map(m => `<label class="a-check"><input type="checkbox" ${attr} value="${esc(m.id)}"${picked.has(m.id) ? ' checked' : ''}/>${mapIconHtml(m.icon, 15)}${esc(m.name)}</label>`).join('')}</div>`;
+const permRows = (perms, attr) => PERMS.map(([p, l, d]) => `<div class="a-perm"><div><b>${esc(l)}</b><small>${esc(d)}</small></div>${switchHtml(perms[p], `${attr}="${p}"`, l)}</div>`).join('');
 function openUser(username) {
   openDrawer({
-    title: username, sub: '',
+    title: username,
     render: body => {
       const u = (D.users || []).find(x => x.username === username);
       if (!u) { body.innerHTML = '<div class="a-empty">Учётки больше нет</div>'; return; }
-      const me = u.username === ME.username;
+      const me = u.username === ME.username, admin = isAdminU(u);
       setDrawerHead(u.username, (u.created ? 'Создана здесь' : 'Задана в настройках Render') + (u.changedAt ? ' · пароль менялся ' + fmtDate(u.changedAt) : ''));
-      const roleMaps = r => D.maps.filter(m => m.id === r || (m.viewers || []).includes(r)).map(m => m.name);
-      const custom = Array.isArray(u.maps);
-      const own = u.own || {};
+      const picked = new Set(mapsOfUser(u).map(m => m.id));
       body.innerHTML = `
-        <div class="a-block"><h3>Роль</h3>
-          ${me ? '<p>Свою роль сменить нельзя.</p>' : '<p>Роль определяет, какие карты открыты по умолчанию и какие права действуют. Смена роли сразу завершит сессии этого логина.</p>'}
-          <div class="a-choices" role="radiogroup" aria-label="Роль">
-            ${ROLE_ORDER.map(r => `<label class="a-choice"><input type="radio" name="u-role" value="${r}"${u.role === r ? ' checked' : ''}${me ? ' disabled' : ''}/>
-              <span><b>${esc(roleName(r))}</b><small>${r === 'admin' ? 'Полный доступ ко всем картам и к этой странице' : 'Карты: ' + esc(roleMaps(r).join(', ') || 'нет')}</small></span></label>`).join('')}
-          </div></div>
-        ${u.role === 'admin' ? '' : `
-        <div class="a-block"><h3>Доступ к картам</h3>
-          <div class="a-choices" role="radiogroup" aria-label="Доступ к картам">
-            <label class="a-choice"><input type="radio" name="u-mapmode" value="role"${custom ? '' : ' checked'}/><span><b>Как у роли</b><small>${esc(roleMaps(u.role).join(', ') || 'нет карт')} — и новые карты этой роли</small></span></label>
-            <label class="a-choice"><input type="radio" name="u-mapmode" value="custom"${custom ? ' checked' : ''}/><span><b>Выбрать вручную</b><small>Только отмеченные ниже; новые карты сами не добавятся</small></span></label>
-          </div>
-          ${custom ? `<div class="a-checks">${D.maps.map(m => `<label class="a-check"><input type="checkbox" data-umap value="${esc(m.id)}"${u.maps.includes(m.id) ? ' checked' : ''}/>${esc(m.name)}</label>`).join('')}</div>` : ''}
+        <div class="a-block"><div class="a-perm"><div><b>Админ</b><small>${me ? 'Это вы — снять с себя админа нельзя' : 'Видит все карты, правит их и заходит на эту страницу'}</small></div>${switchHtml(admin, 'id="u-admin"', 'Админ', me)}</div></div>
+        ${admin ? '' : `
+        <div class="a-block"><h3>Какие карты видит</h3>
+          ${picked.size ? '' : '<p><b>Сейчас не видит ни одной карты</b> — отметьте нужные.</p>'}
+          ${mapChecks(picked, 'data-umap')}
         </div>
-        <div class="a-block"><h3>Что может делать ${Object.keys(own).length ? '<button type="button" class="a-link" id="u-perm-reset">Вернуть как у роли</button>' : ''}</h3>
-          <p>Смотреть карту может всегда. Включённое — дополнительно. ${Object.keys(own).length ? 'Отмеченное «своё» задано именно этой учётке.' : 'Сейчас всё как в правилах роли «' + esc(roleName(u.role)) + '».'}</p>
-          <div>${PERMS.map(([p, l, d]) => `<div class="a-perm"><div><b>${esc(l)}${p in own ? ' <span class="a-chip">своё</span>' : ''}</b><small>${esc(d)}</small></div>${switchHtml(u.perms[p], `data-uperm="${p}"`, l)}</div>`).join('')}</div>
-        </div>`}
+        <div class="a-block"><h3>Что может делать</h3><p>Смотреть карты может всегда. Включённое — дополнительно.</p>
+          <div>${permRows(u.perms, 'data-uperm')}</div></div>`}
         <div class="a-block"><h3>Пароль</h3>
-          <p>${me ? 'Другие ваши сессии будут завершены.' : 'Все сессии этого логина будут завершены — человек войдёт с новым паролем.'}</p>
+          <p>${me ? 'Другие ваши сессии будут завершены.' : 'Все сессии этого логина завершатся — человек войдёт с новым паролем.'}</p>
           <div class="a-pw"><input type="text" class="mf-input" id="u-pw" placeholder="Новый пароль, от ${D.pwMin || 8} символов" autocomplete="new-password" maxlength="128" aria-label="Новый пароль"/>
             <button type="button" class="a-btn ghost" id="u-pw-gen">${uiIcon('key', 15)} Придумать</button>
             <button type="button" class="a-btn" id="u-pw-save">Сохранить</button></div>
         </div>
         ${u.created && !me ? `<div class="a-block danger-zone"><h3>Удалить учётку</h3><p>Человек сразу выйдет и больше не сможет войти.</p>
-          <div class="a-acts"><button type="button" class="a-btn danger" id="u-del">${uiIcon('trash', 15)} Удалить «${esc(u.username)}»</button></div></div>` : ''}`;
-      body.querySelectorAll('input[name="u-role"]').forEach(r => r.addEventListener('change', async () => {
-        const role = r.value;
-        const yes = await ask({ title: `Сменить роль на «${roleName(role)}»?`, ok: 'Сменить роль', danger: role === 'admin',
-          text: `<p>Сессии <b>${esc(u.username)}</b> завершатся, войти нужно будет заново.</p>${role === 'admin' ? '<p><b>Админ получит полный доступ</b> ко всем картам и к этой странице.</p>' : ''}` });
-        if (yes) await act(() => post('/auth/role', { username: u.username, role }), `Роль ${u.username}: ${roleName(role)}`);
+          <div class="a-acts"><button type="button" class="a-btn danger" id="u-del">${uiIcon('trash', 15)} Удалить «${esc(u.username)}»</button></div></div>` :
+          (!u.created && !me ? '<p class="a-hint">Эта учётка задана в настройках Render — удалить её можно только там.</p>' : '')}`;
+      const sw = $('u-admin');
+      if (sw && !me) wireSwitch(sw, async on => {
+        const yes = await ask({ title: on ? `Сделать ${u.username} админом?` : `Снять админа с ${u.username}?`, ok: on ? 'Сделать админом' : 'Снять', danger: on,
+          text: on ? `<p><b>${esc(u.username)}</b> получит полный доступ ко всем картам и к этой странице.</p><p>Его сессии завершатся — он войдёт заново.</p>`
+            : `<p>Останутся только карты, которые вы отметите. Сессии <b>${esc(u.username)}</b> завершатся.</p>` });
+        if (yes) await act(() => post('/auth/role', { username: u.username, role: on ? 'admin' : 'user' }), on ? `${u.username} — админ` : `${u.username} больше не админ — отметьте ему карты`);
         refreshUsers();
-      }));
-      body.querySelectorAll('input[name="u-mapmode"]').forEach(r => r.addEventListener('change', async () => {
-        const maps = r.value === 'custom' ? D.maps.filter(m => m.id === u.role || (m.viewers || []).includes(u.role)).map(m => m.id) : null;
-        await act(() => post('/auth/maps', { username: u.username, maps }), r.value === 'custom' ? 'Отметьте нужные карты' : 'Карты — как у роли');
-        refreshUsers();
-      }));
+      });
       body.querySelectorAll('[data-umap]').forEach(cb => cb.addEventListener('change', async () => {
         const maps = [...body.querySelectorAll('[data-umap]:checked')].map(x => x.value);
         await act(() => post('/auth/maps', { username: u.username, maps }), 'Карты сохранены');
         refreshUsers();
       }));
-      body.querySelectorAll('[data-uperm]').forEach(sw => wireSwitch(sw, async on => {
-        await act(() => post('/auth/perms', { username: u.username, perms: { [sw.dataset.uperm]: on } }), 'Сохранено');
+      body.querySelectorAll('[data-uperm]').forEach(el => wireSwitch(el, async on => {
+        await act(() => post('/auth/perms', { username: u.username, perms: { [el.dataset.uperm]: on } }), 'Сохранено');
         refreshUsers();
       }));
-      const reset = $('u-perm-reset');
-      if (reset) reset.addEventListener('click', async () => { await act(() => post('/auth/perms', { username: u.username, reset: true }), 'Права — как у роли'); refreshUsers(); });
       $('u-pw-gen').addEventListener('click', () => { $('u-pw').value = genPassword(); $('u-pw').focus(); $('u-pw').select(); });
       $('u-pw-save').addEventListener('click', async () => {
         const password = $('u-pw').value;
@@ -416,7 +404,9 @@ function openUser(username) {
     },
   });
 }
+const NEW_PERMS = { layers: true, manual: false, bounds: true };
 function openNewUser() {
+  const st = { admin: false, maps: new Set(), perms: { ...NEW_PERMS } };
   openDrawer({
     title: 'Новая учётка', sub: 'Человек сможет войти сразу',
     render: body => {
@@ -424,48 +414,61 @@ function openNewUser() {
           <label class="a-field"><span>Логин</span><input type="text" class="mf-input" id="n-name" maxlength="32" placeholder="Например: anna.k" autocomplete="off" autocapitalize="none" spellcheck="false"/><small>Латиница, цифры, точка, дефис</small></label>
           <label class="a-field"><span>Пароль</span><div class="a-pw" style="grid-template-columns:minmax(0,1fr) auto"><input type="text" class="mf-input" id="n-pass" maxlength="128" placeholder="От 8 символов" autocomplete="new-password"/><button type="button" class="a-btn ghost" id="n-gen">${uiIcon('key', 15)} Придумать</button></div></label>
         </div>
-        <div class="a-block"><h3>Роль</h3><div class="a-choices" role="radiogroup" aria-label="Роль">
-          ${ROLE_ORDER.map(r => `<label class="a-choice"><input type="radio" name="n-role" value="${r}"${r === 'other' ? ' checked' : ''}/><span><b>${esc(roleName(r))}</b><small>${r === 'admin' ? 'Полный доступ ко всему' : 'Карты: ' + esc(D.maps.filter(m => m.id === r || (m.viewers || []).includes(r)).map(m => m.name).join(', ') || 'нет')}</small></span></label>`).join('')}
-        </div></div>
-        <button type="button" class="a-btn wide" id="n-create">${uiIcon('userplus', 16)} Создать учётку</button>
-        <p class="a-hint">Права и карты можно уточнить сразу после создания.</p>`;
+        <div class="a-block"><div class="a-perm"><div><b>Админ</b><small>Видит все карты, правит их и заходит на эту страницу</small></div>${switchHtml(st.admin, 'id="n-admin"', 'Админ')}</div></div>
+        <div id="n-access"${st.admin ? ' hidden' : ''}>
+          <div class="a-block"><h3>Какие карты видит</h3>${mapChecks(st.maps, 'data-nmap')}</div>
+          <div class="a-block" style="margin-top:14px"><h3>Что может делать</h3><p>Смотреть карты может всегда. Включённое — дополнительно.</p><div>${permRows(st.perms, 'data-nperm')}</div></div>
+        </div>
+        <button type="button" class="a-btn wide" id="n-create">${uiIcon('userplus', 16)} Создать учётку</button>`;
       $('n-pass').value = genPassword();
       $('n-gen').addEventListener('click', () => { $('n-pass').value = genPassword(); });
       $('n-name').focus();
+      wireSwitch($('n-admin'), on => {
+        st.admin = on;
+        $('n-admin').classList.toggle('on', on); $('n-admin').setAttribute('aria-checked', String(on));
+        $('n-access').hidden = on;
+      });
+      body.querySelectorAll('[data-nmap]').forEach(cb => cb.addEventListener('change', () => { if (cb.checked) st.maps.add(cb.value); else st.maps.delete(cb.value); }));
+      body.querySelectorAll('[data-nperm]').forEach(el => wireSwitch(el, on => {
+        st.perms[el.dataset.nperm] = on;
+        el.classList.toggle('on', on); el.setAttribute('aria-checked', String(on));
+      }));
       $('n-create').addEventListener('click', async () => {
         const username = $('n-name').value.trim().toLowerCase(), password = $('n-pass').value;
-        const role = body.querySelector('input[name="n-role"]:checked').value;
         if (!username) { toast('Укажите логин', 'warn'); $('n-name').focus(); return; }
         if (password.length < 8) { toast('Пароль — от 8 символов', 'warn'); $('n-pass').focus(); return; }
-        if (role === 'admin' && !await ask({ title: 'Создать админа?', ok: 'Создать', danger: true, text: `<p><b>${esc(username)}</b> получит полный доступ ко всем картам и к этой странице.</p>` })) return;
+        if (st.admin && !await ask({ title: 'Создать админа?', ok: 'Создать', danger: true, text: `<p><b>${esc(username)}</b> получит полный доступ ко всем картам и к этой странице.</p>` })) return;
+        if (!st.admin && !st.maps.size && !await ask({ title: 'Без карт?', ok: 'Создать без карт', text: '<p>Не отмечено ни одной карты — человек войдёт, но ничего не увидит. Карты можно отметить позже.</p>' })) return;
         $('n-create').disabled = true;
-        const ok = await act(() => post('/auth/users/create', { username, role, password }, 30000), null);
+        const body2 = st.admin ? { username, role: 'admin', password } : { username, role: 'user', password, maps: [...st.maps], perms: st.perms };
+        const ok = await act(() => post('/auth/users/create', body2, 30000), null);
         $('n-create').disabled = false;
         if (!ok) return;
         await ask({ title: 'Учётка создана', ok: 'Готово', text: `<p>Передайте человеку:</p><p>Логин: <b>${esc(username)}</b><br>Пароль: <b>${esc(password)}</b></p>` });
         await load('users').catch(() => {});
         if (_section === 'users') renderUsers();
-        openUser(username);
+        openUser(username);   // карточка новой учётки — проверить и поправить
       });
     },
   });
 }
 
 /* ── Карты ──────────────────────────────────────────────────────────── */
+const whoSees = m => (D.users || []).filter(u => !isAdminU(u) && mapsOfUser(u).some(x => x.id === m.id));
 async function renderMaps() {
-  main(page('Карты', 'Каждая карта — свой набор слоёв и точек. Нажмите на карту, чтобы изменить её, сделать резервную копию или удалить.',
+  main(page('Карты', 'Каждая карта — свой набор слоёв и точек. «Настроить» — название, кто видит, резервная копия, удаление.',
     `<button type="button" class="a-btn" id="m-new">${uiIcon('plus', 16)} Новая карта</button>`) + `<div class="a-list" id="m-list">${skeleton()}</div>`);
   $('m-new').addEventListener('click', () => openMap(null));
-  try { await load('maps'); } catch (e) { $('m-list').innerHTML = `<div class="a-empty">Не удалось загрузить карты: ${esc(e.message)}</div>`; return; }
+  try { await load('maps', 'users'); } catch (e) { $('m-list').innerHTML = `<div class="a-empty">Не удалось загрузить карты: ${esc(e.message)}</div>`; return; }
   if (stale('maps')) return;
   $('m-list').innerHTML = D.maps.map(m => {
     const st = m.stats || {};
-    const roles = (m.viewers || []).filter(r => MAP_ROLES.includes(r));
+    const who = whoSees(m);
     return `<div class="a-row">
       <span class="a-av sq" aria-hidden="true">${mapIconHtml(m.icon, 20)}</span>
-      <span class="a-row-main"><b>${esc(m.name)}${m.base ? ' <span class="a-chip off">исходная</span>' : ''}</b>
+      <span class="a-row-main"><b>${esc(m.name)}</b>
         <small>${esc(m.desc || (m.country === 'kg' ? 'Кыргызстан' : 'Узбекистан'))} · ${st.bytes ? fmtBytes(st.bytes) + (st.updatedAt ? ', изменена ' + fmtDate(st.updatedAt) : '') : 'пустая'}${st.photos ? ' · фото: ' + fmtN(st.photos) : ''}</small>
-        <span class="a-chips">${roles.length ? roles.map(r => `<span class="a-chip acc">${esc(roleName(r))}</span>`).join('') : '<span class="a-chip off">видит только админ</span>'}</span></span>
+        <span class="a-chips">${who.length ? who.map(u => `<span class="a-chip acc">${esc(u.username)}</span>`).join('') : '<span class="a-chip off">видят только админы</span>'}</span></span>
       <span class="a-row-acts">
         <a class="a-btn ghost sm" href="index.html?map=${encodeURIComponent(m.id)}" target="_blank" rel="noopener">${uiIcon('external', 14)} Открыть</a>
         <button type="button" class="a-btn ghost sm" data-medit="${esc(m.id)}">${uiIcon('pencil', 14)} Настроить</button>
@@ -473,9 +476,22 @@ async function renderMaps() {
   }).join('') || '<div class="a-empty">Карт пока нет</div>';
   $('m-list').querySelectorAll('[data-medit]').forEach(b => b.addEventListener('click', () => openMap(b.dataset.medit)));
 }
+// Кто видит карту = у каких учёток она отмечена: меняем списки карт учёток.
+async function saveWhoSees(mapId, wanted) {
+  const changes = (D.users || []).filter(u => !isAdminU(u)).map(u => {
+    const has = mapsOfUser(u).map(m => m.id);
+    const on = has.includes(mapId), want = wanted.has(u.username);
+    if (on === want) return null;
+    return { username: u.username, maps: want ? has.concat(mapId) : has.filter(id => id !== mapId) };
+  }).filter(Boolean);
+  for (const c of changes) await post('/auth/maps', c);
+  return changes.length;
+}
 function openMap(id) {
   const m = id ? D.maps.find(x => x.id === id) : null;
   let icon = (m && m.icon) || '🗺';
+  const users = (D.users || []).filter(u => !isAdminU(u));
+  const seeing = new Set(m ? whoSees(m).map(u => u.username) : []);
   openDrawer({
     title: m ? m.name : 'Новая карта', sub: m ? 'Изменения сохраняются кнопкой внизу формы' : 'Пустая или копия другой карты',
     render: body => {
@@ -487,8 +503,8 @@ function openMap(id) {
             <option value="uz"${!m || m.country !== 'kg' ? ' selected' : ''}>Узбекистан — города, районы, статистика УЗ</option>
             <option value="kg"${m && m.country === 'kg' ? ' selected' : ''}>Кыргызстан — города и статистика КГ</option></select></label>
         </div>
-        <div class="a-block"><h3>Какие роли видят карту</h3><p>Админ видит все карты. Отдельным учёткам карты можно выбрать в «Учётках».</p>
-          <div class="a-checks">${MAP_ROLES.map(r => `<label class="a-check"><input type="checkbox" data-mrole value="${r}"${m && (m.viewers || []).includes(r) ? ' checked' : ''}${m && m.base && r === m.id ? ' disabled' : ''}/>${esc(roleName(r))}</label>`).join('')}</div></div>
+        <div class="a-block"><h3>Кто видит карту</h3><p>Админы видят все карты. Отметьте учётки, которым карта нужна.</p>
+          ${users.length ? `<div class="a-checks">${users.map(u => `<label class="a-check"><input type="checkbox" data-mwho value="${esc(u.username)}"${seeing.has(u.username) ? ' checked' : ''}/>${esc(u.username)}</label>`).join('')}</div>` : '<p>Других учёток пока нет.</p>'}</div>
         ${m ? '' : `<div class="a-block"><label class="a-field"><span>Начать с</span><select id="mf-copy" class="mf-input"><option value="">Пустая карта</option>${D.maps.map(x => `<option value="${esc(x.id)}">Копия «${esc(x.name)}» — все слои и точки</option>`).join('')}</select></label></div>`}
         <button type="button" class="a-btn wide" id="mf-submit">${m ? 'Сохранить изменения' : 'Создать карту'}</button>
         ${m ? `<div class="a-block"><h3>Резервная копия</h3><p>Вся карта одним файлом: слои, точки, вид. Загрузка файла заменит карту его содержимым.</p>
@@ -504,17 +520,19 @@ function openMap(id) {
       $('mf-submit').addEventListener('click', async () => {
         const name = $('mf-name').value.trim();
         if (!name) { toast('Укажите название карты', 'warn'); $('mf-name').focus(); return; }
-        const data = { name, desc: $('mf-desc').value.trim(), icon, country: $('mf-country').value,
-          viewers: [...body.querySelectorAll('[data-mrole]:checked')].map(i => i.value) };
+        const wanted = new Set([...body.querySelectorAll('[data-mwho]:checked')].map(i => i.value));
+        const data = { name, desc: $('mf-desc').value.trim(), icon, country: $('mf-country').value, viewers: m ? (m.viewers || []) : [] };
         $('mf-submit').disabled = true;
         const ok = await act(async () => {
+          let mapId = m && m.id;
           if (m) await post('/maps/update', { id: m.id, ...data });
-          else await post('/maps', { ...data, copyFrom: $('mf-copy').value || '' }, 180000);
+          else mapId = (await post('/maps', { ...data, copyFrom: $('mf-copy').value || '' }, 180000)).map.id;
+          await saveWhoSees(mapId, wanted);
         }, m ? 'Карта сохранена' : `Карта «${name}» создана`);
         $('mf-submit').disabled = false;
         if (!ok) return;
         closeDrawer();
-        await load('maps').catch(() => {});
+        await load('maps', 'users').catch(() => {});
         if (_section === 'maps') renderMaps();
       });
       if (!m) return;
@@ -754,31 +772,6 @@ function openPoints(addr, name) {
       fetchPage(true);
     },
   });
-}
-
-/* ── Роли и права ───────────────────────────────────────────────────── */
-async function renderRoles() {
-  main(page('Роли и права', 'Права роли получает каждая её учётка. Если учётке права заданы отдельно (в «Учётках»), действуют они.') + `<div class="a-grid" id="r-list" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">${skeleton(3)}</div>`);
-  try { await load('rules', 'users', 'maps'); } catch (e) { $('r-list').innerHTML = `<div class="a-empty">Не удалось загрузить: ${esc(e.message)}</div>`; return; }
-  if (stale('roles')) return;
-  const draw = () => {
-    $('r-list').innerHTML = ROLE_ORDER.map(r => {
-      const n = D.users.filter(u => u.role === r).length;
-      const maps = r === 'admin' ? D.maps.map(m => m.name) : D.maps.filter(m => m.id === r || (m.viewers || []).includes(r)).map(m => m.name);
-      const own = D.users.filter(u => u.role === r && Object.keys(u.own || {}).length).length;
-      return `<div class="a-block"><h3>${esc(roleName(r))}<span class="a-chip">${n} ${plural(n, 'учётка', 'учётки', 'учёток')}</span></h3>
-        <p>Карты: ${esc(maps.join(', ') || 'нет')}${r === 'admin' ? '' : ' · <button type="button" class="a-link" data-go="maps">изменить в «Картах»</button>'}</p>
-        ${r === 'admin' ? '<p>Может всё, включая эту страницу.</p>' : '<div>' + PERMS.map(([p, l, d]) => `<div class="a-perm"><div><b>${esc(l)}</b><small>${esc(d)}</small></div>${switchHtml(D.rules[r][p], `data-rule="${r}" data-perm="${p}"`, l + ' — ' + roleName(r))}</div>`).join('') + '</div>'}
-        ${own ? `<p>У ${own} ${plural(own, 'учётки', 'учёток', 'учёток')} права заданы отдельно.</p>` : ''}</div>`;
-    }).join('');
-    $('r-list').querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.go)));
-    $('r-list').querySelectorAll('[data-rule]').forEach(sw => wireSwitch(sw, async on => {
-      await act(() => post('/auth/rules', { role: sw.dataset.rule, perms: { [sw.dataset.perm]: on } }), `Права роли «${roleName(sw.dataset.rule)}» сохранены`);
-      try { await load('rules', 'users'); } catch (_) {}
-      if (!stale('roles')) draw();
-    }));
-  };
-  draw();
 }
 
 /* ── Сервер ─────────────────────────────────────────────────────────── */
