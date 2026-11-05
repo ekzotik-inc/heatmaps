@@ -20,3 +20,7 @@ uploads/
 .metrics/
 coverage/
 target/
+
+# Журнал действий и версии карт для отката (страница «Админ»)
+server/audit.json
+server/versions/

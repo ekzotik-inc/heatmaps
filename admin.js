@@ -33,6 +33,8 @@ Object.assign(UI_ICONS, {
   logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
   back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
   refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/>',
   image: '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
 });
 
@@ -98,6 +100,7 @@ const loaders = {
   layers: async () => { D.layers = await api('/admin/layers', 120000); },
   storage: async () => { D.storage = await api('/admin/storage', 120000); },
   rules: async () => { D.rules = (await api('/auth/rules')).rules || {}; },
+  log: async () => { D.log = await api('/admin/log?limit=8'); },
 };
 async function load(...names) { await Promise.all(names.map(n => loaders[n]())); updateCounts(); }
 
@@ -212,6 +215,7 @@ const SECTIONS = [
   ['users', 'Учётки', 'users', renderUsers],
   ['maps', 'Карты', 'map', renderMaps],
   ['layers', 'Слои и точки', 'layers', renderLayers],
+  ['log', 'Журнал', 'history', renderLog],
   ['server', 'Сервер', 'server', renderServer],
 ];
 $('a-nav').innerHTML = SECTIONS.map(([id, label, ic]) =>
@@ -276,7 +280,9 @@ async function renderHome() {
       tile('layers', 'layers', 'Слои', layerN == null ? '…' : fmtN(layerN), pointN == null ? 'загружаем' : 'всего ' + pts(pointN)) +
       tile('server', 'server', 'Память сервера', S ? share + ' %' : '…', S ? `${fmtBytes(S.process.rss)} из 512 МБ · <span class="a-status ${mem[0]}">${mem[1]}</span>` : 'загружаем',
         S ? `<div class="a-gauge ${mem[0]}"><i style="width:${share}%"></i></div>` : '') +
+      tile('log', 'history', 'Ошибки за сутки', D.log ? fmtN(D.log.errors24h) : '…', D.log ? (D.log.errors24h ? 'посмотреть в журнале' : 'всё спокойно') + (D.log.warn24h ? ` · отказов: ${fmtN(D.log.warn24h)}` : '') : 'загружаем') +
       '</div>' +
+      (D.log && D.log.rows.length ? `<div class="a-h2" style="margin-top:20px;display:flex;justify-content:space-between;align-items:center">Последние действия <a class="a-link" href="#log">Весь журнал</a></div><div class="a-panel">${logListHtml(D.log.rows)}</div>` : '') +
       (S && S.photos.orphans.count ? `<div class="a-panel a-pad" style="margin-top:16px"><b>Можно освободить место:</b> ${fmtN(S.photos.orphans.count)} ${plural(S.photos.orphans.count, 'фото', 'фото', 'фото')} (${fmtBytes(S.photos.orphans.bytes)}) больше не привязаны ни к одной точке. <button type="button" class="a-link" data-go="server">Перейти в «Сервер»</button></div>` : ''));
     m.querySelectorAll('[data-quick]').forEach(b => b.addEventListener('click', () => {
       if (b.dataset.quick === 'user') openNewUser();
@@ -285,7 +291,7 @@ async function renderHome() {
     }));
   };
   draw();
-  for (const name of ['users', 'layers', 'storage']) {
+  for (const name of ['users', 'layers', 'storage', 'log']) {
     loaders[name]().then(() => { updateCounts(); if (!stale('home')) draw(); }).catch(() => {});
   }
 }
@@ -507,6 +513,7 @@ function openMap(id) {
           ${users.length ? `<div class="a-checks">${users.map(u => `<label class="a-check"><input type="checkbox" data-mwho value="${esc(u.username)}"${seeing.has(u.username) ? ' checked' : ''}/>${esc(u.username)}</label>`).join('')}</div>` : '<p>Других учёток пока нет.</p>'}</div>
         ${m ? '' : `<div class="a-block"><label class="a-field"><span>Начать с</span><select id="mf-copy" class="mf-input"><option value="">Пустая карта</option>${D.maps.map(x => `<option value="${esc(x.id)}">Копия «${esc(x.name)}» — все слои и точки</option>`).join('')}</select></label></div>`}
         <button type="button" class="a-btn wide" id="mf-submit">${m ? 'Сохранить изменения' : 'Создать карту'}</button>
+        ${m ? `<div class="a-block"><h3>История изменений</h3><p>Как карта выглядела до последних правок. «Вернуть» — откатить у всех; текущее состояние тоже сохранится.</p><div class="a-list" id="mf-versions">${skeleton(1)}</div></div>` : ''}
         ${m ? `<div class="a-block"><h3>Резервная копия</h3><p>Вся карта одним файлом: слои, точки, вид. Загрузка файла заменит карту его содержимым.</p>
           <div class="a-acts"><button type="button" class="a-btn ghost" id="mf-exp">${uiIcon('download', 15)} Скачать файл</button>
           <button type="button" class="a-btn ghost" id="mf-imp">${uiIcon('upload', 15)} Загрузить файл</button></div></div>
@@ -536,6 +543,16 @@ function openMap(id) {
         if (_section === 'maps') renderMaps();
       });
       if (!m) return;
+      const vbox = $('mf-versions');
+      const drawVersions = async () => {
+        try {
+          const list = (await api('/admin/versions?key=' + encodeURIComponent(m.id))).versions.slice(0, 5);
+          if (!vbox.isConnected) return;
+          vbox.innerHTML = list.length ? list.map(versionRowHtml).join('') : '<p class="a-hint" style="margin:0">Изменений пока не было.</p>';
+          wireRestore(vbox, drawVersions);
+        } catch (e) { vbox.innerHTML = `<p class="a-hint" style="margin:0">Не удалось загрузить историю: ${esc(e.message)}</p>`; }
+      };
+      drawVersions();
       $('mf-exp').addEventListener('click', () => exportMap(m));
       $('mf-imp').addEventListener('click', () => pickFile('.json,application/json', f => importMap(m, f)));
       const del = $('mf-del');
@@ -772,6 +789,151 @@ function openPoints(addr, name) {
       fetchPage(true);
     },
   });
+}
+
+/* ── Журнал: действия, ошибки, откат ────────────────────────────────── */
+const keyName = k => (k === 'shared_layers' ? 'общие слои' : `карту «${esc(mapName(k))}»`);
+const mapLabel = id => (id ? `«${esc(mapName(id))}»` : '');
+const isLogin = e => e.action === '/auth/login' || e.action === '/auth/logout';
+// Запись журнала — простой фразой: кто что сделал.
+function describe(e) {
+  const d = e.detail || {}, ok = e.status < 400 && e.level !== 'error';
+  const who = d.username ? `<b>${esc(d.username)}</b>` : '';
+  const T = {
+    '/auth/login': ok ? 'вошёл' : e.status === 429 ? 'слишком много неудачных попыток — вход временно закрыт' : 'не смог войти: неверный логин или пароль',
+    '/auth/logout': 'вышел',
+    '/state': `сохранил карту ${mapLabel(e.map)}`,
+    '/my/bounds': `сохранил свои границы на карте ${mapLabel(e.map)}`,
+    '/my/layers': `сохранил свои слои на карте ${mapLabel(e.map)}`,
+    '/photo': `загрузил фото на карту ${mapLabel(e.map)}`,
+    '/maps': `создал карту «${esc(d.name || '')}»`,
+    '/maps/update': `изменил карту «${esc(d.name || mapName(d.id))}»`,
+    '/maps/delete': `удалил карту «${esc(d.confirm || d.id || '')}»`,
+    '/auth/password': `сменил пароль ${who}`,
+    '/auth/users/create': `создал учётку ${who}`,
+    '/auth/users/delete': `удалил учётку ${who}`,
+    '/auth/role': d.role === 'admin' ? `сделал ${who} админом` : `снял админа с ${who}`,
+    '/auth/perms': `изменил права ${who}`,
+    '/auth/maps': `изменил карты ${who}`,
+    '/auth/rules': 'изменил права по умолчанию',
+    '/shared/layers': 'изменил общие слои',
+    '/shared/layers/one': `изменил общий слой «${esc(d.name || '')}»`,
+    '/shared/layers/hide': `убрал общий слой с карты ${mapLabel(d.map)}`,
+    '/admin/points/delete': `удалил ${pts(d.points)} из слоя ${d.scope === 'shared' ? '(общий слой)' : 'на карте ' + mapLabel(d.map)}`,
+    '/admin/layers/update': `переименовал слой в «${esc(d.name || '')}»`,
+    '/admin/layers/delete': `удалил слой ${d.scope === 'shared' ? '(общий)' : 'с карты ' + mapLabel(d.map)}`,
+    '/admin/storage/delete': 'удалил личные данные учётки',
+    '/admin/photos/prune': 'удалил ненужные фото',
+    '/admin/cache/clear': 'очистил кэш сервера',
+    '/admin/versions/restore': `вернул ${keyName(d.key || '')} к состоянию от ${esc(fmtDate(d.savedAt))}`,
+    '/data': 'обновил базовые данные',
+    'client-error': d.kind === 'toast' ? `увидел ошибку: «${esc(d.error || '')}»` : `сбой на странице: ${esc(d.error || '')}${d.where ? ` <span class="a-dim">(${esc(d.where)})</span>` : ''}`,
+  };
+  if (e.action.startsWith('GET ')) return `ошибка сервера при открытии ${esc(e.action.slice(4))}${d.error ? ' — ' + esc(d.error) : ''}`;
+  let text = T[e.action] || esc(e.action);
+  if (!ok && T[e.action] && e.action !== '/auth/login' && e.action !== 'client-error') text = `не смог: ${text}${d.error ? ` — <span class="a-why">${esc(d.error)}</span>` : ''}`;
+  return text;
+}
+function logRowHtml(e) {
+  const t = new Date(e.at);
+  const lvl = e.level === 'error' ? 'bad' : e.level === 'warn' ? 'warn' : '';
+  return `<div class="a-log ${lvl}">
+    <span class="a-log-time">${t.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
+    <span class="a-av sm" aria-hidden="true">${esc((e.username || '?').slice(0, 1).toUpperCase())}</span>
+    <span class="a-log-text"><b>${esc(e.username || 'неизвестно')}</b> ${describe(e)}${e.count > 1 ? ` <span class="a-chip">×${fmtN(e.count)}</span>` : ''}</span>
+    ${lvl ? `<span class="a-status ${lvl}">${lvl === 'bad' ? 'ошибка' : 'отказ'}</span>` : ''}
+  </div>`;
+}
+function dayTitle(iso) {
+  const d = new Date(iso), today = new Date(); const y = new Date(Date.now() - 864e5);
+  const same = (a, b) => a.toDateString() === b.toDateString();
+  return same(d, today) ? 'Сегодня' : same(d, y) ? 'Вчера' : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+}
+function logListHtml(rows) {
+  let day = '', html = '';
+  rows.forEach(e => {
+    const t = dayTitle(e.at);
+    if (t !== day) { day = t; html += `<div class="a-log-day">${esc(t)}</div>`; }
+    html += logRowHtml(e);
+  });
+  return html;
+}
+let _logTab = 'actions', _logType = '', _logUser = '', _logQ = '';
+async function renderLog() {
+  main(page('Журнал', 'Кто что делал, какие были ошибки — и откат карт к прошлому состоянию.') +
+    `<div class="a-tabs" role="tablist">
+      <button type="button" role="tab" data-ltab="actions" aria-selected="${_logTab === 'actions'}" class="${_logTab === 'actions' ? 'on' : ''}">${uiIcon('history', 16)} Действия и ошибки</button>
+      <button type="button" role="tab" data-ltab="versions" aria-selected="${_logTab === 'versions'}" class="${_logTab === 'versions' ? 'on' : ''}">${uiIcon('undo', 16)} Откат изменений</button>
+    </div><div id="log-body">${skeleton(4)}</div>`);
+  document.querySelectorAll('[data-ltab]').forEach(b => b.addEventListener('click', () => { _logTab = b.dataset.ltab; renderLog(); }));
+  if (_logTab === 'versions') return renderVersions($('log-body'));
+  try { await load('users'); } catch (_) {}
+  if (stale('log')) return;
+  const body = $('log-body');
+  body.innerHTML = `<div class="a-toolbar">
+      <label class="a-search">${uiIcon('search', 16)}<input type="search" class="mf-input" id="lg-q" placeholder="Поиск по журналу" aria-label="Поиск по журналу" value="${esc(_logQ)}"/></label>
+      <select class="mf-input" id="lg-type" aria-label="Что показать">
+        <option value="">Всё</option><option value="changes"${_logType === 'changes' ? ' selected' : ''}>Изменения</option>
+        <option value="logins"${_logType === 'logins' ? ' selected' : ''}>Входы</option>
+        <option value="error"${_logType === 'error' ? ' selected' : ''}>Ошибки</option><option value="warn"${_logType === 'warn' ? ' selected' : ''}>Отказы</option></select>
+      <select class="mf-input" id="lg-user" aria-label="Учётка"><option value="">Все учётки</option>${(D.users || []).map(u => `<option value="${esc(u.username)}"${_logUser === u.username ? ' selected' : ''}>${esc(u.username)}</option>`).join('')}</select>
+    </div><div id="lg-sum"></div><div class="a-panel" id="lg-list">${skeleton(5)}</div><button type="button" class="a-btn ghost" id="lg-more" hidden style="margin-top:10px">Показать ещё</button>`;
+  let rows = [], last = 0, done = false;
+  const pass = e => (!_logType || (_logType === 'logins' ? isLogin(e) : _logType === 'changes' ? (!isLogin(e) && e.level === 'info') : true)) &&
+    (!_logQ || (e.username + ' ' + describe(e).replace(/<[^>]+>/g, '')).toLowerCase().includes(_logQ.toLowerCase()));
+  const draw = () => {
+    const shown = rows.filter(pass);
+    $('lg-list').innerHTML = shown.length ? logListHtml(shown) : '<div class="a-empty" style="border:0">Записей нет</div>';
+    $('lg-more').hidden = done;
+  };
+  const more = async () => {
+    const q = new URLSearchParams({ limit: 200 });
+    if (last) q.set('before', last);
+    if (_logType === 'error' || _logType === 'warn') q.set('level', _logType);
+    if (_logUser) q.set('user', _logUser);
+    try {
+      const j = await api('/admin/log?' + q.toString());
+      if (stale('log')) return;
+      rows = rows.concat(j.rows); done = j.rows.length < 200;
+      if (j.rows.length) last = j.rows[j.rows.length - 1].id;
+      $('lg-sum').innerHTML = j.errors24h || j.warn24h ? `<p class="a-hint" style="margin:0 0 10px">За сутки: ошибок — <b>${fmtN(j.errors24h)}</b>, отказов — <b>${fmtN(j.warn24h)}</b>. Отказ — сервер не дал что-то сделать (нет прав, неверные данные, неверный пароль).</p>` : '<p class="a-hint" style="margin:0 0 10px">За сутки ошибок не было.</p>';
+      draw();
+    } catch (e) { $('lg-list').innerHTML = `<div class="a-empty" style="border:0">Не удалось загрузить журнал: ${esc(e.message)}</div>`; }
+  };
+  $('lg-q').addEventListener('input', e => { _logQ = e.target.value; draw(); });
+  $('lg-type').addEventListener('change', e => { _logType = e.target.value; renderLog(); });
+  $('lg-user').addEventListener('change', e => { _logUser = e.target.value; renderLog(); });
+  $('lg-more').addEventListener('click', more);
+  more();
+}
+// Версии: состояние ДО изменения. Вернуть — текущее тоже сохранится версией.
+const verSummary = v => {
+  const s = v.summary || {};
+  return [s.layers != null ? `${fmtN(s.layers)} ${plural(s.layers, 'слой', 'слоя', 'слоёв')}` : '', s.points != null ? pts(s.points) : '', s.zones ? `${fmtN(s.zones)} ${plural(s.zones, 'зона', 'зоны', 'зон')}` : ''].filter(Boolean).join(', ');
+};
+function versionRowHtml(v) {
+  const what = v.reason === 'before-restore' ? `Как было до отката ${esc(fmtDate(v.at))}` : `Как было до изменений <b>${esc(v.username || 'неизвестно')}</b> ${esc(fmtDate(v.at))}`;
+  return `<div class="a-row"><span class="a-av sq" aria-hidden="true">${uiIcon('history', 18)}</span>
+    <span class="a-row-main"><b>${what}</b><small>${esc(verSummary(v) || 'пусто')}${v.savedAt ? ' · сохранено ' + esc(fmtDate(v.savedAt)) : ''}</small></span>
+    <span class="a-row-acts"><button type="button" class="a-btn ghost sm" data-restore="${v.id}" data-key="${esc(v.key)}" data-when="${esc(fmtDate(v.savedAt || v.at))}">${uiIcon('undo', 14)} Вернуть</button></span></div>`;
+}
+function wireRestore(box, after) {
+  box.querySelectorAll('[data-restore]').forEach(b => b.addEventListener('click', async () => {
+    const yes = await ask({ title: `Вернуть ${keyName(b.dataset.key).replace(/<[^>]+>/g, '')}?`, ok: 'Вернуть', danger: true,
+      text: `<p>Будет как на <b>${esc(b.dataset.when)}</b> — у всех, кто её видит.</p><p>Текущее состояние сохранится в истории, так что откат можно отменить.</p>` });
+    if (!yes) return;
+    if (await act(() => post('/admin/versions/restore', { id: +b.dataset.restore }, 180000), 'Возвращено. Тем, у кого карта открыта, придёт предложение обновить.')) after();
+  }));
+}
+async function renderVersions(box) {
+  let list;
+  try { await load('maps'); list = (await api('/admin/versions')).versions; } catch (e) { box.innerHTML = `<div class="a-empty">Не удалось загрузить историю: ${esc(e.message)}</div>`; return; }
+  if (stale('log')) return;
+  const keys = [...new Set(list.map(v => v.key))];
+  box.innerHTML = '<p class="a-hint" style="margin:0 0 12px">Перед каждым изменением карты и общих слоёв сервер сохраняет, как было. Серия правок одного человека в течение 10 минут — одна точка возврата. Хранятся последние 10 на каждую карту.</p>' +
+    (keys.length ? keys.map(k => `<h2 class="a-h2" style="margin-top:16px">${k === 'shared_layers' ? 'Общие слои' : 'Карта «' + esc(mapName(k)) + '»'}</h2><div class="a-list">${list.filter(v => v.key === k).map(versionRowHtml).join('')}</div>`).join('')
+      : '<div class="a-empty">Изменений пока не было — откатывать нечего.</div>');
+  wireRestore(box, () => renderVersions(box));
 }
 
 /* ── Сервер ─────────────────────────────────────────────────────────── */

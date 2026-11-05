@@ -6367,6 +6367,20 @@ try { localStorage.removeItem('hm_admin_key'); } catch (e) {}
 // response remains an in-memory fallback for browsers that block cross-site
 // cookies, but it is never persisted in sessionStorage/localStorage.
 let SESSION_TOKEN = '';
+
+// Ошибки у пользователя — в журнал админа (страница «Админ» → «Журнал»):
+// сбои страницы и сообщения об ошибке, которые человек увидел. Одинаковые —
+// один раз, всего не больше 15 за открытие страницы.
+const _reported = new Set();
+function reportClientError(kind, message, where) {
+  const msg = String(message || '').slice(0, 200);
+  if (!SERVER_URL || !SERVER_KEY || !msg || _reported.has(kind + msg) || _reported.size >= 15) return;
+  _reported.add(kind + msg);
+  postJson(SERVER_URL + '/client-error', { kind, message: msg, where: String(where || '').slice(0, 120), map: currentMap || '' }, 10000).catch(() => {});
+}
+window._hmOnErrToast = msg => reportClientError('toast', msg, '');
+window.addEventListener('error', e => reportClientError('crash', e.message, (e.filename || '').split('/').pop() + ':' + (e.lineno || '')));
+window.addEventListener('unhandledrejection', e => reportClientError('crash', (e.reason && (e.reason.message || String(e.reason))) || 'Promise rejected', ''));
 try { sessionStorage.removeItem('hm_session_token'); } catch (e) {}
 function authHeaders(extra = {}) {
   return SESSION_TOKEN ? { ...extra, Authorization: `Bearer ${SESSION_TOKEN}` } : { ...extra };

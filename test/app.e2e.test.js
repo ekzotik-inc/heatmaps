@@ -133,7 +133,7 @@ async function writeLcov(entries, staticBase) {
 }
 
 test('app in the browser', { skip: !chromium && 'playwright is not installed' }, async t => {
-  const api = await startServer(USERS);
+  const api = await startServer(USERS, { HM_VERSION_GAP_MS: '0' });   // каждая правка — точка возврата
   await seed(api);
   const web = await serveStatic();
   const browser = await chromium.launch(launchOptions());
@@ -702,6 +702,29 @@ test('app in the browser', { skip: !chromium && 'playwright is not installed' },
     assert.deepEqual(zone.mp[0][0][0], zone.mp[0][0][5], 'the ring stays closed');
     assert.deepEqual(boss.errors, []);
     await boss.close();
+  });
+
+  // Владелец 06.11.2026: журнал действий учёток, ошибки и откат последних изменений.
+  await t.test('the admin page shows the journal and rolls a map back', async () => {
+    const adm = await openAdmin('#log');
+    const { page } = adm;
+    await page.waitForSelector('#lg-list .a-log');
+    const text = await page.textContent('#lg-list');
+    assert.ok(text.includes('сохранил карту'), 'map saves are in the journal');
+    assert.ok(text.includes('создал учётку'), 'account changes are in the journal');
+    await page.click('.a-nav a[data-sec="maps"]');
+    await page.click('[data-medit="comdep"]');
+    await page.waitForSelector('#mf-versions [data-restore]');
+    await page.locator('#mf-versions [data-restore]').first().click();
+    const done = page.waitForResponse(r => r.url().endsWith('/admin/versions/restore'));
+    await page.click('#a-dlg-ok');
+    assert.equal((await done).status(), 200);
+    await page.keyboard.press('Escape');
+    await page.click('.a-nav a[data-sec="log"]');
+    await page.waitForSelector('#lg-list .a-log');
+    assert.ok((await page.textContent('#lg-list')).includes('вернул карту «Com Dep»'), 'the rollback is in the journal');
+    assert.deepEqual(adm.errors, []);
+    await adm.close();
   });
 
   await t.test('admin signs in and the map starts without page errors', async () => {

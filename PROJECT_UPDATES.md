@@ -1396,3 +1396,27 @@ OpenFreeMap serves OpenStreetMap vector tiles with no key, no limits and commerc
   map when the person had to sign in first.
 - Tests: server + PostgreSQL, browser 18/18. Cache `20261106h`. Server
   changed — Render redeploys on push.
+
+## 2026-11-06 — Journal of actions, errors and rollback
+
+- Owner: the admin page lacks a log of every account's actions, visibility
+  of errors and a way to roll back recent updates.
+- **Журнал** (new menu item): who did what and when, in plain words —
+  sign-ins (also failed ones), map saves, layers, points, accounts, maps,
+  rollbacks. Repeats merge into one line with ×N (autosave would flood it).
+  Filters: everything / changes / sign-ins / errors / refusals, by account,
+  search. Errors: server failures and what people saw in their browser (page
+  crashes, error messages). Home shows errors of the last day and the
+  latest actions.
+- **Откат изменений**: before every change of a map or of the shared layers
+  the server keeps how it was (compressed; a series of edits by one person
+  within 10 minutes is one restore point; last 10 per map). «Вернуть» in the
+  journal or in a map's settings («История изменений»); the current state
+  is kept too, so a rollback can be undone. Open maps get the usual
+  «обновите» banner.
+- Never logged: passwords, map data. The journal keeps the last 5000 lines.
+- Server: `server/journal.js`, tables `audit_log`, `state_versions` (or
+  `audit.json` + `versions/` without a database), `/admin/log`,
+  `/admin/versions`, `/admin/versions/restore`, `/client-error`.
+- Tests: server 100/100 on files and PostgreSQL, browser 19/19.
+  Cache `20261106i`. Server changed — Render redeploys on push.

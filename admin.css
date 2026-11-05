@@ -242,3 +242,21 @@ button.a-row:hover { border-color: var(--acc-d); box-shadow: var(--shadow-card);
   .a-mobile-foot { display: flex !important; }
 }
 .a-mobile-foot { display: none; gap: 8px; margin-top: 24px; }
+
+/* ── Журнал ─────────────────────────────────────────────────────────── */
+.a-tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.a-tabs button { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line2); background: var(--card); font: 600 13px "Inter"; color: var(--mut); cursor: pointer; }
+.a-tabs button:hover { color: var(--ink); border-color: var(--acc-d); }
+.a-tabs button.on { background: var(--acc-d); border-color: var(--acc-d); color: #fff; }
+.a-log-day { padding: 10px 16px 6px; font: 600 12px "Inter"; color: var(--mut); background: var(--card2); border-top: 1px solid var(--line); }
+.a-log-day:first-child { border-top: 0; border-radius: 16px 16px 0 0; }
+.a-log { display: flex; align-items: center; gap: 10px; padding: 9px 16px; border-top: 1px solid var(--line); font-size: 13.5px; color: var(--ink); }
+.a-log-day + .a-log { border-top: 0; }
+.a-log-time { flex: 0 0 auto; width: 42px; font: 500 12.5px "Inter"; color: var(--mut); font-variant-numeric: tabular-nums; }
+.a-log-text { flex: 1; min-width: 0; line-height: 1.45; }
+.a-log.bad { background: rgba(233,86,75,.06); }
+.a-log.warn { background: rgba(242,169,59,.07); }
+.a-av.sm { width: 26px; height: 26px; font-size: 12px; }
+.a-why { color: var(--ink); font-weight: 600; }
+.a-dim { color: var(--mut); }
+@media (max-width: 860px) { .a-log { flex-wrap: wrap; padding: 9px 12px; } .a-log-text { flex-basis: 100%; order: 3; } }

@@ -6,6 +6,8 @@ const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
+const { AsyncLocalStorage } = require('async_hooks');
+const { createJournal } = require('./journal');
 
 // ---------------------------------------------------------------------------
 // Config — read from .env without an additional dotenv dependency.
@@ -39,6 +41,14 @@ const loginAttempts = new Map();
 // Папка файлового хранилища (без PostgreSQL). Тесты подставляют временную.
 const DATA_DIR = process.env.HM_DATA_DIR || __dirname;
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
+// Журнал действий и версии данных (страница «Админ», 06.11.2026). Окно склейки
+// версий можно сузить переменной HM_VERSION_GAP_MS (тесты ставят 0).
+const journal = createJournal({
+  getDb: () => db, dataDir: DATA_DIR,
+  gapMs: process.env.HM_VERSION_GAP_MS != null && process.env.HM_VERSION_GAP_MS !== '' ? Number(process.env.HM_VERSION_GAP_MS) : 10 * 60 * 1000,
+});
+// Текущий запрос — чтобы запись в хранилище знала, кто её делает.
+const reqStore = new AsyncLocalStorage();
 
 // Одна учётка из JSON окружения или null, если запись неполная.
 function authAccount(username, value) {
@@ -515,7 +525,33 @@ async function readState(key) {
   }
 }
 
+// Перед записью карты или общих слоёв — версия прежних данных для отката.
+function versionedKey(key) { return key === SHARED_KEY || Boolean(findMap(key)); }
+function versionSummary(key, d) {
+  if (!d) return {};
+  if (key === SHARED_KEY) {
+    const layers = Array.isArray(d.layers) ? d.layers : [];
+    return { layers: layers.length, points: layers.reduce((a, l) => a + (Array.isArray(l.recs) ? l.recs.length : 0), 0) };
+  }
+  const heat = (Array.isArray(d.heatKeys) ? d.heatKeys : []).filter(k => d.layers && d.layers[k]);
+  const pts = Array.isArray(d.customPtLayers) ? d.customPtLayers : [];
+  const n = l => (l && Array.isArray(l.recs) ? l.recs.length : 0);
+  return {
+    layers: heat.length + pts.length,
+    points: heat.reduce((a, k) => a + (n(d.layers[k]) || ((d.layers[k].stats || {}).n || 0)), 0) + pts.reduce((a, l) => a + n(l), 0),
+    zones: (Array.isArray(d.boundLayers) ? d.boundLayers : []).reduce((a, l) => a + ((l && l.zones) || []).length, 0),
+  };
+}
+function storeUser() {
+  const st = reqStore.getStore();
+  return (st && st.req && st.req.user && st.req.user.username) || '';
+}
 async function writeState(key, data) {
+  const st = reqStore.getStore();
+  if (versionedKey(key) && !(st && st.noVersion)) {
+    const prev = await readState(key);
+    await journal.save(key, prev, { username: storeUser(), summary: versionSummary(key, prev) });
+  }
   const json = JSON.stringify(data);
   if (db) {
     await db.query(
@@ -578,6 +614,40 @@ app.use((_req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
   next();
+});
+// Журнал: каждый запрос на изменение (и любой ответ 5xx) — одна запись.
+// Пароли и данные не пишем — только короткие поля из LOG_FIELDS.
+const LOG_FIELDS = ['username', 'role', 'id', 'name', 'key', 'kind', 'scope', 'map', 'reason', 'confirm'];
+function logRequest(req, res) {
+  if (req.method === 'OPTIONS' || req.path === '/client-error') return;
+  if (req.method !== 'POST' && res.statusCode < 500) return;
+  const b = isObj(req.body) ? req.body : {};
+  let user = req.user && req.user.username;
+  if (!user && req.path === '/auth/login') user = cleanText(b.username, 40).toLowerCase();
+  if (!user) { const s = sessionFromReq(req); user = s ? s.user.username : ''; }
+  const detail = {};
+  for (const f of LOG_FIELDS) {
+    if (req.path === '/auth/login' && f === 'username') continue;
+    if (['string', 'number', 'boolean'].includes(typeof b[f])) detail[f] = String(b[f]).slice(0, 80);
+  }
+  if (Array.isArray(b.points)) detail.points = b.points.length;
+  if (Array.isArray(b.maps)) detail.maps = b.maps.slice(0, 30).join(',');
+  else if (b.maps === null && req.path === '/auth/maps') detail.maps = '';
+  if (isObj(b.perms)) detail.perms = JSON.stringify(b.perms).slice(0, 160);
+  if (isObj(b.layer)) { detail.name = cleanText(b.layer.name, 40); detail.key = String(b.layer.id || '').slice(0, 40); }
+  if (res.locals.logError) detail.error = String(res.locals.logError).slice(0, 200);
+  if (res.locals.logDetail) Object.assign(detail, res.locals.logDetail);
+  journal.add({
+    username: user || '', action: (req.method === 'POST' ? '' : req.method + ' ') + req.path,
+    map: String(req.query.map || b.map || '').slice(0, 40),
+    level: res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info', status: res.statusCode, detail,
+  });
+}
+app.use((req, res, next) => {
+  const json = res.json.bind(res);
+  res.json = body => { if (res.statusCode >= 400 && body && body.error) res.locals.logError = body.error; return json(body); };
+  res.on('finish', () => { try { logRequest(req, res); } catch (e) { console.warn('Log failed:', e.message); } });
+  reqStore.run({ req }, next);
 });
 app.use(cors({
   origin: (origin, cb) => {
@@ -650,6 +720,8 @@ app.use((req, res, next) => {
   res.status(401).json({ error: 'Invalid or missing X-API-Key header' });
 });
 app.use(express.json({ limit: '50mb' }));
+// Разбор тела идёт через события потока — контекст запроса после него ставим заново.
+app.use((req, res, next) => reqStore.run({ req }, next));
 
 app.get('/health', (_req, res) => {
   res.json({
@@ -1542,6 +1614,7 @@ function deleteOwnFiles(id) {
 }
 
 async function deleteMapStorage(id) {
+  await journal.dropVersions(id);
   if (db) {
     await db.query('DELETE FROM app_state WHERE key = $1 OR key LIKE ANY($2::text[])', [id, ownPrefixes(id).map(p => p + '%')]);
     await db.query('DELETE FROM photos WHERE map = $1', [id]);
@@ -1885,7 +1958,7 @@ app.get('/admin/storage', requireSession, requireAdmin, async (req, res) => {
     if (db) dbBytes = Number((await db.query('SELECT pg_database_size(current_database()) AS b')).rows[0].b) || 0;
     const mem = process.memoryUsage();
     res.json({
-      storage: db ? 'postgresql' : 'file', dbBytes,
+      storage: db ? 'postgresql' : 'file', dbBytes, versionsBytes: await journal.versionsBytes(),
       process: { rss: mem.rss, heapUsed: mem.heapUsed, heapTotal: mem.heapTotal, uptime: Math.round(process.uptime()) },
       caches: { states: stateReadCache.size, chunks: layerChunkCache.size },
       keys: rows.sort((a, b) => b.bytes - a.bytes),
@@ -2083,12 +2156,75 @@ app.post('/admin/layers/delete', requireSession, requireAdmin, async (req, res) 
   }
 });
 
+// --- Журнал, ошибки, откат ------------------------------------------------------
+app.get('/admin/log', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  try {
+    const rows = await journal.list({ before: req.query.before, limit: req.query.limit, level: String(req.query.level || ''), username: String(req.query.user || '') });
+    const day = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    res.json({ rows, errors24h: await journal.countSince('error', day), warn24h: await journal.countSince('warn', day) });
+  } catch (e) {
+    console.error('Log read error:', e.message);
+    res.status(500).json({ error: 'Не удалось прочитать журнал' });
+  }
+});
+
+// Ошибки из браузеров учёток: сбой страницы или сообщение об ошибке.
+const clientErrorTimes = new Map();
+app.post('/client-error', requireSession, (req, res) => {
+  noStore(res);
+  const user = req.user.username, now = Date.now();
+  const times = (clientErrorTimes.get(user) || []).filter(t => now - t < 60000);
+  if (times.length >= 20) return res.status(429).json({ error: 'Слишком много сообщений' });
+  times.push(now); clientErrorTimes.set(user, times);
+  if (clientErrorTimes.size > 1000) clientErrorTimes.delete(clientErrorTimes.keys().next().value);
+  const b = req.body || {};
+  journal.add({
+    username: user, action: 'client-error', map: cleanText(b.map, 40), level: 'error', status: 0,
+    detail: { error: cleanText(b.message, 200), where: cleanText(b.where, 120), kind: cleanText(b.kind, 20) },
+  });
+  res.json({ ok: true });
+});
+
+app.get('/admin/versions', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  try {
+    res.json({ versions: await journal.listVersions(String(req.query.key || '')) });
+  } catch (e) {
+    console.error('Versions read error:', e.message);
+    res.status(500).json({ error: 'Не удалось прочитать версии' });
+  }
+});
+
+// Откат: текущие данные сначала сами сохраняются версией — откат можно отменить.
+app.post('/admin/versions/restore', requireSession, requireAdmin, async (req, res) => {
+  noStore(res);
+  const v = await journal.getVersion((req.body || {}).id);
+  if (!v) return res.status(404).json({ error: 'Версия не найдена' });
+  if (!versionedKey(v.key)) return res.status(409).json({ error: 'Карты этой версии больше нет' });
+  res.locals.logDetail = { key: v.key, version: v.id, savedAt: String(v.data._savedAt || '') };
+  try {
+    const cur = await readState(v.key);
+    await journal.save(v.key, cur, { username: req.user.username, reason: 'before-restore', force: true, summary: versionSummary(v.key, cur) });
+    const data = { ...v.data, _savedAt: new Date().toISOString(), _lazy: false };
+    const st = reqStore.getStore();
+    if (st) st.noVersion = true;
+    await writeState(v.key, data);
+    if (findMap(v.key)) clearLayerChunkCache(v.key);
+    res.json({ ok: true, key: v.key });
+  } catch (e) {
+    console.error('Restore error:', e.message);
+    res.status(500).json({ error: 'Не удалось вернуть версию' });
+  }
+});
+
 const server = http.createServer(app);
 initDb()
   .catch(e => {
     console.error('Failed to connect to PostgreSQL, falling back to file storage:', e.message);
     db = null;
   })
+  .then(() => journal.init().catch(e => console.error('Journal init error:', e.message)))
   .then(() => loadMapRegistry().catch(e => console.error('Map registry load error:', e.message)))
   .then(() => loadCreatedAccounts().catch(e => console.error('Created accounts load error:', e.message)))
   .then(() => loadAuthOverrides().catch(e => console.error('Auth overrides load error:', e.message)))

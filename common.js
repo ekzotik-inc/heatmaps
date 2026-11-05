@@ -79,6 +79,8 @@ function toast(msg, type = 'info', ms = 2800) {
   t.className = `toast ${type}`;
   t.textContent = msg;
   c.appendChild(t);
+  // Карта сообщает такие ошибки в журнал админа (reportClientError в app.js).
+  if (type === 'err' && typeof window._hmOnErrToast === 'function') window._hmOnErrToast(msg);
   setTimeout(() => {
     t.classList.add('out');
     t.addEventListener('animationend', () => t.remove(), { once: true });
